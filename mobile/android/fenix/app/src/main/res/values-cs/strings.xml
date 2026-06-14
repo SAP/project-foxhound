@@ -332,21 +332,9 @@
   <!--
     Browser Toolbar
 
-    Content description for the Home screen button on the browser toolbar
-  -->
-  <string name="browser_toolbar_home">Domovská obrazovka</string>
-  <!--
-    Browser Toolbar
-
     Content description for the translate page toolbar button that opens the translations dialog when no translation has occurred.
   -->
   <string name="browser_toolbar_translate">Přeložit stránku</string>
-  <!--
-    Content description (not visible, for screen readers etc.) for the translate page toolbar button that opens the translations dialog when the page is translated successfully.
-    %1$s is the name of the language that is displayed in the original page. (For example: English)
-    %2$s is the name of the language which the page was translated to. (For example: French)
-  -->
-  <string name="browser_toolbar_translated_successfully">Stránka byla přeložena z jazyka %1$s do jazyka %2$s.</string>
   <!-- CFR description for the browser toolbar describing the "Shake to summarize feature" -->
   <string name="browser_toolbar_summarize_cfr_description">Zatřeste zařízením pro shrnutí této stránky během několika sekund. ⚡️</string>
   <!--
@@ -377,8 +365,6 @@
   <string name="ai_controls_banner_headline">V aplikaci %s máte vždy na výběr</string>
   <!-- Supporting text for the AI controls banner. %s is a learn more link using ai_controls_learn_more as text. -->
   <string name="ai_controls_banner_supporting_text_2">To zahrnuje i to, zda používat funkce vylepšené o umělou inteligenci. %s</string>
-  <!-- Supporting text for the AI controls banner -->
-  <string name="ai_controls_banner_supporting_text">To zahrnuje i to, zda používat funkce vylepšené umělou inteligencí.</string>
   <!-- Link text for learning more about AI controls -->
   <string name="ai_controls_learn_more">Zjistit více</string>
   <!-- Title for the block AI enhancements toggle -->
@@ -423,12 +409,6 @@
   <string name="default_locale_text">Podle nastavení zařízení</string>
   <!-- Placeholder text shown in the search bar before a user enters text -->
   <string name="locale_search_hint">Hledat</string>
-  <!--
-    Search Fragment
-
-    Button in the search view that lets a user search by scanning a QR code
-  -->
-  <string name="search_scan_button_2">Naskenovat QR kód</string>
   <!--
     Search Fragment
 
@@ -737,6 +717,8 @@
   <string name="nova_onboarding_marketing_body_link_text">Jak data používáme</string>
   <!-- Marketing onboarding primary button text. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage">Pomozte Firefoxu</string>
+  <!-- Marketing onboarding primary button text. -->
+  <string name="nova_onboarding_marketing_primary_button_text_2">Povolit a pokračovat</string>
   <!-- Marketing onboarding secondary button text. -->
   <string name="nova_onboarding_marketing_secondary_button_text">Ne, děkuji</string>
   <!-- Notifications onboarding title. 'Firefox' is intentionally hardcoded. -->
@@ -1141,10 +1123,12 @@
   <string name="customize_toggle_pocket_sponsored">Sponzorované příběhy</string>
   <!-- Title for the opening wallpaper settings screen -->
   <string name="customize_wallpapers">Tapety</string>
+  <!-- Label for the menu item that opens the wallpaper settings screen. -->
+  <string name="browser_menu_change_wallpaper">Změnit tapetu</string>
   <!-- Title for the customize home screen section with sponsored shortcuts. -->
   <string name="customize_toggle_contile">Sponzorované zkratky</string>
   <!-- Title for the customize home screen section that toggles the Homepage sports widget. -->
-  <string name="customize_toggle_world_cup" tools:ignore="UnusedResources">Světový šampionát</string>
+  <string name="customize_toggle_world_cup">Světový šampionát</string>
   <!--
     Wallpapers
 
@@ -1484,8 +1468,6 @@
   <string name="library_desktop_bookmarks_unfiled">Ostatní záložky</string>
   <!-- Option in Library to open History page -->
   <string name="library_history">Historie</string>
-  <!-- Option in Library to open a new tab -->
-  <string name="library_new_tab">Nový panel</string>
   <!-- Settings Page Title -->
   <string name="settings_title">Nastavení</string>
   <!-- Content description (not visible, for screen readers etc.): "Close button for library settings" -->
@@ -2090,6 +2072,8 @@
   <!-- The error message of the dropdown, prompting the user to select a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_choose_reason_error">Zvolte důvod</string>
   <!-- The label/title of an optional field in the Web Compat Reporter feature for adding additional information. -->
+  <string name="webcompat_reporter_label_description_2">Popište detailně problém, abyste nám pomohli problém prošetřit (volitelné)</string>
+  <!-- The label/title of an optional field in the Web Compat Reporter feature for adding additional information. -->
   <string name="webcompat_reporter_label_description">Popis problému (nepovinný)</string>
   <!-- The button text for navigating away from the feature to provide more information on the broken site's bug report. -->
   <string name="webcompat_reporter_add_more_info">Přidat další informace</string>
@@ -2099,6 +2083,8 @@
   <string name="webcompat_reporter_send">Odeslat</string>
   <!-- Text for a snackbar to confirm the successful submission of a WebCompat report. -->
   <string name="webcompat_reporter_success_snackbar_text_2">Hlášení odesláno</string>
+  <!-- Placeholder text for the description field to prompt the user on what they should type. -->
+  <string name="webcompat_reporter_problem_description_placeholder_text_2">Co se stalo? Co jste očekávali, že se stane? Uveďte prosím postup, jak problém reprodukovat.</string>
   <!-- Placeholder text for the description field to prompt the user on what they should type. -->
   <string name="webcompat_reporter_problem_description_placeholder_text">Co se stalo? Co se mělo stát?</string>
   <!-- Label of the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. -->
@@ -2113,6 +2099,12 @@
   <string name="webcompat_reporter_preview_bottom_sheet_header">Náhled hlášení</string>
   <!-- Label for the “Send” button shown in the WebCompat Report preview panel, which the user taps to submit the report. -->
   <string name="webcompat_reporter_preview_bottom_sheet_send">Odeslat</string>
+  <!-- Title for the Edit URL confirmation dialog in the WebCompatReporter -->
+  <string name="webcompat_reporter_edit_url_dialog_title">Upravit URL adresu webové stránky</string>
+  <!-- Text shown on the save button for the Edit URL confirmation dialog in the WebCompatReporter. -->
+  <string name="webcompat_reporter_edit_url_dialog_save">Uložit</string>
+  <!-- Text shown on the dismiss button for the Edit URL confirmation dialog in the WebCompatReporter. -->
+  <string name="webcompat_reporter_edit_url_dialog_dismiss">Zavřít</string>
   <!--
     These reason strings are dropdown options on a WebCompat reporter form, indicating what is broken on the site.
 
@@ -2241,12 +2233,8 @@
   <string name="edit_bookmark_folder_fragment_title">Upravit složku</string>
   <!-- Bookmark URL editing field label -->
   <string name="bookmark_url_label">URL</string>
-  <!-- Bookmark FOLDER editing field label -->
-  <string name="bookmark_folder_label">SLOŽKA</string>
   <!-- Text indicating which folder a bookmark or folder will be saved in -->
   <string name="bookmark_save_in_label">Uložit do</string>
-  <!-- Bookmark NAME editing field label -->
-  <string name="bookmark_name_label">NÁZEV</string>
   <!-- Label for a text input field for a bookmark or folder name -->
   <string name="bookmark_name_label_normal_case">Název</string>
   <!-- Bookmark select folder screen title -->
@@ -2290,12 +2278,8 @@
   <string name="bookmark_empty_list_root_title">Mějte všechny své oblíbené záložky pohromadě</string>
   <!-- Bookmark screen folder description. %s is the count of bookmark folder children -->
   <string name="bookmarks_folder_description">Záložek ve složce: %s</string>
-  <!-- Description for the bookmark list empty state when you're not signed into sync. -->
-  <string name="bookmark_empty_list_guest_description">Ukládejte si stránky během prohlížení. Pro získání záložek z ostatních synchronizovaných zařízení se prosím přihlaste.</string>
   <!-- Text for the button to navigate to sync authentication -->
   <string name="bookmark_empty_list_guest_cta">Přihlásit se k synchronizaci</string>
-  <!-- Description for the bookmark list empty state when you're signed into sync. -->
-  <string name="bookmark_empty_list_authenticated_description">Ukládejte si stránky během prohlížení. Získáme také záložky z ostatních synchronizovaných zařízení.</string>
   <!-- Description for the bookmark list empty state when you're in an empty folder. -->
   <string name="bookmark_empty_list_folder_description">Během procházení internetu si můžete přidávat záložky, abyste později našli své oblíbené stránky.</string>
   <!-- Description for the add new folder button when selecting a folder. -->
@@ -2410,8 +2394,6 @@
   <string name="collections_header">Sbírky</string>
   <!-- Content description (not visible, for screen readers etc.): Opens the collection menu when pressed -->
   <string name="collection_menu_button_content_description">Nabídka sbírek</string>
-  <!-- Label to describe what collections are to a new user without any collections -->
-  <string name="no_collections_description2">Uložte si důležité věci do sbírek.\nPodobná vyhledávání, stránky a panely si můžete seskupit a poté se k nim snadno vracet.</string>
   <!-- Title for the "select tabs" step of the collection creator -->
   <string name="create_collection_select_tabs">Vyberte panely</string>
   <!-- Title for the "select collection" step of the collection creator -->
@@ -2867,8 +2849,6 @@
   <string name="etp_suspected_fingerprinters_description">Zapne ochranu před případným vytvářením otisku prohlížeče.</string>
   <!-- Category of trackers (fingerprinters) that can be blocked by Enhanced Tracking Protection -->
   <string name="etp_known_fingerprinters_title">Známé vytváření otisku prohlížeče</string>
-  <!-- Label for the fingerprinters category shown in the tracking protections dashboard breakdown -->
-  <string name="tracking_dashboard_fingerprinters_category_name">Vytváření otisku prohlížeče</string>
   <!--
     Description of the SmartBlock Enhanced Tracking Protection feature. The * symbol is intentionally hardcoded here,
     as we use it on the UI to indicate which trackers have been partially unblocked.
@@ -3155,12 +3135,12 @@
   <string name="ip_protection_title">VPN</string>
   <!-- Label for the browser VPN toggle on the settings screen -->
   <string name="ip_protection_toggle_label">VPN</string>
+  <!-- Content description for the browser VPN settings screen top bar back button -->
+  <string name="ip_protection_navigate_back_button_content_description">Návrat zpět</string>
   <!-- Headline for the browser VPN promo card. %s is the name of the app (for example "Firefox"). -->
   <string name="ip_protection_promo_headline">Vestavěná VPN aplikace %s</string>
   <!-- Body text for the browser VPN promo card . %s is a learn more link using ip_protection_learn_more as text. -->
   <string name="ip_protection_promo_body_2">Procházejte internet s větší ochranou díky skrytí vaší polohy, a to i na veřejných Wi-Fi sítích. %s</string>
-  <!-- Body text for the browser VPN promo card -->
-  <string name="ip_protection_promo_body">Procházejte internet s větší ochranou díky skrytí vaší polohy, a to i na veřejných Wi-Fi sítích.</string>
   <!-- Link text that opens additional information about the browser VPN -->
   <string name="ip_protection_learn_more">Zjistit více</string>
   <!-- Label for the monthly data allowance section on the browser VPN settings screen -->
@@ -3212,6 +3192,8 @@
   <string name="ip_protection_toolbar_pill_description">VPN je aktivní.</string>
   <!-- Label for the button that starts the browser VPN authentication or authorization flow on the settings screen -->
   <string name="ip_protection_get_started">Začít</string>
+  <!-- Label for the "connecting" state of the button that starts the browser VPN authentication or authorization flow on the settings screen -->
+  <string name="ip_protection_connecting">Připojování…</string>
   <!-- Headline for the browser VPN onboarding card. %s is the name of the app (for example "Firefox"). -->
   <string name="ip_protection_onboarding_card_headline">Vyzkoušejte VPN vestavěnou přímo v aplikaci %s</string>
   <!--
@@ -3222,6 +3204,8 @@
   <string name="ip_protection_onboarding_body">%1$s skrytím vaší polohy, a to i ve veřejných Wi-Fi sítích. Získejte %2$d GB každý měsíc zdarma.</string>
   <!-- Used as text for a link in ip_protection_onboarding_body. Make sure to adapt capitalization if the link is in the middle of the sentence. -->
   <string name="ip_protection_onboarding_body_link">Prohlížejte s extra ochranou</string>
+  <!-- Used as text for a link in ip_protection_onboarding_body. Make sure to adapt capitalization if the link is in the middle of the sentence. -->
+  <string name="ip_protection_onboarding_body_link_promo">Zjistit více</string>
   <!-- Label for the dismiss button on the onboarding bottom sheet. -->
   <string name="ip_protection_onboarding_not_now_button">Teď ne</string>
   <!-- Snackbar (in-app pop-up notification) text to signal the browser VPN connection error -->
@@ -3231,6 +3215,8 @@
     %1$d is the total monthly allowance in GB (for example "50").
   -->
   <string name="ip_protection_data_limit_reached_snackbar">Bylo využito %1$d GB dat přes VPN. Příští měsíc se limit vynuluje.</string>
+  <!-- Snackbar (in-app pop-up notification) action button text that takes the user to the VPN settings screen. -->
+  <string name="ip_protection_data_limit_reached_snackbar_action">Nastavení</string>
   <!--
     Autofill
 
@@ -3537,6 +3523,8 @@
   <string name="homepage_shortcuts_add_website">Přidat webovou stránku</string>
   <!-- Title text for the "Enter a Website URL" dialog for adding a shortcut. -->
   <string name="homepage_shortcuts_add_website_title">Zadejte URL adresu webové stránky</string>
+  <!-- Title for the "Popular sites" section in the "Add to homepage" bottom sheet. -->
+  <string name="homepage_shortcuts_popular_sites">Populární stránky</string>
   <!-- Title text displayed in the dialog when shortcuts limit is reached. -->
   <string name="shortcut_max_limit_title">Dosažen maximální počet zkratek</string>
   <!-- Content description text displayed in the dialog when shortcut limit is reached. -->
@@ -3623,8 +3611,6 @@
   <string name="default_browser_experiment_card_title">Změňte svůj výchozí prohlížeč</string>
   <!-- Default browser card text -->
   <string name="default_browser_experiment_card_text" tools:ignore="BrandUsage">Nastavte si automatické otevírání odkazů, e-mailů a zpráv ve Firefoxu.</string>
-  <!-- Content description for close button in collection placeholder. -->
-  <string name="remove_home_collection_placeholder_content_description">Odstranit</string>
   <!-- Content description radio buttons with a link to more information -->
   <string name="radio_preference_info_content_description">Pro více informací klepněte zde</string>
   <!-- Content description for the action bar "up" button -->
@@ -3656,20 +3642,10 @@
     Action label for elements that can be collapsed if interacting with them. Talkback will append this to say "Double tap to collapse".
   -->
   <string name="a11y_action_label_collapse">sbalit</string>
-  <!-- Current state for elements that can be collapsed if interacting with them. Talkback will dictate this after a state change. -->
-  <string name="a11y_state_label_collapsed">sbaleno</string>
   <!-- Action label for elements that can be expanded if interacting with them. Talkback will append this to say "Double tap to expand". -->
   <string name="a11y_action_label_expand">rozbalit</string>
-  <!-- Current state for elements that can be expanded if interacting with them. Talkback will dictate this after a state change. -->
-  <string name="a11y_state_label_expanded">rozbaleno</string>
   <!-- Action label for links to a website containing documentation about a wallpaper collection. Talkback will append this to say "Double tap to open link to learn more about this collection". -->
   <string name="a11y_action_label_wallpaper_collection_learn_more">otevřít odkaz a zjistit více o této sbírce</string>
-  <!-- Content description for headings announced by accessibility service. %s is the text of the heading. Talkback will announce the text and then speak the word "Heading" indicating to the user that this text is a heading for a section. -->
-  <string name="a11y_heading">%s, nadpis</string>
-  <!-- Title for dialog displayed when trying to access links present in a text. -->
-  <string name="a11y_links_title">Odkazy</string>
-  <!-- Additional content description for text bodies that contain urls. -->
-  <string name="a11y_links_available">Dostupné odkazy</string>
   <!-- Translations feature -->
 
   <!--
@@ -4597,7 +4573,7 @@
   <!-- Sports widget match status label shown during halftime of a match. -->
   <string name="sports_widget_halftime" tools:ignore="UnusedResources">Poločas</string>
   <!-- Sports widget match status label shown during extra time of a match. -->
-  <string name="sports_widget_extra_time" tools:ignore="UnusedResources">Prodloužení</string>
+  <string name="sports_widget_extra_time">Prodloužení</string>
   <!-- Sports widget match status label shown during penalties of a match. -->
   <string name="sports_widget_penalties">Penalty</string>
   <!--

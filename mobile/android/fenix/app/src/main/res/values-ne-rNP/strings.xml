@@ -100,12 +100,6 @@
   -->
   <string name="browser_menu_open_in_fenix">%1$s मा खोल्नुहोस्</string>
   <!--
-    Browser Toolbar
-
-    Content description for the Home screen button on the browser toolbar
-  -->
-  <string name="browser_toolbar_home">गृह स्क्रिन</string>
-  <!--
     Locale Settings Fragment
 
     Content description for tick mark on selected language
@@ -343,8 +337,6 @@
   <string name="library_desktop_bookmarks_unfiled">अन्य बुकमार्कहरु</string>
   <!-- Option in Library to open History page -->
   <string name="library_history">इतिहास</string>
-  <!-- Option in Library to open a new tab -->
-  <string name="library_new_tab">नयाँ ट्याब</string>
   <!-- Settings Page Title -->
   <string name="settings_title">सेटिङ्गहरु</string>
   <!-- Content description (not visible, for screen readers etc.): "Close button for library settings" -->

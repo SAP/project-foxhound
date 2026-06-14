@@ -25,6 +25,8 @@
   <string name="sound_off">🔇 sunet dezactivat</string>
   <!-- Back button -->
   <string name="back">înapoi</string>
+  <!-- Share hiscore action label. hiscore is an abbreviation for "Highest Score" -->
+  <string name="share_hiscore">Partajează cel mai bun scor</string>
   <!--
     The longest fox is your best game achievement so far (based on your highest score).
     %1$d is a placeholder for the current highest score.

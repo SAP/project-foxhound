@@ -11,6 +11,13 @@
   <string name="mozac_feature_applinks_open_in">Open in…</string>
   <!-- The title of the prompt that warns users their normal browsing session is trying to open another app -->
   <string name="mozac_feature_applinks_normal_confirm_dialog_title">Open in another app</string>
+  <!-- The title of the prompt that warns users their normal browsing session is trying to open another app -->
+  <string name="mozac_feature_applinks_normal_confirm_dialog_title_2">Open this link in another app?</string>
+  <!--
+    The title of the prompt with app suffix.
+    %s is a placeholder that will be replaced by an app name
+  -->
+  <string name="mozac_feature_applinks_normal_confirm_dialog_title_with_app_name_2">Open this link in %s app?</string>
   <!--
     The title of the prompt that warns users their normal browsing session is trying to open another app
     %s is a placeholder that will be replaced by an app name
@@ -23,6 +30,8 @@
   <string name="mozac_feature_applinks_normal_confirm_dialog_message">Would you like to leave %s to view this content?</string>
   <!-- Opens the selected time -->
   <string name="mozac_feature_applinks_confirm_dialog_confirm">Open</string>
+  <!-- Opens the selected app link -->
+  <string name="mozac_feature_applinks_confirm_dialog_confirm_2">Open in App</string>
   <!-- Cancels the prompt -->
   <string name="mozac_feature_applinks_confirm_dialog_deny">Cancel</string>
   <!-- The label of the checkbox that, depending of user's choice, can change the Open links in apps setting -->
@@ -41,4 +50,6 @@
   <string name="mozac_feature_applinks_unique_identifier">Unique identifier</string>
   <!-- The text shown when there is no Firefox URL -->
   <string name="mozac_feature_applinks_none">None</string>
+  <!-- The subtitle showing where the link was navigated from. %s is the domain. -->
+  <string name="mozac_feature_applinks_link_from">Link from %s</string>
 </resources>

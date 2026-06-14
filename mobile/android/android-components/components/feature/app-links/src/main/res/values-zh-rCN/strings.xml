@@ -50,4 +50,6 @@
   <string name="mozac_feature_applinks_unique_identifier">唯一标识符</string>
   <!-- The text shown when there is no Firefox URL -->
   <string name="mozac_feature_applinks_none">无</string>
+  <!-- The subtitle showing where the link was navigated from. %s is the domain. -->
+  <string name="mozac_feature_applinks_link_from">来自 %s 的链接</string>
 </resources>

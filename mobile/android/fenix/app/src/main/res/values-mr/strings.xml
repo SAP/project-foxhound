@@ -370,10 +370,6 @@
   <string name="edit_bookmark_folder_fragment_title">फोल्डर संपादित करा</string>
   <!-- Bookmark URL editing field label -->
   <string name="bookmark_url_label">URL</string>
-  <!-- Bookmark FOLDER editing field label -->
-  <string name="bookmark_folder_label">फोल्डर</string>
-  <!-- Bookmark NAME editing field label -->
-  <string name="bookmark_name_label">नाव</string>
   <!-- Bookmark select folder screen title -->
   <string name="bookmark_select_folder_fragment_label">फोल्डर निवडा</string>
   <!-- Bookmark editing error missing or improper URL -->

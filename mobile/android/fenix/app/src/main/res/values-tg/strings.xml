@@ -23,6 +23,8 @@
   <string name="content_description_normal_browsing">Тамошобинии муқаррар</string>
   <!-- Placeholder text shown in the search bar before a user enters text for the default engine -->
   <string name="search_hint">Нишониеро ҷустуҷӯ кунед ё ворид намоед</string>
+  <!-- Shorter placeholder text shown in the search bar when an additional action (voice search) is rendered alongside the hint. -->
+  <string name="search_hint_short">Ҷустуҷӯ</string>
   <!-- Placeholder text shown in the search bar before a user enters text for a general engine -->
   <string name="search_hint_general_engine">Ҷустуҷӯ дар Интернет</string>
   <!-- Placeholder text shown in search bar when using history search -->
@@ -330,21 +332,9 @@
   <!--
     Browser Toolbar
 
-    Content description for the Home screen button on the browser toolbar
-  -->
-  <string name="browser_toolbar_home">Экрани асосӣ</string>
-  <!--
-    Browser Toolbar
-
     Content description for the translate page toolbar button that opens the translations dialog when no translation has occurred.
   -->
   <string name="browser_toolbar_translate">Тарҷума кардани саҳифа</string>
-  <!--
-    Content description (not visible, for screen readers etc.) for the translate page toolbar button that opens the translations dialog when the page is translated successfully.
-    %1$s is the name of the language that is displayed in the original page. (For example: English)
-    %2$s is the name of the language which the page was translated to. (For example: French)
-  -->
-  <string name="browser_toolbar_translated_successfully">Саҳифа аз забони %1$s ба забони %2$s тарҷума шуд.</string>
   <!-- CFR description for the browser toolbar describing the "Shake to summarize feature" -->
   <string name="browser_toolbar_summarize_cfr_description">Дастгоҳи худро такон диҳед, то хулоса дар бораи ин саҳифа дар сонияҳо омода карда шавад. ⚡️</string>
   <!--
@@ -375,8 +365,6 @@
   <string name="ai_controls_banner_headline">Шумо ҳамеша дар барномаи «%s» интихоб доред</string>
   <!-- Supporting text for the AI controls banner. %s is a learn more link using ai_controls_learn_more as text. -->
   <string name="ai_controls_banner_supporting_text_2">Ин бахш имконияти истифодаи ҳусусиятҳои такмилёфтаро тавассути зеҳни сунъӣ (AI) дар бар мегирад. %s</string>
-  <!-- Supporting text for the AI controls banner -->
-  <string name="ai_controls_banner_supporting_text">Ин бахш имконияти истифодаи ҳусусиятҳои такмилёфтаро тавассути зеҳни сунъӣ (AI) дар бар мегирад.</string>
   <!-- Link text for learning more about AI controls -->
   <string name="ai_controls_learn_more">Маълумоти бештар</string>
   <!-- Title for the block AI enhancements toggle -->
@@ -424,12 +412,6 @@
   <!--
     Search Fragment
 
-    Button in the search view that lets a user search by scanning a QR code
-  -->
-  <string name="search_scan_button_2">Рамзи QR-ро аксбардорӣ намоед</string>
-  <!--
-    Search Fragment
-
     Button in the search view that lets a user navigate to the site in their clipboard
   -->
   <string name="awesomebar_clipboard_title">Гузоштани пайванд аз ҳофизаи муваққатӣ</string>
@@ -464,6 +446,8 @@
   <string name="search_suggestions_delete_history_item_snackbar">%1$s аз таърих нест карда шуд</string>
   <!-- Content description (not visible, for screen readers etc.): Button shown near a history search result allowing to delete it from browsing history. -->
   <string name="mozac_browser_awesomebar_remove_suggestion" tools:ignore="UnusedResources">Нест кардани ин унсури таърих</string>
+  <!-- Button in the app links prompt that keeps the user in the browser instead of opening the external app. %1$s is the name of the app (for example "Firefox"). -->
+  <string name="applinks_prompt_negative_button">Дар «%1$s» бимонед</string>
   <!--
     Home onboarding
 
@@ -711,10 +695,30 @@
   <string name="nova_onboarding_marketing_body" tools:ignore="BrandUsage,UnusedResources">Ба шарикони технологияи бозоршиносии «Mozilla» хабар диҳед, ки шумо чӣ тавр браузери «Firefox»-ро пайдо кардед ва онро истифода мебаред. Ин маълумот ҳеҷ гоҳ фурӯхта намешавад. %1$s</string>
   <!-- Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded. -->
   <string name="nova_onboarding_marketing_body_2" tools:ignore="BrandUsage">Ба шарикони технологияи бозоршиносии «Mozilla» хабар диҳед, ки шумо чӣ тавр браузери «Firefox»-ро пайдо кардед ва онро истифода мебаред. Ин маълумот ҳеҷ гоҳ фурӯхта намешавад.</string>
+  <!-- Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded. -->
+  <string name="nova_onboarding_marketing_body_3" tools:ignore="BrandUsage">Шумо метавонед ба мо барои фаро гирифтани одамони бештар кумак кунед, агар иҷозат диҳед то «Mozilla» тавонад тавассути шабакаҳои таблиғотие, ки мо «Firefox»-ро таблиғ мекунем, хабар диҳад, ки шумо корбари «Firefox» ҳастед.</string>
+  <!--
+    Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
+    “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
+  -->
+  <string name="nova_onboarding_marketing_body_4" tools:ignore="BrandUsage">Шумо метавонед ба мо барои фаро гирифтани одамони бештар кумак кунед, агар иҷозат диҳед то «Mozilla» тавонад ба платформае, ки шумо аз он омадаед, хабар диҳад, ки шумо «Firefox»-ро истифода мебаред.</string>
+  <!--
+    Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
+    “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
+  -->
+  <string name="nova_onboarding_marketing_body_5" tools:ignore="BrandUsage,UnusedResources">Ба мо барои фаро гирифтани одамони бештар кумак кунед, яъне иҷозат диҳед то «Mozilla» тавонад ба платформае, ки шумо аз он омадаед, хабар диҳад, ки шумо «Firefox»-ро истифода мебаред.</string>
+  <!--
+    Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
+    “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
+    %1$s is replaced by an active link, using nova_onboarding_marketing_body_link_text as text (“How we use the data”).
+  -->
+  <string name="nova_onboarding_marketing_body_6" tools:ignore="BrandUsage,UnusedResources">Ба мо барои фаро гирифтани одамони бештар кумак кунед, яъне иҷозат диҳед то «Mozilla» тавонад ба платформае, ки шумо аз он омадаед, хабар диҳад, ки шумо «Firefox»-ро истифода мебаред. %1$s</string>
   <!-- Marketing onboarding body link text. -->
   <string name="nova_onboarding_marketing_body_link_text">Чӣ тавр мо маълумотро истифода мебарем</string>
   <!-- Marketing onboarding primary button text. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage">«Firefox»-ро дастгирӣ намоед</string>
+  <!-- Marketing onboarding primary button text. -->
+  <string name="nova_onboarding_marketing_primary_button_text_2">Иҷозат дода, идома диҳед</string>
   <!-- Marketing onboarding secondary button text. -->
   <string name="nova_onboarding_marketing_secondary_button_text">Не, ташаккур</string>
   <!-- Notifications onboarding title. 'Firefox' is intentionally hardcoded. -->
@@ -1117,10 +1121,12 @@
   <string name="customize_toggle_pocket_sponsored">Мақолаҳои сарпарастӣ</string>
   <!-- Title for the opening wallpaper settings screen -->
   <string name="customize_wallpapers">Тасвирҳои замина</string>
+  <!-- Label for the menu item that opens the wallpaper settings screen. -->
+  <string name="browser_menu_change_wallpaper">Иваз кардани тасвири заминаи экран</string>
   <!-- Title for the customize home screen section with sponsored shortcuts. -->
   <string name="customize_toggle_contile">Миёнбурҳои сарпарастӣ</string>
   <!-- Title for the customize home screen section that toggles the Homepage sports widget. -->
-  <string name="customize_toggle_world_cup" tools:ignore="UnusedResources">Ҷоми ҷаҳон</string>
+  <string name="customize_toggle_world_cup">Ҷоми ҷаҳон</string>
   <!--
     Wallpapers
 
@@ -1460,8 +1466,6 @@
   <string name="library_desktop_bookmarks_unfiled">Хатбаракҳои дигар</string>
   <!-- Option in Library to open History page -->
   <string name="library_history">Таърих</string>
-  <!-- Option in Library to open a new tab -->
-  <string name="library_new_tab">Варақаи нав</string>
   <!-- Settings Page Title -->
   <string name="settings_title">Танзимот</string>
   <!-- Content description (not visible, for screen readers etc.): "Close button for library settings" -->
@@ -1625,6 +1629,8 @@
   <string name="tab_manager_search_bar_placeholder">Ҷустуҷӯ дар варақаҳои худ</string>
   <!-- Text shown in the menu to view recently closed tabs -->
   <string name="tab_tray_menu_recently_closed">Варақаҳои ба наздикӣ пӯшидашуда</string>
+  <!-- Text shown in the menu to select all tabs. -->
+  <string name="tab_tray_menu_select_all_tabs">Ҳамаро интихоб кардан</string>
   <!-- Text shown in the menu to view account settings -->
   <string name="tab_tray_menu_account_settings">Танзимоти ҳисоб</string>
   <!-- Text shown in the menu to view tab settings -->
@@ -1689,6 +1695,16 @@
   <string name="tab_manager_open_tab_search">Кушодани имкони ҷустуҷӯ дар варақаҳо</string>
   <!-- Title for introducing tab groups via an onboarding card shown in the tab manager. -->
   <string name="tab_group_onboarding_item_title">Эҷод кардани гурӯҳи варақаҳо</string>
+  <!-- Description for tab groups onboarding shown in the tab manager when in grid view. -->
+  <string name="tab_group_onboarding_grid_item_description">Барои гурӯҳбандӣ кардани варақаҳо, варақаи дилхоҳро ба болои варақаи дигар кашед.</string>
+  <!-- Description for tab groups onboarding shown in the tab manager when in list view. -->
+  <string name="tab_group_onboarding_list_item_description">Барои сохтани гурӯҳ, якчанд варақаро интихоб намоед.</string>
+  <!-- Content description (accessibility label) for button to dismiss the tab group onboarding item. -->
+  <string name="tab_group_onboarding_item_dismiss_content_description">Рад кардани истифода аз дастурамали гурӯҳи варақаҳо</string>
+  <!-- The header text displayed on the tab groups page when no tab groups are open -->
+  <string name="tab_manager_empty_tab_groups_page_header">Гурӯҳҳои варақаҳоро кӯшиш кунед — камтар ҳаракат кунед, бештар кор кунед</string>
+  <!-- The description displayed on the tab groups page when no tab groups are open -->
+  <string name="tab_manager_empty_tab_groups_page_description">Барои сохтани гурӯҳ, варақаҳоро интихоб кунед. Онҳо дар ин ҷой нигоҳ дошта мешаванд ва вақте ки ба шумо лозим мешаванд, варақаҳо омода мебошанд.</string>
   <!--
     Tab Group
 
@@ -1742,6 +1758,14 @@
   </plurals>
   <!-- Content description for the grabber/handle of the tab group bottom sheet. -->
   <string name="tab_group_sheet_dismiss_description">Гурӯҳи варақаҳоро нишон диҳед, дастаки таҳвилро печонед</string>
+  <plurals name="expanded_tab_group_header_description">
+    <!--
+      Accessibility description for the header of an expanded tab group.
+      %1$s is the group name, %2$d is the number of tabs, %3$s is the color name.
+    -->
+    <item quantity="one">%1$s гурӯҳи варақаҳо бо %2$d варақа, ранги «%3$s»</item>
+    <item quantity="other">%1$s гурӯҳи варақаҳо бо %2$d варақа, ранги «%3$s»</item>
+  </plurals>
   <!-- Title for the Delete tab group confirmation dialog. -->
   <string name="delete_tab_group_confirmation_dialog_title">Гурӯҳи варақаҳоро нест мекунед?</string>
   <!-- Text shown in the body of the Delete tab group confirmation dialog. -->
@@ -1917,6 +1941,8 @@
   <string name="download_rename_error_exists_error">Файл бо номи «%s» аллакай дар ин ҷойгиршавӣ вуҷуд дорад</string>
   <!-- Error message when renaming with an invalid file name. -->
   <string name="download_rename_error_invalid_name_error">Номҳои файлҳо наметавонанд аз аломати «/» истифода баранд</string>
+  <!-- Error message shown when a user tries to rename a downloaded file but only changes the casing (e.g., "file.txt" to "File.txt"). -->
+  <string name="download_rename_error_case_only_error">Номе, ки шумо ворид кардед, танҳо ҳарфҳои калон ё хурдро тағйир медиҳад. Номи дигари файлро кӯшиш кунед.</string>
   <!-- Title for the alert dialog when the file cannot be renamed. -->
   <string name="download_rename_error_cannot_rename_title">Номи файл иваз карда намешавад</string>
   <!-- Description message for the alert dialog when the file cannot be renamed. -->
@@ -2032,6 +2058,8 @@
   <!-- The error message of the dropdown, prompting the user to select a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_choose_reason_error">Лутфан, сабаберо интихоб намоед</string>
   <!-- The label/title of an optional field in the Web Compat Reporter feature for adding additional information. -->
+  <string name="webcompat_reporter_label_description_2">Мушкилотро ба таври муфассал тавсиф кунед, то ин маълумот ба мо дар таҳқиқи масъала кумак кунад (ихтиёрӣ)</string>
+  <!-- The label/title of an optional field in the Web Compat Reporter feature for adding additional information. -->
   <string name="webcompat_reporter_label_description">Мушкилиро тавзеҳ кунед (ихтиёрӣ)</string>
   <!-- The button text for navigating away from the feature to provide more information on the broken site's bug report. -->
   <string name="webcompat_reporter_add_more_info">Илова кардани маълумоти бештар</string>
@@ -2042,7 +2070,11 @@
   <!-- Text for a snackbar to confirm the successful submission of a WebCompat report. -->
   <string name="webcompat_reporter_success_snackbar_text_2">Гузориш фиристода шуд</string>
   <!-- Placeholder text for the description field to prompt the user on what they should type. -->
+  <string name="webcompat_reporter_problem_description_placeholder_text_2">Чӣ шуд? Шумо чиро интизор доштед? Лутфан, барои муайян кардани мушкилӣ қадамҳоро пешниҳод намоед.</string>
+  <!-- Placeholder text for the description field to prompt the user on what they should type. -->
   <string name="webcompat_reporter_problem_description_placeholder_text">Чӣ гап шуд? Чӣ гап мешуд?</string>
+  <!-- Label of the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. -->
+  <string name="webcompat_reporter_etp_checkbox_text_2">Фиристодани рӯйхати унсурҳое, ки ба воситаи муҳофизат аз пайгирӣ манъ карда шудаанд</string>
   <!-- Label of the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. -->
   <string name="webcompat_reporter_etp_checkbox_text">Фиристодани нишониҳои «URL», ки ба воситаи муҳофизат аз пайгирӣ манъ карда шудаанд</string>
   <!-- Description text for the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. It informs the user when checked, the report will include the list of URLs that were blocked by Enhanced Tracking Protection on the current page. -->
@@ -2053,6 +2085,12 @@
   <string name="webcompat_reporter_preview_bottom_sheet_header">Пешнамоиши гузориш</string>
   <!-- Label for the “Send” button shown in the WebCompat Report preview panel, which the user taps to submit the report. -->
   <string name="webcompat_reporter_preview_bottom_sheet_send">Фиристодан</string>
+  <!-- Title for the Edit URL confirmation dialog in the WebCompatReporter -->
+  <string name="webcompat_reporter_edit_url_dialog_title">Таҳрир кардани нишонии «URL»-и сомона</string>
+  <!-- Text shown on the save button for the Edit URL confirmation dialog in the WebCompatReporter. -->
+  <string name="webcompat_reporter_edit_url_dialog_save">Нигоҳ доштан</string>
+  <!-- Text shown on the dismiss button for the Edit URL confirmation dialog in the WebCompatReporter. -->
+  <string name="webcompat_reporter_edit_url_dialog_dismiss">Нодида гузарондан</string>
   <!--
     These reason strings are dropdown options on a WebCompat reporter form, indicating what is broken on the site.
 
@@ -2166,6 +2204,8 @@
   <string name="bookmark_sort_menu_z_to_a">Мураттаб кардан аз Я то А</string>
   <!-- Label for button to import bookmarks from file. -->
   <string name="bookmark_import_menu_button">Ворид кардан аз файл</string>
+  <!-- Snackbar message shown when a bookmark import attempt fails. -->
+  <string name="bookmark_import_failure_snackbar">Воридкунии хатбаракҳо иҷро нашуд. Аз нав кӯшиш кунед.</string>
   <!-- Default name for the folder created when importing bookmarks from a file. -->
   <string name="bookmark_import_destination_default_name">Хатбаракҳои воридшуда</string>
   <!--
@@ -2179,12 +2219,8 @@
   <string name="edit_bookmark_folder_fragment_title">Таҳрир кардани ҷузвдон</string>
   <!-- Bookmark URL editing field label -->
   <string name="bookmark_url_label">Нишонии URL</string>
-  <!-- Bookmark FOLDER editing field label -->
-  <string name="bookmark_folder_label">ҶУЗВДОН</string>
   <!-- Text indicating which folder a bookmark or folder will be saved in -->
   <string name="bookmark_save_in_label">Нигоҳ доштан дар</string>
-  <!-- Bookmark NAME editing field label -->
-  <string name="bookmark_name_label">НОМ</string>
   <!-- Label for a text input field for a bookmark or folder name -->
   <string name="bookmark_name_label_normal_case">Ном</string>
   <!-- Bookmark select folder screen title -->
@@ -2224,14 +2260,12 @@
   <string name="bookmark_import_bookmarks_button_content_description">Ворид кардан аз файл</string>
   <!-- Title for the bookmark list empty state -->
   <string name="bookmark_empty_list_title">То ҳол ягон хатбарак нест</string>
+  <!-- Title for the bookmark list empty state at the root level. -->
+  <string name="bookmark_empty_list_root_title">Ҳамаи хатбаракҳои дӯстдоштаи худро якҷоя нигоҳ доред</string>
   <!-- Bookmark screen folder description. %s is the count of bookmark folder children -->
   <string name="bookmarks_folder_description">Хатбаракҳо дар ҷузвдон: %s</string>
-  <!-- Description for the bookmark list empty state when you're not signed into sync. -->
-  <string name="bookmark_empty_list_guest_description">Сомонаҳоро ҳангоми тамошо нигоҳ доред. Барои ба даст овардани хатбаракҳо аз дастгоҳҳои ҳамоҳангшудаи дигар, ба ҳисоби худ ворид шавед.</string>
   <!-- Text for the button to navigate to sync authentication -->
   <string name="bookmark_empty_list_guest_cta">Барои ҳамоҳангсозӣ ворид шавед</string>
-  <!-- Description for the bookmark list empty state when you're signed into sync. -->
-  <string name="bookmark_empty_list_authenticated_description">Сомонаҳоро ҳангоми тамошо нигоҳ доред. Мо, инчунин, аз дастгоҳҳои ҳамоҳангшудаи дигар хатбаракҳоро ба даст меорем.</string>
   <!-- Description for the bookmark list empty state when you're in an empty folder. -->
   <string name="bookmark_empty_list_folder_description">Ҳангоми тамошо, хатбаракҳоро илова кунед, то тавонед сомонаҳои дӯстдоштаи худро дар оянда пайдо кунед.</string>
   <!-- Description for the add new folder button when selecting a folder. -->
@@ -2346,8 +2380,6 @@
   <string name="collections_header">Маҷмуаҳо</string>
   <!-- Content description (not visible, for screen readers etc.): Opens the collection menu when pressed -->
   <string name="collection_menu_button_content_description">Менюи маҷмуаҳо</string>
-  <!-- Label to describe what collections are to a new user without any collections -->
-  <string name="no_collections_description2">Чизҳоеро, ки ба шумо муҳиманд, ҷамъ кунед\nҶустуҷӯҳо, сомонаҳо ва варақаҳои монандро барои дастрасии фаврӣ дар оянда якҷоя кунед.</string>
   <!-- Title for the "select tabs" step of the collection creator -->
   <string name="create_collection_select_tabs">Варақаҳоро интихоб намоед</string>
   <!-- Title for the "select collection" step of the collection creator -->
@@ -2653,6 +2685,15 @@
   <string name="preference_enhanced_tracking_protection_explanation_2">«%s» шуморо аз бисёр васоити пайгирие, ки фаъолияти шуморо дар онлайн пайгирӣ мекунанд, муҳофизат менамояд.</string>
   <!-- Text displayed that links to website about enhanced tracking protection -->
   <string name="preference_enhanced_tracking_protection_explanation_learn_more">Маълумоти бештар</string>
+  <plurals name="trackers_blocked_count_2">
+    <!--
+      Trackers blocked card on homepage
+
+      Text shown on the trackers blocked card. %d is the number of trackers blocked.
+    -->
+    <item quantity="one">%d воситаи пайгирии манъшуда</item>
+    <item quantity="other">%d воситаи пайгирии манъшуда</item>
+  </plurals>
   <plurals name="trackers_blocked_count">
     <!--
       Trackers blocked card on homepage
@@ -2664,6 +2705,8 @@
   </plurals>
   <!-- Text shown on the trackers blocked card when no trackers have been blocked yet -->
   <string name="trackers_blocked_empty">Мо шуморо муҳофизат мекунем</string>
+  <!-- Text shown below the trackers blocked card with typing animation -->
+  <string name="help_catch_trackers">Барои боздоштани васоити пайгирӣ кумак кунед</string>
   <!-- Preference for enhanced tracking protection for the standard protection settings -->
   <string name="preference_enhanced_tracking_protection_standard_default_1">Стандартӣ (пешфарз)</string>
   <!-- Preference description for enhanced tracking protection for the standard protection settings -->
@@ -3042,6 +3085,8 @@
   <string name="saved_logins_sort_strategy_last_used">Истифодашудаи охирин</string>
   <!-- Content description (not visible, for screen readers etc.) -->
   <string name="saved_logins_menu_dropdown_chevron_icon_content_description_2">Менюи мураттабсозии ниҳонвожаҳо</string>
+  <!-- Label for button to import passwords from file. -->
+  <string name="passwords_import_menu_button">Ворид кардан аз файл</string>
   <!--
     Email Masks
 
@@ -3072,20 +3117,33 @@
   <string name="ip_protection_title">VPN</string>
   <!-- Label for the browser VPN toggle on the settings screen -->
   <string name="ip_protection_toggle_label">VPN</string>
+  <!-- Content description for the browser VPN settings screen top bar back button -->
+  <string name="ip_protection_navigate_back_button_content_description">Ба қафо гузаштан</string>
   <!-- Headline for the browser VPN promo card. %s is the name of the app (for example "Firefox"). -->
   <string name="ip_protection_promo_headline">«VPN»-и дарунсохти «%s»\u0020</string>
+  <!-- Body text for the browser VPN promo card . %s is a learn more link using ip_protection_learn_more as text. -->
+  <string name="ip_protection_promo_body_2">Аз тамошобинӣ бо муҳофизати иловагӣ тавассути пинҳон кардани ҷойгиршавии худ, ҳатто дар шабакаҳои ҷамъиятии «Wi-Fi» истифода баред. %s</string>
   <!-- Link text that opens additional information about the browser VPN -->
   <string name="ip_protection_learn_more">Маълумоти бештар</string>
+  <!-- Label for the monthly data allowance section on the browser VPN settings screen -->
+  <string name="ip_protection_data_limit_label">Маҳдудияти моҳонаи маълумот</string>
   <!--
     Data usage shown on the browser VPN settings screen.
     %1$.1f is the data remaining in GB (for example "8.3").
     %2$.1f is the total monthly allowance in GB (for example "50.0").
   -->
   <string name="ip_protection_data_limit_value">%1$.1f ГБ аз %2$.1f ГБ боқӣ мондааст</string>
+  <!--
+    Text shown below the data usage bar describing when the monthly allowance resets.
+    %1$.0f is the total monthly data allowance in GB (for example "50").
+  -->
+  <string name="ip_protection_data_reset_info">Дар рӯзи якуми ҳар моҳ ба %1$.0f ГБ аз нав танзим карда мешавад.</string>
   <!-- Header for the browser VPN `location` section -->
   <string name="ip_protection_location_section">Ҷойгиршавӣ</string>
   <!-- Label for the recommended automatic location option on the browser VPN settings screen -->
   <string name="ip_protection_location_recommended_label">Тавсияшуда</string>
+  <!-- Description for the recommended automatic location option on the browser VPN settings screen -->
+  <string name="ip_protection_location_recommended_description">Зудтарин ҷойгиршавии «VPN»-ро барои шумо интихоб мекунад.</string>
   <!-- Badge label shown in the menu item when the browser VPN is active -->
   <string name="preferences_ip_protection_on">Фаъол</string>
   <!-- Badge label shown in the menu item when the browser VPN is off -->
@@ -3100,14 +3158,47 @@
   <string name="ip_protection_menu_auth_required">Озмоед</string>
   <!-- Content description for the chevron button that opens the browser VPN settings screen -->
   <string name="ip_protection_navigate_settings">Кушодани танзимоти «VPN»</string>
+  <!--
+    Subtitle shown below the VPN label in menus when the monthly data allowance is exhausted.
+    %1$d is the total monthly allowance in GB (for example "50").
+  -->
+  <string name="ip_protection_menu_limit_reached">Ба маҳдудияти %1$d ГБ расид</string>
+  <!--
+    Error message shown on the browser VPN settings screen when the monthly data allowance is exhausted.
+    %1$d is the total monthly allowance in GB (for example "50").
+  -->
+  <string name="ip_protection_data_limit_reached_description">Шумо ҳамаи %1$d ГБ-и маълумоти «VPN»-и худро истифода бурдед. Дастрасӣ дар моҳи оянда аз нав танзим карда мешавад.</string>
   <!-- Label shown next to the browser protection icon in the address bar when the browser VPN is active -->
   <string name="ip_protection_toolbar_pill_label">«VPN» фаъол аст</string>
   <!-- Accessibility description for the browser VPN pill in the address bar when the VPN has been activated -->
   <string name="ip_protection_toolbar_pill_description">«VPN» фаъол аст.</string>
   <!-- Label for the button that starts the browser VPN authentication or authorization flow on the settings screen -->
   <string name="ip_protection_get_started">Оғози кор</string>
+  <!-- Label for the "connecting" state of the button that starts the browser VPN authentication or authorization flow on the settings screen -->
+  <string name="ip_protection_connecting">Пайваст мешавад…</string>
+  <!-- Headline for the browser VPN onboarding card. %s is the name of the app (for example "Firefox"). -->
+  <string name="ip_protection_onboarding_card_headline">Аз «VPN»-и дарунсохти «%s» истифода баред</string>
+  <!--
+    The body of the VPN onboarding card.
+    %1$s is a link using ip_protection_onboarding_body_link (“Browse with extra protection”) as text. It links to a support article about VPN on Firefox.
+    %2$d is the total monthly allowance in GB (for example "50").
+  -->
+  <string name="ip_protection_onboarding_body">%1$s тавассути пинҳон кардани ҷойгиршавии худ, ҳатто дар шабакаҳои ҷамъиятии «Wi-Fi» истифода баред. Ҳар моҳ %2$d ГБ ройгонро ба даст оред.</string>
+  <!-- Used as text for a link in ip_protection_onboarding_body. Make sure to adapt capitalization if the link is in the middle of the sentence. -->
+  <string name="ip_protection_onboarding_body_link">Аз тамошобинӣ бо муҳофизати иловагӣ истифода баред</string>
+  <!-- Used as text for a link in ip_protection_onboarding_body. Make sure to adapt capitalization if the link is in the middle of the sentence. -->
+  <string name="ip_protection_onboarding_body_link_promo">Маълумоти бештар</string>
   <!-- Label for the dismiss button on the onboarding bottom sheet. -->
   <string name="ip_protection_onboarding_not_now_button">Ҳоло не</string>
+  <!-- Snackbar (in-app pop-up notification) text to signal the browser VPN connection error -->
+  <string name="ip_protection_connection_error_snackbar">Пайвастшавӣ ба «VPN» иҷро нашуд. Пас аз чанд дақиқа аз нав кӯшиш кунед.</string>
+  <!--
+    Snackbar (in-app pop-up notification) text to signal the browser VPN has reached the monthly data limit.
+    %1$d is the total monthly allowance in GB (for example "50").
+  -->
+  <string name="ip_protection_data_limit_reached_snackbar">%1$d ГБ-и маълумоти «VPN» истифода шуд. Дастрасӣ дар моҳи оянда аз нав танзим карда мешавад.</string>
+  <!-- Snackbar (in-app pop-up notification) action button text that takes the user to the VPN settings screen. -->
+  <string name="ip_protection_data_limit_reached_snackbar_action">Танзимот</string>
   <!--
     Autofill
 
@@ -3408,8 +3499,14 @@
   <string name="homepage_shortcuts_show_all_content_description">Намоиш додани ҳамаи миёнбурҳо</string>
   <!-- Label for the "Add shortcut" button displayed as a tile. -->
   <string name="homepage_shortcuts_add_shortcut">Илова кардани миёнбур</string>
+  <!-- Title for the "Add to homepage" bottom sheet. -->
+  <string name="homepage_shortcuts_add_to_homepage">Илова кардан ба саҳифаи асосӣ</string>
+  <!-- Label for the "Add website" button in the "Add to homepage" bottom sheet. -->
+  <string name="homepage_shortcuts_add_website">Илова кардани сомона</string>
   <!-- Title text for the "Enter a Website URL" dialog for adding a shortcut. -->
   <string name="homepage_shortcuts_add_website_title">Нишонии «URL»-и сомонаро ворид намоед</string>
+  <!-- Title for the "Popular sites" section in the "Add to homepage" bottom sheet. -->
+  <string name="homepage_shortcuts_popular_sites">Сомонаҳои машҳур</string>
   <!-- Title text displayed in the dialog when shortcuts limit is reached. -->
   <string name="shortcut_max_limit_title">Ба ҳудуди шумораи миёнбурҳо расид</string>
   <!-- Content description text displayed in the dialog when shortcut limit is reached. -->
@@ -3496,8 +3593,6 @@
   <string name="default_browser_experiment_card_title">Гузоштан ба браузери пешфарзи худ</string>
   <!-- Default browser card text -->
   <string name="default_browser_experiment_card_text" tools:ignore="BrandUsage">Пайвандҳоеро, танзим кунед, то ки онҳо аз сомонаҳо, почтаи электронӣ ва паёмҳо дар браузери «Firefox» ба таври худкор кушода шаванд.</string>
-  <!-- Content description for close button in collection placeholder. -->
-  <string name="remove_home_collection_placeholder_content_description">Тоза кардан</string>
   <!-- Content description radio buttons with a link to more information -->
   <string name="radio_preference_info_content_description">Барои тафсилоти бештар зер кунед</string>
   <!-- Content description for the action bar "up" button -->
@@ -3529,20 +3624,10 @@
     Action label for elements that can be collapsed if interacting with them. Talkback will append this to say "Double tap to collapse".
   -->
   <string name="a11y_action_label_collapse">печондан</string>
-  <!-- Current state for elements that can be collapsed if interacting with them. Talkback will dictate this after a state change. -->
-  <string name="a11y_state_label_collapsed">печонда</string>
   <!-- Action label for elements that can be expanded if interacting with them. Talkback will append this to say "Double tap to expand". -->
   <string name="a11y_action_label_expand">баркушодан</string>
-  <!-- Current state for elements that can be expanded if interacting with them. Talkback will dictate this after a state change. -->
-  <string name="a11y_state_label_expanded">баркушода</string>
   <!-- Action label for links to a website containing documentation about a wallpaper collection. Talkback will append this to say "Double tap to open link to learn more about this collection". -->
   <string name="a11y_action_label_wallpaper_collection_learn_more">барои гирифтани маълумоти бештар оид ба ин маҷмуа пайвандро кушоед</string>
-  <!-- Content description for headings announced by accessibility service. %s is the text of the heading. Talkback will announce the text and then speak the word "Heading" indicating to the user that this text is a heading for a section. -->
-  <string name="a11y_heading">%s, Сарлавҳа</string>
-  <!-- Title for dialog displayed when trying to access links present in a text. -->
-  <string name="a11y_links_title">Пайвандҳо</string>
-  <!-- Additional content description for text bodies that contain urls. -->
-  <string name="a11y_links_available">Пайвандҳои дастрас</string>
   <!-- Translations feature -->
 
   <!--
@@ -3809,6 +3894,19 @@
     %s is the name of the app (for example "Firefox").
   -->
   <string name="protection_panel_banner_protected_title">Муҳофизати «%s» фаъол аст</string>
+  <plurals name="protection_panel_banner_protected_blocked_trackers_description">
+    <!--
+      Description text for the protection panel banner when privacy dashboard is enabled.
+      %1$d is the number of trackers blocked.
+    -->
+    <item quantity="one">%1$d воситаи пайгирӣ дар ин сомона манъ карда шудааст.</item>
+    <item quantity="other">%1$d воситаи пайгирӣ дар ин сомона манъ карда шудаанд.</item>
+  </plurals>
+  <!--
+    Description text for the protection panel banner when privacy dashboard is enabled.
+    and there are no trackers blocked.
+  -->
+  <string name="protection_panel_banner_protected_no_blocked_trackers_description">Мо шуморо муҳофизат мекунем.</string>
   <!-- Description text for the protection panel banner when tracking protection is enabled. -->
   <string name="protection_panel_banner_protected_description">Мо шуморо муҳофизат кардем. Агар ягон чизеро пайдо кунем, мо ба шумо хабар медиҳем.</string>
   <!-- Label text for the Enhanced Tracking Protection toggle. -->
@@ -3834,6 +3932,14 @@
   <string name="protection_panel_privacy_and_security_settings_2">Танзимоти махфият</string>
   <!-- Title text for the protection panel permissions section. -->
   <string name="protection_panel_permissions_title">Иҷозатҳо</string>
+  <plurals name="trackers_blocked_panel_total_num_trackers_blocked_2">
+    <!--
+      Text for displaying the total number of trackers blocked in the trackers blocked panel.
+      %1$d is a placeholder for the number of trackers blocked.
+    -->
+    <item quantity="one">%1$d воситаи пайгирӣ дар ин сомона манъ карда шудааст</item>
+    <item quantity="other">%1$d воситаи пайгирӣ дар ин сомона манъ карда шудаанд</item>
+  </plurals>
   <!--
     Text for displaying the total number of trackers blocked in the trackers blocked panel.
     %d is a placeholder for the number of trackers blocked.
@@ -4360,6 +4466,10 @@
   <string name="sports_widget_group_b">Гурӯҳи «B»</string>
   <!-- Sports widget group stage label for group C in the soccer tournament. -->
   <string name="sports_widget_group_c">Гурӯҳи «C»</string>
+  <!-- Sports widget group stage label for group D in the soccer tournament. -->
+  <string name="sports_widget_group_d">Гурӯҳи «D»</string>
+  <!-- Sports widget group stage label for group E in the soccer tournament. -->
+  <string name="sports_widget_group_e">Гурӯҳи «E»</string>
   <!-- Sports widget group stage label for group F in the soccer tournament. -->
   <string name="sports_widget_group_f">Гурӯҳи «F»</string>
   <!-- Sports widget group stage label for group G in the soccer tournament. -->
@@ -4411,6 +4521,11 @@
   <!-- Content description (for accessibility, not displayed) for the overflow (more options) menu button on the sports widget card. -->
   <string name="sports_widget_more_options_content_description">Имконоти бештар</string>
   <!--
+    Content description (for accessibility, not displayed) announcing the elapsed minutes of a live match.
+    %1$s is the clock value, which may be a plain number (e.g. "72") or include extra time (e.g. "90+3").
+  -->
+  <string name="sports_widget_match_elapsed_minutes">Вақти гузаштаи бозӣ: %1$s дақиқа</string>
+  <!--
     Content description (for accessibility, not displayed) for a paginated item.
     %1$s is the soccer tournament group name or stage (e.g. Group A represented by sports_widget_group_a, Round of 32 represented by sports_widget_round_of_32),
     %2$d is the current page number, and %3$d is the total number of pages.
@@ -4432,4 +4547,25 @@
   <string name="privacy_notice_updated_homepage_message_privacy_notice" tools:ignore="UnusedResources">Огоҳномаи махфият</string>
   <!-- The second active link used in privacy_notice_updated_homepage_message -->
   <string name="privacy_notice_updated_homepage_message_learn_more" tools:ignore="UnusedResources">Маълумоти бештар</string>
+  <!--
+    Firefox Labs
+
+    Firefox Labs is the name of a screen in Settings to allow users to learn about
+    experimental and in-development features, and turn those features on and off.
+    The "Labs" portion can be localized, "Firefox" must be treated as a brand and kept
+    in English.
+  -->
+  <string name="firefox_labs_title" tools:ignore="BrandUsage">Firefox Labs</string>
+  <!-- Banner title text on the Firefox Labs screen. -->
+  <string name="firefox_labs_banner_title_2">Хусусиятҳои таҷрибавии моро озмоед!</string>
+  <!-- The title used in a confirmation dialog on the Firefox Labs screen when toggling "on" or "off" an experimental feature that requires a restart. -->
+  <string name="firefox_labs_feature_dialog_title">Бозоғозӣ лозим аст</string>
+  <!-- The text on the dialog on the Firefox Labs screen for the positive button when toggling "on" and "off" experimental features. This prompts the user to confirm that they want to restart the app. -->
+  <string name="firefox_labs_dialog_restart_button">Аз нав оғоз кардан</string>
+  <!-- The text on the dialog on the Firefox Labs screen for the negative button when toggling "on" and "off" experimental features. This is used to cancel the action and return to the previous screen. -->
+  <string name="firefox_labs_dialog_cancel_button">Бекор кардан</string>
+  <!-- The title used in a confirmation dialog on the Firefox Labs screen when restoring the application to its defaults by turning "off" any experimental features. -->
+  <string name="firefox_labs_restore_defaults_dialog_title">Бозоғозӣ лозим аст</string>
+  <!-- The description used in a confirmation dialog on the Firefox Labs screen when restoring the application to its defaults by turning "off" any experimental features. %s is the name of the app (for example "Firefox Nightly") -->
+  <string name="firefox_labs_restore_defaults_dialog_message">Барои барқарор кардани танзимоти пешфарз, «%s»-ро аз нав оғоз кунед.</string>
 </resources>

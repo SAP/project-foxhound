@@ -252,21 +252,9 @@
   <!--
     Browser Toolbar
 
-    Content description for the Home screen button on the browser toolbar
-  -->
-  <string name="browser_toolbar_home">ہوم سکرین</string>
-  <!--
-    Browser Toolbar
-
     Content description for the translate page toolbar button that opens the translations dialog when no translation has occurred.
   -->
   <string name="browser_toolbar_translate">ورقے دا ترجمہ کرو</string>
-  <!--
-    Content description (not visible, for screen readers etc.) for the translate page toolbar button that opens the translations dialog when the page is translated successfully.
-    %1$s is the name of the language that is displayed in the original page. (For example: English)
-    %2$s is the name of the language which the page was translated to. (For example: French)
-  -->
-  <string name="browser_toolbar_translated_successfully">صفحہ %1$s کنوں %2$s تے ترجمہ کِیتا ڳِیا ہِے۔</string>
   <!--
     Locale Settings Fragment
 
@@ -819,8 +807,6 @@
   <string name="library_desktop_bookmarks_unfiled">ٻیاں نشانیاں</string>
   <!-- Option in Library to open History page -->
   <string name="library_history">تاریخ</string>
-  <!-- Option in Library to open a new tab -->
-  <string name="library_new_tab">نواں ٹیب</string>
   <!-- Settings Page Title -->
   <string name="settings_title">ترتیباں</string>
   <!-- Content description (not visible, for screen readers etc.): "Close button for library settings" -->
@@ -1078,12 +1064,8 @@
   <string name="edit_bookmark_folder_fragment_title">فولڈر وچ تبدیلی کرو</string>
   <!-- Bookmark URL editing field label -->
   <string name="bookmark_url_label">یوآرایل</string>
-  <!-- Bookmark FOLDER editing field label -->
-  <string name="bookmark_folder_label">فولڈر</string>
   <!-- Text indicating which folder a bookmark or folder will be saved in -->
   <string name="bookmark_save_in_label">وچ محفوظ کرو</string>
-  <!-- Bookmark NAME editing field label -->
-  <string name="bookmark_name_label">ناں</string>
   <!-- Label for a text input field for a bookmark or folder name -->
   <string name="bookmark_name_label_normal_case">ناں</string>
   <!-- Bookmark select folder screen title -->
@@ -1113,12 +1095,8 @@
   <string name="bookmark_item_menu_button_content_description">%s کیتے آئٹم مینیو</string>
   <!-- Title for the bookmark list empty state -->
   <string name="bookmark_empty_list_title">اڄݨ کوئی نشانیاں کائنی</string>
-  <!-- Description for the bookmark list empty state when you're not signed into sync. -->
-  <string name="bookmark_empty_list_guest_description">براؤز کرݨ ویلے سائٹاں محفوظ کرو۔ ٻیاں ہم وقت تھیاں ڈیوائساں کنوں نشانیاں گھنݨ کیتے سائن ان تھیوو۔</string>
   <!-- Text for the button to navigate to sync authentication -->
   <string name="bookmark_empty_list_guest_cta">ہم وقت کرݨ کیتے سائن ان تھیوو</string>
-  <!-- Description for the bookmark list empty state when you're signed into sync. -->
-  <string name="bookmark_empty_list_authenticated_description">براؤز کرݨ ویلے سائٹاں محفوظ کرو۔ اساں ٻیاں ہم وقت تھیاں ڈیوائساں کنوں نشانیاں وی پکڑ گھنسوں ۔</string>
   <!-- Description for the bookmark list empty state when you're in an empty folder. -->
   <string name="bookmark_empty_list_folder_description">ڄݙݨ تساں براؤز کرو تاں نشانیاں شامل کرو تاکہ تساں بعد وچ آپݨیاں پسند دیاں سائٹاں لبھ سڳو۔</string>
   <!-- Description for the add new folder button when selecting a folder. -->
@@ -1223,8 +1201,6 @@
   <string name="collections_header">مجموعے</string>
   <!-- Content description (not visible, for screen readers etc.): Opens the collection menu when pressed -->
   <string name="collection_menu_button_content_description">مجموعہ مینیو</string>
-  <!-- Label to describe what collections are to a new user without any collections -->
-  <string name="no_collections_description2">او شئیں جمع کرو جہڑیاں تہاݙے کیتے اہم ہن۔ \nبعد وچ فوری رسائی کیتے ایں طرحاں دیاں ڳولاں، سائٹاں تے ٹیباں کوں گروپ وچ کٹھا کرو۔</string>
   <!-- Title for the "select tabs" step of the collection creator -->
   <string name="create_collection_select_tabs">ٹیباں چݨو</string>
   <!-- Title for the "select collection" step of the collection creator -->
@@ -2047,8 +2023,6 @@
   <string name="default_browser_experiment_card_title">پہلوں مقرر براؤز تے سوئچ کرو</string>
   <!-- Default browser card text -->
   <string name="default_browser_experiment_card_text" tools:ignore="BrandUsage">فائرفوکس وچ خودکار کھولݨ کیتے سنیہے، ای میلاں تے ویب سائٹاں کنوں لنک مقرر کرو۔</string>
-  <!-- Content description for close button in collection placeholder. -->
-  <string name="remove_home_collection_placeholder_content_description">ہٹاؤ</string>
   <!-- Content description radio buttons with a link to more information -->
   <string name="radio_preference_info_content_description">ٻیاں تفصیلاں کیتے کلک کرو</string>
   <!-- Content description for the action bar "up" button -->
@@ -2065,20 +2039,10 @@
     Action label for elements that can be collapsed if interacting with them. Talkback will append this to say "Double tap to collapse".
   -->
   <string name="a11y_action_label_collapse">کٹھا کرو</string>
-  <!-- Current state for elements that can be collapsed if interacting with them. Talkback will dictate this after a state change. -->
-  <string name="a11y_state_label_collapsed">کٹھا تھی ڳئے</string>
   <!-- Action label for elements that can be expanded if interacting with them. Talkback will append this to say "Double tap to expand". -->
   <string name="a11y_action_label_expand">کھنڈاؤ</string>
-  <!-- Current state for elements that can be expanded if interacting with them. Talkback will dictate this after a state change. -->
-  <string name="a11y_state_label_expanded">کھنڈیج ڳیا</string>
   <!-- Action label for links to a website containing documentation about a wallpaper collection. Talkback will append this to say "Double tap to open link to learn more about this collection". -->
   <string name="a11y_action_label_wallpaper_collection_learn_more">ایں مجموعے بارے ٻیا سکھݨ کیتے لنک کھولو</string>
-  <!-- Content description for headings announced by accessibility service. %s is the text of the heading. Talkback will announce the text and then speak the word "Heading" indicating to the user that this text is a heading for a section. -->
-  <string name="a11y_heading">%s، سرخی</string>
-  <!-- Title for dialog displayed when trying to access links present in a text. -->
-  <string name="a11y_links_title">لنکاں</string>
-  <!-- Additional content description for text bodies that contain urls. -->
-  <string name="a11y_links_available">دستیاب لنک</string>
   <!-- Translations feature -->
 
   <!--

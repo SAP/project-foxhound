@@ -332,21 +332,9 @@
   <!--
     Browser Toolbar
 
-    Content description for the Home screen button on the browser toolbar
-  -->
-  <string name="browser_toolbar_home">Бастапқы экран</string>
-  <!--
-    Browser Toolbar
-
     Content description for the translate page toolbar button that opens the translations dialog when no translation has occurred.
   -->
   <string name="browser_toolbar_translate">Парақты аудару</string>
-  <!--
-    Content description (not visible, for screen readers etc.) for the translate page toolbar button that opens the translations dialog when the page is translated successfully.
-    %1$s is the name of the language that is displayed in the original page. (For example: English)
-    %2$s is the name of the language which the page was translated to. (For example: French)
-  -->
-  <string name="browser_toolbar_translated_successfully">Бет %1$s тілінен %2$s тіліне аударылды.</string>
   <!-- CFR description for the browser toolbar describing the "Shake to summarize feature" -->
   <string name="browser_toolbar_summarize_cfr_description">Бұл бетті бірнеше секунд ішінде қорытындылау үшін құрылғыңызды шайқаңыз. ⚡️</string>
   <!--
@@ -377,8 +365,6 @@
   <string name="ai_controls_banner_headline">%s ішінде сізде әрқашан таңдау мүмкіндігіңіз бар</string>
   <!-- Supporting text for the AI controls banner. %s is a learn more link using ai_controls_learn_more as text. -->
   <string name="ai_controls_banner_supporting_text_2">Бұған ЖИ жақсартылған мүмкіндіктерді пайдалану керек пе, жоқ па деген сұрақ кіреді. %s</string>
-  <!-- Supporting text for the AI controls banner -->
-  <string name="ai_controls_banner_supporting_text">Бұған ЖИ жақсартылған мүмкіндіктерді пайдалану керек пе, жоқ па деген сұрақ кіреді.</string>
   <!-- Link text for learning more about AI controls -->
   <string name="ai_controls_learn_more">Көбірек білу</string>
   <!-- Title for the block AI enhancements toggle -->
@@ -423,12 +409,6 @@
   <string name="default_locale_text">Құрылғы тіліне сүйену</string>
   <!-- Placeholder text shown in the search bar before a user enters text -->
   <string name="locale_search_hint">Тілді іздеу</string>
-  <!--
-    Search Fragment
-
-    Button in the search view that lets a user search by scanning a QR code
-  -->
-  <string name="search_scan_button_2">QR кодын сканерлеу</string>
   <!--
     Search Fragment
 
@@ -1142,7 +1122,7 @@
   <!-- Title for the customize home screen section with sponsored shortcuts. -->
   <string name="customize_toggle_contile">Демеушілік жарлықтары</string>
   <!-- Title for the customize home screen section that toggles the Homepage sports widget. -->
-  <string name="customize_toggle_world_cup" tools:ignore="UnusedResources">Әлем чемпионаты</string>
+  <string name="customize_toggle_world_cup">Әлем чемпионаты</string>
   <!--
     Wallpapers
 
@@ -1482,8 +1462,6 @@
   <string name="library_desktop_bookmarks_unfiled">Басқа бетбелгілер</string>
   <!-- Option in Library to open History page -->
   <string name="library_history">Шолу тарихы</string>
-  <!-- Option in Library to open a new tab -->
-  <string name="library_new_tab">Жаңа бет</string>
   <!-- Settings Page Title -->
   <string name="settings_title">Баптаулар</string>
   <!-- Content description (not visible, for screen readers etc.): "Close button for library settings" -->
@@ -2227,12 +2205,8 @@
   <string name="edit_bookmark_folder_fragment_title">Буманы түзету</string>
   <!-- Bookmark URL editing field label -->
   <string name="bookmark_url_label">URL</string>
-  <!-- Bookmark FOLDER editing field label -->
-  <string name="bookmark_folder_label">БУМА</string>
   <!-- Text indicating which folder a bookmark or folder will be saved in -->
   <string name="bookmark_save_in_label">Қайда сақтау</string>
-  <!-- Bookmark NAME editing field label -->
-  <string name="bookmark_name_label">АТЫ</string>
   <!-- Label for a text input field for a bookmark or folder name -->
   <string name="bookmark_name_label_normal_case">Аты</string>
   <!-- Bookmark select folder screen title -->
@@ -2276,12 +2250,8 @@
   <string name="bookmark_empty_list_root_title">Барлық таңдамалы бетбелгілеріңізді бірге сақтаңыз</string>
   <!-- Bookmark screen folder description. %s is the count of bookmark folder children -->
   <string name="bookmarks_folder_description">Бумадағы бетбелгілер: %s</string>
-  <!-- Description for the bookmark list empty state when you're not signed into sync. -->
-  <string name="bookmark_empty_list_guest_description">Шолу кезінде сайттарды сақтаңыз. Басқа синхрондалған құрылғылардан бетбелгілерді алу үшін жүйеге кіріңіз.</string>
   <!-- Text for the button to navigate to sync authentication -->
   <string name="bookmark_empty_list_guest_cta">Синхрондау ішіне кіру</string>
-  <!-- Description for the bookmark list empty state when you're signed into sync. -->
-  <string name="bookmark_empty_list_authenticated_description">Шолу кезінде сайттарды сақтаңыз. Басқа синхрондалған құрылғылардан да бетбелгілерді аламыз.</string>
   <!-- Description for the bookmark list empty state when you're in an empty folder. -->
   <string name="bookmark_empty_list_folder_description">Таңдаулы сайттарды кейінірек табу үшін шолу кезінде бетбелгілерді қосыңыз.</string>
   <!-- Description for the add new folder button when selecting a folder. -->
@@ -2396,8 +2366,6 @@
   <string name="collections_header">Жинақтар</string>
   <!-- Content description (not visible, for screen readers etc.): Opens the collection menu when pressed -->
   <string name="collection_menu_button_content_description">Жинақ мәзірі</string>
-  <!-- Label to describe what collections are to a new user without any collections -->
-  <string name="no_collections_description2">Өзіңізге маңызды заттарды жинаңыз.\nКейінірек жылдам қол жеткізу үшін ұқсас іздеулерді, сайттарды және беттерді біріктіріңіз.</string>
   <!-- Title for the "select tabs" step of the collection creator -->
   <string name="create_collection_select_tabs">Беттерді таңдау</string>
   <!-- Title for the "select collection" step of the collection creator -->
@@ -2849,8 +2817,6 @@
   <string name="etp_suspected_fingerprinters_description">Күмәнді болған цифрлық саусақ іздерін жинаушыларды тоқтату үшін цифрлық саусақ іздерін жинаушылардан қорғанысты іске қосады.</string>
   <!-- Category of trackers (fingerprinters) that can be blocked by Enhanced Tracking Protection -->
   <string name="etp_known_fingerprinters_title">Белгілі болған цифрлық саусақ іздерін жинаушылар</string>
-  <!-- Label for the fingerprinters category shown in the tracking protections dashboard breakdown -->
-  <string name="tracking_dashboard_fingerprinters_category_name">Цифрлық баспаны жинаушылар</string>
   <!--
     Description of the SmartBlock Enhanced Tracking Protection feature. The * symbol is intentionally hardcoded here,
     as we use it on the UI to indicate which trackers have been partially unblocked.
@@ -3141,8 +3107,6 @@
   <string name="ip_protection_promo_headline">%s ішіндегі кіріктірілген VPN</string>
   <!-- Body text for the browser VPN promo card . %s is a learn more link using ip_protection_learn_more as text. -->
   <string name="ip_protection_promo_body_2">Қоғамдық Wi-Fi желісінде болсаңыз да, орналасқан жеріңізді жасыру арқылы қосымша қорғаныспен шолыңыз. %s</string>
-  <!-- Body text for the browser VPN promo card -->
-  <string name="ip_protection_promo_body">Қоғамдық Wi-Fi желісінде болсаңыз да, орналасқан жеріңізді жасыру арқылы қосымша қорғаныспен шолыңыз.</string>
   <!-- Link text that opens additional information about the browser VPN -->
   <string name="ip_protection_learn_more">Көбірек білу</string>
   <!-- Label for the monthly data allowance section on the browser VPN settings screen -->
@@ -3605,8 +3569,6 @@
   <string name="default_browser_experiment_card_title">Негізгі браузеріңізді ауыстыру</string>
   <!-- Default browser card text -->
   <string name="default_browser_experiment_card_text" tools:ignore="BrandUsage">Веб-сайттар, эл. пошта хаттары және хабарламалардан сілтемелерді Firefox-та автоматты түрде ашылатындай етіп баптау.</string>
-  <!-- Content description for close button in collection placeholder. -->
-  <string name="remove_home_collection_placeholder_content_description">Өшіру</string>
   <!-- Content description radio buttons with a link to more information -->
   <string name="radio_preference_info_content_description">Көбірек білу үшін шертіңіз</string>
   <!-- Content description for the action bar "up" button -->
@@ -3638,20 +3600,10 @@
     Action label for elements that can be collapsed if interacting with them. Talkback will append this to say "Double tap to collapse".
   -->
   <string name="a11y_action_label_collapse">бүктеу</string>
-  <!-- Current state for elements that can be collapsed if interacting with them. Talkback will dictate this after a state change. -->
-  <string name="a11y_state_label_collapsed">бүктелген</string>
   <!-- Action label for elements that can be expanded if interacting with them. Talkback will append this to say "Double tap to expand". -->
   <string name="a11y_action_label_expand">жазық қылу</string>
-  <!-- Current state for elements that can be expanded if interacting with them. Talkback will dictate this after a state change. -->
-  <string name="a11y_state_label_expanded">жазық етілген</string>
   <!-- Action label for links to a website containing documentation about a wallpaper collection. Talkback will append this to say "Double tap to open link to learn more about this collection". -->
   <string name="a11y_action_label_wallpaper_collection_learn_more">осы жинақ туралы көбірек білу үшін сілтемені ашыңыз</string>
-  <!-- Content description for headings announced by accessibility service. %s is the text of the heading. Talkback will announce the text and then speak the word "Heading" indicating to the user that this text is a heading for a section. -->
-  <string name="a11y_heading">%s, Тақырыптама</string>
-  <!-- Title for dialog displayed when trying to access links present in a text. -->
-  <string name="a11y_links_title">Сiлтемелер</string>
-  <!-- Additional content description for text bodies that contain urls. -->
-  <string name="a11y_links_available">Сілтемелер қолжетімді</string>
   <!-- Translations feature -->
 
   <!--
@@ -4577,7 +4529,7 @@
   <!-- Sports widget match status label shown during halftime of a match. -->
   <string name="sports_widget_halftime" tools:ignore="UnusedResources">Үзіліс</string>
   <!-- Sports widget match status label shown during extra time of a match. -->
-  <string name="sports_widget_extra_time" tools:ignore="UnusedResources">Қосымша уақыт</string>
+  <string name="sports_widget_extra_time">Қосымша уақыт</string>
   <!-- Sports widget match status label shown during penalties of a match. -->
   <string name="sports_widget_penalties">Пенальти</string>
   <!--

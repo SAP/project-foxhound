@@ -44,13 +44,4 @@
   <string name="mozac_protections_dashboard_empty_title">%1$s blochează elementele de urmărire în timp ce navighezi.</string>
   <!-- Subtitle shown when no trackers have been blocked yet -->
   <string name="mozac_protections_dashboard_empty_subtitle">Le vei vedea aici.</string>
-  <plurals name="mozac_protections_dashboard_trackers_count">
-    <!--
-      Label used for the number of trackers blocked.
-      %1$d is the number of trackers.
-    -->
-    <item quantity="one">%1$d element de urmărire</item>
-    <item quantity="few">%1$d elemente de urmărire</item>
-    <item quantity="other">%1$d de elemente de urmărire</item>
-  </plurals>
 </resources>

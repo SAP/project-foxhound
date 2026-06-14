@@ -46,25 +46,4 @@
   <string name="mozac_protections_dashboard_empty_title">%1$s blokuje sledovacie prvky počas prehliadania.</string>
   <!-- Subtitle shown when no trackers have been blocked yet -->
   <string name="mozac_protections_dashboard_empty_subtitle">Uvidíte ich tu.</string>
-  <plurals name="mozac_protections_dashboard_trackers_count">
-    <!--
-      Label used for the number of trackers blocked.
-      %1$d is the number of trackers.
-    -->
-    <item quantity="one">%1$d sledovací prvok</item>
-    <item quantity="few">%1$d sledovacie prvky</item>
-    <item quantity="many">%1$d sledovacích prvkov</item>
-    <item quantity="other">%1$d sledovacích prvkov</item>
-  </plurals>
-  <plurals name="mozac_protections_dashboard_total_blocked_since">
-    <!--
-      Footer line shown in the dashboard summarizing total trackers blocked
-      since a specific date. %1$s is the trackers count phrase (e.g.
-      "5,305 trackers"). %2$s is the formatted date (e.g. "February 23, 2026").
-    -->
-    <item quantity="one">%1$s prvok zablokovaný od %2$s</item>
-    <item quantity="few">%1$s prvky zablokované od %2$s</item>
-    <item quantity="many">%1$s prvkov zablokovaných od %2$s</item>
-    <item quantity="other">%1$s prvkov zablokovaných od %2$s</item>
-  </plurals>
 </resources>

@@ -102,8 +102,6 @@
   <string name="preference_follow_device_theme">ଡିଭାଇସ୍ ର ଥିମକୁ ଅନୁସରଣ କରନ୍ତୁ</string>
   <!-- Option in Library to open History page -->
   <string name="library_history">ଇତିହାସ</string>
-  <!-- Option in Library to open a new tab -->
-  <string name="library_new_tab">ନୂଆ ଟ୍ୟାବ୍</string>
   <!-- Settings Page Title -->
   <string name="settings_title">ସେଟିଂସମୂହ</string>
   <!-- Option for auto closing tabs that will auto close tabs after one month -->

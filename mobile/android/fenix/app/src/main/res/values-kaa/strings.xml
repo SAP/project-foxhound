@@ -172,12 +172,6 @@
   <!-- Browser menu button to open the current page in an external app -->
   <string name="browser_menu_open_app_link">Baǵdarlamada ashıw</string>
   <!--
-    Browser Toolbar
-
-    Content description for the Home screen button on the browser toolbar
-  -->
-  <string name="browser_toolbar_home">Tiykarǵı ekran</string>
-  <!--
     Locale Settings Fragment
 
     Content description for tick mark on selected language
@@ -531,8 +525,6 @@
   <string name="library_desktop_bookmarks_unfiled">Basqa saylandılar</string>
   <!-- Option in Library to open History page -->
   <string name="library_history">Tariyx</string>
-  <!-- Option in Library to open a new tab -->
-  <string name="library_new_tab">Jańa bet</string>
   <!-- Settings Page Title -->
   <string name="settings_title">Sazlawlar</string>
   <!-- Content description (not visible, for screen readers etc.): "Close button for library settings" -->
@@ -764,10 +756,6 @@
   <string name="edit_bookmark_folder_fragment_title">Papkaǵa ózgeris kirgiziw</string>
   <!-- Bookmark URL editing field label -->
   <string name="bookmark_url_label">URL</string>
-  <!-- Bookmark FOLDER editing field label -->
-  <string name="bookmark_folder_label">PAPKA</string>
-  <!-- Bookmark NAME editing field label -->
-  <string name="bookmark_name_label">ATAMASI</string>
   <!-- Bookmark select folder screen title -->
   <string name="bookmark_select_folder_fragment_label">Papkanı tańlaw</string>
   <!-- Bookmark editing error missing or improper URL -->
@@ -871,8 +859,6 @@
   <string name="collections_header">Toplamlar</string>
   <!-- Content description (not visible, for screen readers etc.): Opens the collection menu when pressed -->
   <string name="collection_menu_button_content_description">Toplam menyusi</string>
-  <!-- Label to describe what collections are to a new user without any collections -->
-  <string name="no_collections_description2">Sizge áhmiyetli nárselerdi jıynań.\nKeleshekte tez kiriw ushın uqsas izlewlerdi, saytlardı hám betlerdi biriktiriń.</string>
   <!-- Title for the "select tabs" step of the collection creator -->
   <string name="create_collection_select_tabs">Betlerdi tańlań</string>
   <!-- Title for the "select collection" step of the collection creator -->
@@ -1535,8 +1521,6 @@
   <string name="other_default_search_engine_suggestion_header">%s da izlew</string>
   <!-- Default browser card text -->
   <string name="default_browser_experiment_card_text" tools:ignore="BrandUsage">Saytlardaǵı, elektron xatlardaǵı hám xabarlardaǵı siltemelerdi Firefoxda avtomat tárizde ashılatuǵın etip sazlań.</string>
-  <!-- Content description for close button in collection placeholder. -->
-  <string name="remove_home_collection_placeholder_content_description">Alıp taslaw</string>
   <!-- Content description radio buttons with a link to more information -->
   <string name="radio_preference_info_content_description">Kóbirek biliw ushın basıń</string>
   <!-- Content description for the action bar "up" button -->

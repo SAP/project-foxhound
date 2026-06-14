@@ -135,12 +135,6 @@
   <!-- Browser menu button to open the current page in an external app -->
   <string name="browser_menu_open_app_link">ایپ میں کھولیں</string>
   <!--
-    Browser Toolbar
-
-    Content description for the Home screen button on the browser toolbar
-  -->
-  <string name="browser_toolbar_home">ابتدائی اسکرین</string>
-  <!--
     Locale Settings Fragment
 
     Content description for tick mark on selected language
@@ -392,8 +386,6 @@
   <string name="library_desktop_bookmarks_unfiled">دیگر بک مارکس</string>
   <!-- Option in Library to open History page -->
   <string name="library_history">سابقات</string>
-  <!-- Option in Library to open a new tab -->
-  <string name="library_new_tab">نیا ٹیب</string>
   <!-- Settings Page Title -->
   <string name="settings_title">سیٹنگز</string>
   <!-- Content description (not visible, for screen readers etc.): "Close button for library settings" -->
@@ -579,10 +571,6 @@
   <string name="edit_bookmark_folder_fragment_title">فولڈر تدوین کریں</string>
   <!-- Bookmark URL editing field label -->
   <string name="bookmark_url_label">URL</string>
-  <!-- Bookmark FOLDER editing field label -->
-  <string name="bookmark_folder_label">فولڈر</string>
-  <!-- Bookmark NAME editing field label -->
-  <string name="bookmark_name_label">نام</string>
   <!-- Bookmark select folder screen title -->
   <string name="bookmark_select_folder_fragment_label">فولڈر منتخب کریں</string>
   <!-- Bookmark editing error missing or improper URL -->
@@ -1153,8 +1141,6 @@
     The header text of the auto-close message when the user is asked if they want to turn on the auto-closing of inactive tabs.
   -->
   <string name="inactive_tabs_auto_close_message_header" tools:ignore="UnusedResources">ایک ماہ کے بعد خودکار بند کریں ؟</string>
-  <!-- Content description for close button in collection placeholder. -->
-  <string name="remove_home_collection_placeholder_content_description">ہٹائیں</string>
   <!-- Content description radio buttons with a link to more information -->
   <string name="radio_preference_info_content_description">تفصیلات کے لیے کلک کریں</string>
   <!-- Content description for the action bar "up" button -->

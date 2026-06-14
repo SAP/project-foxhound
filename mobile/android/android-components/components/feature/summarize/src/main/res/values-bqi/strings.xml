@@ -9,10 +9,16 @@
 <resources>
   <!-- Link text to learn more about downloading Gemini Nano -->
   <string name="mozac_summarize_learn_more_link">قلوه دووسته بۊین</string>
+  <!-- Title for the off-device shake summarization consent screen. Localization note: Asking if the user wants to use the shake gesture to summarize the page they are viewing. -->
+  <string name="mozac_summarize_shake_consent_off_device_title">وا ی تکووݩ خولاسه کونه؟</string>
+  <!-- Message for the off-device shake summarization consent screen. %1$s is 'Firefox' -->
+  <string name="mozac_summarize_shake_consent_off_device_message">دسگا خوتووݩ ن تکووݩ بڌین، خولاسه بلگه ز%1$s ن من چن سانیه بگیرین.</string>
   <!-- Button text for the off-device shake summarization consent screen approving shake consent. Localization note: "Continue" turns on the shake to summarize feature. -->
   <string name="mozac_summarize_shake_consent_off_device_button_positive">رئڌن وا پؽش</string>
   <!-- Button text for the off-device shake summarization consent screen denying shake consent. Localization note: "Not now" dismisses the request to turn on the shake to summarize feature. -->
   <string name="mozac_summarize_shake_consent_off_device_negative_button">سکو ن</string>
+  <!-- Title for the on-device shake summarization and download consent screen -->
+  <string name="mozac_summarize_shake_consent_on_device_title">خولاسه ای بلگه</string>
   <!-- Button text for the on-device shake summarization and download consent screen denying shake and download consent -->
   <string name="mozac_summarize_shake_consent_on_device_negative_button">سکو ن</string>
   <!-- Button text for the consent to download an on-device model denying download consent -->

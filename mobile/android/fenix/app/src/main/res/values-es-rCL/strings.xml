@@ -332,21 +332,9 @@
   <!--
     Browser Toolbar
 
-    Content description for the Home screen button on the browser toolbar
-  -->
-  <string name="browser_toolbar_home">Pantalla de inicio</string>
-  <!--
-    Browser Toolbar
-
     Content description for the translate page toolbar button that opens the translations dialog when no translation has occurred.
   -->
   <string name="browser_toolbar_translate">Traducir página</string>
-  <!--
-    Content description (not visible, for screen readers etc.) for the translate page toolbar button that opens the translations dialog when the page is translated successfully.
-    %1$s is the name of the language that is displayed in the original page. (For example: English)
-    %2$s is the name of the language which the page was translated to. (For example: French)
-  -->
-  <string name="browser_toolbar_translated_successfully">Página traducida de %1$s a %2$s.</string>
   <!-- CFR description for the browser toolbar describing the "Shake to summarize feature" -->
   <string name="browser_toolbar_summarize_cfr_description">Agita tu dispositivo para resumir esta página en segundos. ⚡️</string>
   <!--
@@ -377,8 +365,6 @@
   <string name="ai_controls_banner_headline">Siempre tienes una opción en %s</string>
   <!-- Supporting text for the AI controls banner. %s is a learn more link using ai_controls_learn_more as text. -->
   <string name="ai_controls_banner_supporting_text_2">Esto incluye la decisión de utilizar funcionalidades mejoradas con inteligencia artificial. %s</string>
-  <!-- Supporting text for the AI controls banner -->
-  <string name="ai_controls_banner_supporting_text">Esto incluye la decisión de utilizar funcionalidades mejoradas con inteligencia artificial.</string>
   <!-- Link text for learning more about AI controls -->
   <string name="ai_controls_learn_more">Aprender más</string>
   <!-- Title for the block AI enhancements toggle -->
@@ -423,12 +409,6 @@
   <string name="default_locale_text">Usar el idioma del dispositivo</string>
   <!-- Placeholder text shown in the search bar before a user enters text -->
   <string name="locale_search_hint">Buscar idioma</string>
-  <!--
-    Search Fragment
-
-    Button in the search view that lets a user search by scanning a QR code
-  -->
-  <string name="search_scan_button_2">Escanear código QR</string>
   <!--
     Search Fragment
 
@@ -1141,10 +1121,12 @@
   <string name="customize_toggle_pocket_sponsored">Historias patrocinadas</string>
   <!-- Title for the opening wallpaper settings screen -->
   <string name="customize_wallpapers">Fondos de pantalla</string>
+  <!-- Label for the menu item that opens the wallpaper settings screen. -->
+  <string name="browser_menu_change_wallpaper">Cambiar fondo de pantalla</string>
   <!-- Title for the customize home screen section with sponsored shortcuts. -->
   <string name="customize_toggle_contile">Atajos patrocinados</string>
   <!-- Title for the customize home screen section that toggles the Homepage sports widget. -->
-  <string name="customize_toggle_world_cup" tools:ignore="UnusedResources">Copa Mundial</string>
+  <string name="customize_toggle_world_cup">Copa Mundial</string>
   <!--
     Wallpapers
 
@@ -1484,8 +1466,6 @@
   <string name="library_desktop_bookmarks_unfiled">Otros marcadores</string>
   <!-- Option in Library to open History page -->
   <string name="library_history">Historial</string>
-  <!-- Option in Library to open a new tab -->
-  <string name="library_new_tab">Nueva pestaña</string>
   <!-- Settings Page Title -->
   <string name="settings_title">Ajustes</string>
   <!-- Content description (not visible, for screen readers etc.): "Close button for library settings" -->
@@ -2105,6 +2085,12 @@
   <string name="webcompat_reporter_preview_bottom_sheet_header">Vista previa del reporte</string>
   <!-- Label for the “Send” button shown in the WebCompat Report preview panel, which the user taps to submit the report. -->
   <string name="webcompat_reporter_preview_bottom_sheet_send">Enviar</string>
+  <!-- Title for the Edit URL confirmation dialog in the WebCompatReporter -->
+  <string name="webcompat_reporter_edit_url_dialog_title">Editar la URL del sitio web</string>
+  <!-- Text shown on the save button for the Edit URL confirmation dialog in the WebCompatReporter. -->
+  <string name="webcompat_reporter_edit_url_dialog_save">Guardar</string>
+  <!-- Text shown on the dismiss button for the Edit URL confirmation dialog in the WebCompatReporter. -->
+  <string name="webcompat_reporter_edit_url_dialog_dismiss">Ocultar</string>
   <!--
     These reason strings are dropdown options on a WebCompat reporter form, indicating what is broken on the site.
 
@@ -2233,12 +2219,8 @@
   <string name="edit_bookmark_folder_fragment_title">Editar carpeta</string>
   <!-- Bookmark URL editing field label -->
   <string name="bookmark_url_label">URL</string>
-  <!-- Bookmark FOLDER editing field label -->
-  <string name="bookmark_folder_label">CARPETA</string>
   <!-- Text indicating which folder a bookmark or folder will be saved in -->
   <string name="bookmark_save_in_label">Guardar en</string>
-  <!-- Bookmark NAME editing field label -->
-  <string name="bookmark_name_label">NOMBRE</string>
   <!-- Label for a text input field for a bookmark or folder name -->
   <string name="bookmark_name_label_normal_case">Nombre</string>
   <!-- Bookmark select folder screen title -->
@@ -2282,12 +2264,8 @@
   <string name="bookmark_empty_list_root_title">Mantén todos tus marcadores favoritos juntos</string>
   <!-- Bookmark screen folder description. %s is the count of bookmark folder children -->
   <string name="bookmarks_folder_description">Marcadores en la carpeta: %s</string>
-  <!-- Description for the bookmark list empty state when you're not signed into sync. -->
-  <string name="bookmark_empty_list_guest_description">Guarda sitios mientras navegas. Conéctate para rescatar los marcadores de tus otros dispositivos sincronizados.</string>
   <!-- Text for the button to navigate to sync authentication -->
   <string name="bookmark_empty_list_guest_cta">Conectarse para sincronizar</string>
-  <!-- Description for the bookmark list empty state when you're signed into sync. -->
-  <string name="bookmark_empty_list_authenticated_description">Guarda sitios mientras navegas. También rescataremos los marcadores de tus otros dispositivos sincronizados.</string>
   <!-- Description for the bookmark list empty state when you're in an empty folder. -->
   <string name="bookmark_empty_list_folder_description">Añade marcadores mientras navegas para que puedas encontrar tus sitios favoritos más tarde.</string>
   <!-- Description for the add new folder button when selecting a folder. -->
@@ -2402,8 +2380,6 @@
   <string name="collections_header">Colecciones</string>
   <!-- Content description (not visible, for screen readers etc.): Opens the collection menu when pressed -->
   <string name="collection_menu_button_content_description">Menú de colecciones</string>
-  <!-- Label to describe what collections are to a new user without any collections -->
-  <string name="no_collections_description2">Recolecta las cosas que te importan.\nAgrupa las búsquedas, los sitios y las pestañas similares para acceder a ellas rápidamente.</string>
   <!-- Title for the "select tabs" step of the collection creator -->
   <string name="create_collection_select_tabs">Seleccionar pestañas</string>
   <!-- Title for the "select collection" step of the collection creator -->
@@ -2855,8 +2831,6 @@
   <string name="etp_suspected_fingerprinters_description">Permite la protección de huellas digitales para detener a los creadores de huellas (fingerprinters) sospechosos.</string>
   <!-- Category of trackers (fingerprinters) that can be blocked by Enhanced Tracking Protection -->
   <string name="etp_known_fingerprinters_title">Creadores de huellas (Fingerprinters) conocidos</string>
-  <!-- Label for the fingerprinters category shown in the tracking protections dashboard breakdown -->
-  <string name="tracking_dashboard_fingerprinters_category_name">Creadores de huellas (Fingerprinters)</string>
   <!--
     Description of the SmartBlock Enhanced Tracking Protection feature. The * symbol is intentionally hardcoded here,
     as we use it on the UI to indicate which trackers have been partially unblocked.
@@ -3149,8 +3123,6 @@
   <string name="ip_protection_promo_headline">VPN integrada de %s</string>
   <!-- Body text for the browser VPN promo card . %s is a learn more link using ip_protection_learn_more as text. -->
   <string name="ip_protection_promo_body_2">Navega con mayor protección ocultando tu ubicación, incluso en redes Wi-Fi públicas. %s</string>
-  <!-- Body text for the browser VPN promo card -->
-  <string name="ip_protection_promo_body">Navega con mayor protección ocultando tu ubicación, incluso en redes Wi-Fi públicas.</string>
   <!-- Link text that opens additional information about the browser VPN -->
   <string name="ip_protection_learn_more">Aprender más</string>
   <!-- Label for the monthly data allowance section on the browser VPN settings screen -->
@@ -3214,6 +3186,14 @@
   <string name="ip_protection_onboarding_body">%1$s ocultando tu ubicación, incluso en redes Wi-Fi públicas. Obtén %2$d GB gratis cada mes.</string>
   <!-- Used as text for a link in ip_protection_onboarding_body. Make sure to adapt capitalization if the link is in the middle of the sentence. -->
   <string name="ip_protection_onboarding_body_link">Navega con protección adicional</string>
+  <!--
+    The body of the VPN onboarding card for a promotion that provides unlimited data bandwidth for a certain time.
+    %1$s is a localized date (for example "Jun 9") indicating the end of the promotional period.
+    %2$s is a link using ip_protection_onboarding_body_link_promo (“Learn more”) as text. It links to a support article about VPN on Firefox.
+  -->
+  <string name="ip_protection_onboarding_body_promo">Actívalo para que tu navegación sea más privada y difícil de rastrear. Pruébalo ahora para obtener ancho de banda ilimitado a través de %1$s. %2$s</string>
+  <!-- Used as text for a link in ip_protection_onboarding_body. Make sure to adapt capitalization if the link is in the middle of the sentence. -->
+  <string name="ip_protection_onboarding_body_link_promo">Más información</string>
   <!-- Label for the dismiss button on the onboarding bottom sheet. -->
   <string name="ip_protection_onboarding_not_now_button">Ahora no</string>
   <!-- Snackbar (in-app pop-up notification) text to signal the browser VPN connection error -->
@@ -3223,6 +3203,8 @@
     %1$d is the total monthly allowance in GB (for example "50").
   -->
   <string name="ip_protection_data_limit_reached_snackbar">Se han utilizado %1$d GB de datos de la VPN. El acceso se restablecerá el próximo mes.</string>
+  <!-- Snackbar (in-app pop-up notification) action button text that takes the user to the VPN settings screen. -->
+  <string name="ip_protection_data_limit_reached_snackbar_action">Ajustes</string>
   <!--
     Autofill
 
@@ -3529,6 +3511,8 @@
   <string name="homepage_shortcuts_add_website">Añadir sitio web</string>
   <!-- Title text for the "Enter a Website URL" dialog for adding a shortcut. -->
   <string name="homepage_shortcuts_add_website_title">Ingresa una URL válida</string>
+  <!-- Title for the "Popular sites" section in the "Add to homepage" bottom sheet. -->
+  <string name="homepage_shortcuts_popular_sites">Sitios populares</string>
   <!-- Title text displayed in the dialog when shortcuts limit is reached. -->
   <string name="shortcut_max_limit_title">Límite de accesos directos alcanzado</string>
   <!-- Content description text displayed in the dialog when shortcut limit is reached. -->
@@ -3615,8 +3599,6 @@
   <string name="default_browser_experiment_card_title">Cambia tu navegador predeterminado</string>
   <!-- Default browser card text -->
   <string name="default_browser_experiment_card_text" tools:ignore="BrandUsage">Configura enlaces de sitios web, correos electrónicos y mensajes para que se abran automáticamente en Firefox.</string>
-  <!-- Content description for close button in collection placeholder. -->
-  <string name="remove_home_collection_placeholder_content_description">Eliminar</string>
   <!-- Content description radio buttons with a link to more information -->
   <string name="radio_preference_info_content_description">Clic para más detalles</string>
   <!-- Content description for the action bar "up" button -->
@@ -3648,20 +3630,10 @@
     Action label for elements that can be collapsed if interacting with them. Talkback will append this to say "Double tap to collapse".
   -->
   <string name="a11y_action_label_collapse">contraer</string>
-  <!-- Current state for elements that can be collapsed if interacting with them. Talkback will dictate this after a state change. -->
-  <string name="a11y_state_label_collapsed">contraído</string>
   <!-- Action label for elements that can be expanded if interacting with them. Talkback will append this to say "Double tap to expand". -->
   <string name="a11y_action_label_expand">expandir</string>
-  <!-- Current state for elements that can be expanded if interacting with them. Talkback will dictate this after a state change. -->
-  <string name="a11y_state_label_expanded">expandido</string>
   <!-- Action label for links to a website containing documentation about a wallpaper collection. Talkback will append this to say "Double tap to open link to learn more about this collection". -->
   <string name="a11y_action_label_wallpaper_collection_learn_more">abrir enlace para aprender más acerca de esta colección</string>
-  <!-- Content description for headings announced by accessibility service. %s is the text of the heading. Talkback will announce the text and then speak the word "Heading" indicating to the user that this text is a heading for a section. -->
-  <string name="a11y_heading">%s, Cabecera</string>
-  <!-- Title for dialog displayed when trying to access links present in a text. -->
-  <string name="a11y_links_title">Enlaces</string>
-  <!-- Additional content description for text bodies that contain urls. -->
-  <string name="a11y_links_available">Enlaces disponibles</string>
   <!-- Translations feature -->
 
   <!--
@@ -3966,6 +3938,62 @@
   <string name="protection_panel_privacy_and_security_settings_2">Ajustes de privacidad</string>
   <!-- Title text for the protection panel permissions section. -->
   <string name="protection_panel_permissions_title">Permisos</string>
+  <plurals name="trackers_blocked_panel_total_num_trackers_blocked_2">
+    <!--
+      Text for displaying the total number of trackers blocked in the trackers blocked panel.
+      %1$d is a placeholder for the number of trackers blocked.
+    -->
+    <item quantity="one">%1$d rastreador bloqueado en este sitio</item>
+    <item quantity="other">%1$d rastreadores bloqueados en este sitio</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_social_media_trackers">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked social media trackers.
+      %1$d is a placeholder for the number of social media trackers blocked.
+    -->
+    <item quantity="one">%1$d rastreador de redes sociales</item>
+    <item quantity="other">%1$d rastreadores de redes sociales</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_cross_site_cookies">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked cross-site tracking cookies.
+      %1$d is a placeholder for the number of cross-site tracking cookies blocked.
+    -->
+    <item quantity="one">%1$d cookie de rastreo de sitios cruzados</item>
+    <item quantity="other">%1$d cookies de rastreo de sitios cruzados</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_cryptominers">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked cryptomining scripts.
+      %1$d is a placeholder for the number of cryptominers blocked.
+    -->
+    <item quantity="one">%1$d criptominero</item>
+    <item quantity="other">%1$d criptomineros</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_fingerprinters">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked fingerprinter scripts.
+      %1$d is a placeholder for the number of fingerprinters blocked.
+    -->
+    <item quantity="one">%1$d creador de huellas (fingerprinter)</item>
+    <item quantity="other">%1$d creadores de huellas (fingerprinters)</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_trackers_2">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked generic tracking scripts.
+      %1$d is a placeholder for the number of trackers blocked.
+    -->
+    <item quantity="one">%1$d contenido de rastreo</item>
+    <item quantity="other">%1$d contenidos de rastreo</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_trackers_blocked_this_week_2">
+    <!--
+      Text for displaying the number of trackers blocked this week in the trackers blocked panel.
+      %1$d is a placeholder for the number of trackers blocked this week.
+    -->
+    <item quantity="one">%1$d rastreador bloqueado esta semana</item>
+    <item quantity="other">%1$d rastreadores bloqueados esta semana</item>
+  </plurals>
   <!--
     Text for displaying the total number of trackers blocked in the trackers blocked panel.
     %d is a placeholder for the number of trackers blocked.
@@ -3977,11 +4005,6 @@
     %d is a placeholder for the number of trackers blocked.
   -->
   <string name="trackers_blocked_panel_categorical_num_trackers_blocked">%s: %d</string>
-  <!--
-    Text for displaying the number of trackers blocked this week in the trackers blocked panel.
-    %d is a placeholder for the number of trackers blocked this week.
-  -->
-  <string name="trackers_blocked_panel_num_trackers_blocked_this_week">Rastreadores bloqueados esta semana: %d</string>
   <!--
     Description text for a dialog confirming whether the user wants to delete all data for current site.
     %s is a placeholder for the base domain of website.
@@ -4592,7 +4615,7 @@
   <!-- Sports widget match status label shown during halftime of a match. -->
   <string name="sports_widget_halftime" tools:ignore="UnusedResources">Medio tiempo</string>
   <!-- Sports widget match status label shown during extra time of a match. -->
-  <string name="sports_widget_extra_time" tools:ignore="UnusedResources">Tiempo extra</string>
+  <string name="sports_widget_extra_time">Tiempo extra</string>
   <!-- Sports widget match status label shown during penalties of a match. -->
   <string name="sports_widget_penalties">Penales</string>
   <!--

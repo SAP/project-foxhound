@@ -9,6 +9,28 @@
 <resources>
   <!-- Link text to learn more about downloading Gemini Nano -->
   <string name="mozac_summarize_learn_more_link">Ne saber mai</string>
+  <!-- Button text for the off-device shake summarization consent screen approving shake consent. Localization note: "Continue" turns on the shake to summarize feature. -->
+  <string name="mozac_summarize_shake_consent_off_device_button_positive">Contunhar</string>
+  <!-- Button text for the off-device shake summarization consent screen denying shake consent. Localization note: "Not now" dismisses the request to turn on the shake to summarize feature. -->
+  <string name="mozac_summarize_shake_consent_off_device_negative_button">Pas ara</string>
+  <!-- Title for the on-device shake summarization and download consent screen -->
+  <string name="mozac_summarize_shake_consent_on_device_title">Resumir aquesta pagina</string>
+  <!-- Button text for the on-device shake summarization and download consent screen denying shake and download consent -->
+  <string name="mozac_summarize_shake_consent_on_device_negative_button">Pas ara</string>
+  <!-- Button text for the consent to download an on-device model denying download consent -->
+  <string name="mozac_summarize_download_consent_button_negative">Anullar</string>
+  <!-- Caption to describe the progress of the download. %1$.2f is bytes downloaded, %2$.2f is total bytes required for download to complete. -->
+  <string name="mozac_summarize_download_progress_caption">%1$.2f Mo / %2$.2f Mo</string>
+  <!-- Button text shown while a download is in progress to cancel the download -->
+  <string name="mozac_summarize_download_progress_button_negative">Anullar</string>
+  <!-- Title for the download error screen -->
+  <string name="mozac_summarize_download_error_title">Error</string>
+  <!-- Generic fallback message for the download error screen -->
+  <string name="mozac_summarize_download_error_fallback_message">Error desconeguda</string>
+  <!-- Button for the download error screen to try again -->
+  <string name="mozac_summarize_download_error_positive_button">Tornar ensajar</string>
+  <!-- Button for the download error screen to cancel -->
+  <string name="mozac_summarize_download_error_negative_button">Anullar</string>
   <!-- Link text to learn more about page summaries in settings -->
   <string name="mozac_summarize_settings_learn_more">Ne saber mai</string>
 </resources>

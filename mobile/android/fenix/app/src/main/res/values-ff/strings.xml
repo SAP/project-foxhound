@@ -377,8 +377,6 @@
   <string name="library_desktop_bookmarks_unfiled">Maantore Goɗɗe</string>
   <!-- Option in Library to open History page -->
   <string name="library_history">Aslol</string>
-  <!-- Option in Library to open a new tab -->
-  <string name="library_new_tab">Tabbere hesere</string>
   <!-- Settings Page Title -->
   <string name="settings_title">Teelte</string>
   <!-- Content description (not visible, for screen readers etc.): "Close button for library settings" -->
@@ -561,10 +559,6 @@
   <string name="edit_bookmark_folder_fragment_title">Taƴto runngere</string>
   <!-- Bookmark URL editing field label -->
   <string name="bookmark_url_label">URL</string>
-  <!-- Bookmark FOLDER editing field label -->
-  <string name="bookmark_folder_label">RUNNGERE</string>
-  <!-- Bookmark NAME editing field label -->
-  <string name="bookmark_name_label">INNDE</string>
   <!-- Bookmark select folder screen title -->
   <string name="bookmark_select_folder_fragment_label">Suɓo runngere</string>
   <!-- Bookmark editing error missing or improper URL -->

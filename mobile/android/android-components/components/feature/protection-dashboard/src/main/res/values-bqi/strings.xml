@@ -7,11 +7,24 @@
 -->
 
 <resources>
+  <!-- Title shown in the protection dashboard indicating the user is protected -->
+  <string name="mozac_protections_dashboard_youre_protected">ایسا زفت وابیڌینه</string>
+  <plurals name="mozac_protections_dashboard_trackers_blocked_this_week">
+    <!--
+      Label shown below the tracker count in the dashboard. The count is displayed separately
+      above this string and is used to select the correct plural form. Do not include the number in
+      the translation.
+    -->
+    <item quantity="one">رڌجۊری ای هفته مسدۊد وابی</item>
+    <item quantity="other">رڌجۊری ای هفته مسدۊد وابی</item>
+  </plurals>
   <plurals name="mozac_protections_dashboard_data_saved">
     <!-- Label showing data saved in megabytes. %1$d is the number of MB saved -->
     <item quantity="one">MB %1$d زفت وابیڌه</item>
     <item quantity="other">MB %1$d زفت وابیڌه</item>
   </plurals>
+  <!-- Section header for tracker category breakdown -->
+  <string name="protections_dashboard_where_they_came_from">ز کویه ٱووڌنه</string>
   <!-- Tracker category: Advertising trackers -->
   <string name="protections_dashboard_category_ads">تبلیقات</string>
   <!-- Tracker category: Analytics trackers -->
@@ -22,4 +35,11 @@
   <string name="protections_dashboard_category_others">دیر</string>
   <!-- Title shown in the protection dashboard header next to the shield icon -->
   <string name="mozac_protections_dashboard_trackers_blocked_this_week_title">رڌجۊرا مسدۊد وابیڌه ای هفته</string>
+  <!--
+    Title shown when no trackers have been blocked yet
+    %1$s will be replaced by the app name (e.g. Firefox Focus)
+  -->
+  <string name="mozac_protections_dashboard_empty_title">%1$s مجال گشتن ایسا رڌجۊرا ن مسدۊد اکونه.</string>
+  <!-- Subtitle shown when no trackers have been blocked yet -->
+  <string name="mozac_protections_dashboard_empty_subtitle">ایسا هونووݩ ن ایچونا انیرین.</string>
 </resources>

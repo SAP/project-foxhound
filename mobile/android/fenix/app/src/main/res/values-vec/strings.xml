@@ -332,10 +332,6 @@
   <string name="edit_bookmark_folder_fragment_title">Modìfega carteƚa</string>
   <!-- Bookmark URL editing field label -->
   <string name="bookmark_url_label">INDIRISO</string>
-  <!-- Bookmark FOLDER editing field label -->
-  <string name="bookmark_folder_label">CARTEȽA</string>
-  <!-- Bookmark NAME editing field label -->
-  <string name="bookmark_name_label">NÒME</string>
   <!-- Bookmark select folder screen title -->
   <string name="bookmark_select_folder_fragment_label">Seƚesiona carteƚa</string>
   <!-- Bookmark editing error missing or improper URL -->

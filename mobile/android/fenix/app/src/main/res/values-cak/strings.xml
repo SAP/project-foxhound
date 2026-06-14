@@ -250,21 +250,9 @@
   <!--
     Browser Toolbar
 
-    Content description for the Home screen button on the browser toolbar
-  -->
-  <string name="browser_toolbar_home">Rutikirib\'al ruwäch</string>
-  <!--
-    Browser Toolbar
-
     Content description for the translate page toolbar button that opens the translations dialog when no translation has occurred.
   -->
   <string name="browser_toolbar_translate">Titzalq\'omïx ruxaq</string>
-  <!--
-    Content description (not visible, for screen readers etc.) for the translate page toolbar button that opens the translations dialog when the page is translated successfully.
-    %1$s is the name of the language that is displayed in the original page. (For example: English)
-    %2$s is the name of the language which the page was translated to. (For example: French)
-  -->
-  <string name="browser_toolbar_translated_successfully">Tzalq\'omin ruxaq %1$s pa %2$s.</string>
   <!--
     Locale Settings Fragment
 
@@ -740,8 +728,6 @@
   <string name="library_desktop_bookmarks_unfiled">Ch\'aqa\' chik taq Yaketal</string>
   <!-- Option in Library to open History page -->
   <string name="library_history">Natab\'äl</string>
-  <!-- Option in Library to open a new tab -->
-  <string name="library_new_tab">K\'ak\'a\' ruwi\'</string>
   <!-- Settings Page Title -->
   <string name="settings_title">Taq nuk\'ulem</string>
   <!-- Content description (not visible, for screen readers etc.): "Close button for library settings" -->
@@ -960,10 +946,6 @@
   <string name="edit_bookmark_folder_fragment_title">Tinuk\' Molyakb\'äl</string>
   <!-- Bookmark URL editing field label -->
   <string name="bookmark_url_label">URL</string>
-  <!-- Bookmark FOLDER editing field label -->
-  <string name="bookmark_folder_label">MOLYAKWUJ</string>
-  <!-- Bookmark NAME editing field label -->
-  <string name="bookmark_name_label">B\'I\'AJ</string>
   <!-- Bookmark select folder screen title -->
   <string name="bookmark_select_folder_fragment_label">Ticha\' molyakb\'äl</string>
   <!-- Bookmark editing error missing or improper URL -->
@@ -1067,8 +1049,6 @@
   <string name="collections_header">Taq mol</string>
   <!-- Content description (not visible, for screen readers etc.): Opens the collection menu when pressed -->
   <string name="collection_menu_button_content_description">Ruk\'utsamaj mol</string>
-  <!-- Label to describe what collections are to a new user without any collections -->
-  <string name="no_collections_description2">Ke\'amolo\' ri naqa chawäch.\nKe\'atzob\'ajij ri junam taq kanoxïk, taq ruxaq chuqa\' ri taq ruwi\' richin anin yatok chi kipam.</string>
   <!-- Title for the "select tabs" step of the collection creator -->
   <string name="create_collection_select_tabs">Kecha\' taq Ruwi\'</string>
   <!-- Title for the "select collection" step of the collection creator -->
@@ -1789,8 +1769,6 @@
   <string name="other_default_search_engine_suggestion_header">Tikanöx pa %s</string>
   <!-- Default browser card text -->
   <string name="default_browser_experiment_card_text" tools:ignore="BrandUsage">Nub\'än kinuk\'ulem ximonel ajk\'amaya\'l taq ruxaq, taq taqoya\'l chuqa\' taq rutzijol richin yejaq pa ruyonil pa Firefox.</string>
-  <!-- Content description for close button in collection placeholder. -->
-  <string name="remove_home_collection_placeholder_content_description">Tiyuj</string>
   <!-- Content description radio buttons with a link to more information -->
   <string name="radio_preference_info_content_description">Tipitz\' richin ch\'aqa\' rub\'anikil</string>
   <!-- Content description for the action bar "up" button -->
@@ -1807,12 +1785,8 @@
     Action label for elements that can be collapsed if interacting with them. Talkback will append this to say "Double tap to collapse".
   -->
   <string name="a11y_action_label_collapse">Tich\'utinarisäx</string>
-  <!-- Current state for elements that can be collapsed if interacting with them. Talkback will dictate this after a state change. -->
-  <string name="a11y_state_label_collapsed">ch\'utinarisan</string>
   <!-- Action label for elements that can be expanded if interacting with them. Talkback will append this to say "Double tap to expand". -->
   <string name="a11y_action_label_expand">tirik\'</string>
-  <!-- Current state for elements that can be expanded if interacting with them. Talkback will dictate this after a state change. -->
-  <string name="a11y_state_label_expanded">nimirisan</string>
   <!-- Translations feature -->
 
   <!-- TextField Design System Component -->

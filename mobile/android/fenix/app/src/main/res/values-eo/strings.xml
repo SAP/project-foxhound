@@ -23,6 +23,8 @@
   <string name="content_description_normal_browsing">Normala retumo</string>
   <!-- Placeholder text shown in the search bar before a user enters text for the default engine -->
   <string name="search_hint">Serĉo aŭ adreso</string>
+  <!-- Shorter placeholder text shown in the search bar when an additional action (voice search) is rendered alongside the hint. -->
+  <string name="search_hint_short">Serĉi</string>
   <!-- Placeholder text shown in the search bar before a user enters text for a general engine -->
   <string name="search_hint_general_engine">Serĉi en la reto</string>
   <!-- Placeholder text shown in search bar when using history search -->
@@ -330,21 +332,9 @@
   <!--
     Browser Toolbar
 
-    Content description for the Home screen button on the browser toolbar
-  -->
-  <string name="browser_toolbar_home">Hejmekrano</string>
-  <!--
-    Browser Toolbar
-
     Content description for the translate page toolbar button that opens the translations dialog when no translation has occurred.
   -->
   <string name="browser_toolbar_translate">Traduki paĝon</string>
-  <!--
-    Content description (not visible, for screen readers etc.) for the translate page toolbar button that opens the translations dialog when the page is translated successfully.
-    %1$s is the name of the language that is displayed in the original page. (For example: English)
-    %2$s is the name of the language which the page was translated to. (For example: French)
-  -->
-  <string name="browser_toolbar_translated_successfully">Paĝo tradukita el la %1$s en la %2$sn.</string>
   <!-- CFR description for the browser toolbar describing the "Shake to summarize feature" -->
   <string name="browser_toolbar_summarize_cfr_description">Skuu vian aparaton por resumi tiun ĉi paĝon en sekundoj. ⚡️</string>
   <!--
@@ -375,8 +365,6 @@
   <string name="ai_controls_banner_headline">Vi ĉiam povas decidi en %s</string>
   <!-- Supporting text for the AI controls banner. %s is a learn more link using ai_controls_learn_more as text. -->
   <string name="ai_controls_banner_supporting_text_2">Tio inkluzivas la uzon aŭ ne uzon de trajtoj pelataj aŭ plibonigitaj de AI. %s</string>
-  <!-- Supporting text for the AI controls banner -->
-  <string name="ai_controls_banner_supporting_text">Tio inkluzivas la uzon aŭ ne uzon de trajtoj pelataj aŭ plibonigitaj de AI.</string>
   <!-- Link text for learning more about AI controls -->
   <string name="ai_controls_learn_more">Pli da informo</string>
   <!-- Title for the block AI enhancements toggle -->
@@ -424,12 +412,6 @@
   <!--
     Search Fragment
 
-    Button in the search view that lets a user search by scanning a QR code
-  -->
-  <string name="search_scan_button_2">Skani kodon QR</string>
-  <!--
-    Search Fragment
-
     Button in the search view that lets a user navigate to the site in their clipboard
   -->
   <string name="awesomebar_clipboard_title">Alglui ligilon el la tondujo</string>
@@ -464,6 +446,8 @@
   <string name="search_suggestions_delete_history_item_snackbar">%1$s forigita el la historio</string>
   <!-- Content description (not visible, for screen readers etc.): Button shown near a history search result allowing to delete it from browsing history. -->
   <string name="mozac_browser_awesomebar_remove_suggestion" tools:ignore="UnusedResources">Forigi tiun ĉi registron el la historio</string>
+  <!-- Button in the app links prompt that keeps the user in the browser instead of opening the external app. %1$s is the name of the app (for example "Firefox"). -->
+  <string name="applinks_prompt_negative_button">Resti en %1$s</string>
   <!--
     Home onboarding
 
@@ -723,10 +707,18 @@
     “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
   -->
   <string name="nova_onboarding_marketing_body_5" tools:ignore="BrandUsage,UnusedResources">Helpu nin atingi pli da personoj se vi permesas al Mozilla informi al la platformo, el kie vi venas, ke vi uzas Firefox.</string>
+  <!--
+    Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
+    “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
+    %1$s is replaced by an active link, using nova_onboarding_marketing_body_link_text as text (“How we use the data”).
+  -->
+  <string name="nova_onboarding_marketing_body_6" tools:ignore="BrandUsage,UnusedResources">Helpu nin atingi pli da personoj se vi permesas al Mozilla informi al la platformo, el kie vi venas, ke vi uzas Firefox. %1$s</string>
   <!-- Marketing onboarding body link text. -->
   <string name="nova_onboarding_marketing_body_link_text">Kiel ni uzas la datumojn</string>
   <!-- Marketing onboarding primary button text. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage">Helpi Firefox</string>
+  <!-- Marketing onboarding primary button text. -->
+  <string name="nova_onboarding_marketing_primary_button_text_2">Permesi kaj daŭrigi</string>
   <!-- Marketing onboarding secondary button text. -->
   <string name="nova_onboarding_marketing_secondary_button_text">Ne, dankon</string>
   <!-- Notifications onboarding title. 'Firefox' is intentionally hardcoded. -->
@@ -1132,7 +1124,7 @@
   <!-- Title for the customize home screen section with sponsored shortcuts. -->
   <string name="customize_toggle_contile">Patronitaj ligiloj</string>
   <!-- Title for the customize home screen section that toggles the Homepage sports widget. -->
-  <string name="customize_toggle_world_cup" tools:ignore="UnusedResources">Piedpilka mondpokalo</string>
+  <string name="customize_toggle_world_cup">Piedpilka mondpokalo</string>
   <!--
     Wallpapers
 
@@ -1472,8 +1464,6 @@
   <string name="library_desktop_bookmarks_unfiled">Aliaj legosignoj</string>
   <!-- Option in Library to open History page -->
   <string name="library_history">Historio</string>
-  <!-- Option in Library to open a new tab -->
-  <string name="library_new_tab">Nova langeto</string>
   <!-- Settings Page Title -->
   <string name="settings_title">Agordoj</string>
   <!-- Content description (not visible, for screen readers etc.): "Close button for library settings" -->
@@ -1637,6 +1627,8 @@
   <string name="tab_manager_search_bar_placeholder">Serĉi inter viaj langetoj</string>
   <!-- Text shown in the menu to view recently closed tabs -->
   <string name="tab_tray_menu_recently_closed">Ĵuse fermitaj langetoj</string>
+  <!-- Text shown in the menu to select all tabs. -->
+  <string name="tab_tray_menu_select_all_tabs">Elekti ĉion</string>
   <!-- Text shown in the menu to view account settings -->
   <string name="tab_tray_menu_account_settings">Agordoj de konto</string>
   <!-- Text shown in the menu to view tab settings -->
@@ -1699,6 +1691,14 @@
   <string name="pwa_site_controls_title_private">%1$s (Privata reĝimo)</string>
   <!-- Content description (not visible, for screen readers etc.) for the button to open the Tab Search feature to search through tabs. -->
   <string name="tab_manager_open_tab_search">Malfermi serĉilon de langetoj</string>
+  <!-- Title for introducing tab groups via an onboarding card shown in the tab manager. -->
+  <string name="tab_group_onboarding_item_title">Krei grupon de langetoj</string>
+  <!-- Description for tab groups onboarding shown in the tab manager when in grid view. -->
+  <string name="tab_group_onboarding_grid_item_description">Trenu langeton sur alia por grupigi ilin.</string>
+  <!-- Description for tab groups onboarding shown in the tab manager when in list view. -->
+  <string name="tab_group_onboarding_list_item_description">Elektu plurajn langetojn por krei grupon.</string>
+  <!-- Content description (accessibility label) for button to dismiss the tab group onboarding item. -->
+  <string name="tab_group_onboarding_item_dismiss_content_description">Ignori prezenton de grupoj de langetoj</string>
   <!-- The header text displayed on the tab groups page when no tab groups are open -->
   <string name="tab_manager_empty_tab_groups_page_header">Provu la grupojn de langetoj, por rulumi malpli kaj plenumi pli</string>
   <!-- The description displayed on the tab groups page when no tab groups are open -->
@@ -2056,6 +2056,8 @@
   <!-- The error message of the dropdown, prompting the user to select a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_choose_reason_error">Bonvolu elekti kialon</string>
   <!-- The label/title of an optional field in the Web Compat Reporter feature for adding additional information. -->
+  <string name="webcompat_reporter_label_description_2">Detale priskribu la problemon por helpi nin esplori ĝin (nedevige)</string>
+  <!-- The label/title of an optional field in the Web Compat Reporter feature for adding additional information. -->
   <string name="webcompat_reporter_label_description">Priskribu la problemon (nedevige)</string>
   <!-- The button text for navigating away from the feature to provide more information on the broken site's bug report. -->
   <string name="webcompat_reporter_add_more_info">Aldoni pli da informo</string>
@@ -2066,7 +2068,11 @@
   <!-- Text for a snackbar to confirm the successful submission of a WebCompat report. -->
   <string name="webcompat_reporter_success_snackbar_text_2">Raporto sendita</string>
   <!-- Placeholder text for the description field to prompt the user on what they should type. -->
+  <string name="webcompat_reporter_problem_description_placeholder_text_2">Kio okazis? Kion estus devinta okazi? Bonvolu klarigi kiel rekrei la problemon.</string>
+  <!-- Placeholder text for the description field to prompt the user on what they should type. -->
   <string name="webcompat_reporter_problem_description_placeholder_text">Kio okazis? Kio estus devinta okazi?</string>
+  <!-- Label of the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. -->
+  <string name="webcompat_reporter_etp_checkbox_text_2">Sendi liston de elementoj blokitaj de la protekto kontraŭ spurado</string>
   <!-- Label of the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. -->
   <string name="webcompat_reporter_etp_checkbox_text">Sendi retadresojn blokitaj de la protekto kontraŭ spurado</string>
   <!-- Description text for the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. It informs the user when checked, the report will include the list of URLs that were blocked by Enhanced Tracking Protection on the current page. -->
@@ -2205,12 +2211,8 @@
   <string name="edit_bookmark_folder_fragment_title">Redakti dosierujon</string>
   <!-- Bookmark URL editing field label -->
   <string name="bookmark_url_label">RETADRESO</string>
-  <!-- Bookmark FOLDER editing field label -->
-  <string name="bookmark_folder_label">DOSIERUJO</string>
   <!-- Text indicating which folder a bookmark or folder will be saved in -->
   <string name="bookmark_save_in_label">Konservi en</string>
-  <!-- Bookmark NAME editing field label -->
-  <string name="bookmark_name_label">NOMO</string>
   <!-- Label for a text input field for a bookmark or folder name -->
   <string name="bookmark_name_label_normal_case">Nomo</string>
   <!-- Bookmark select folder screen title -->
@@ -2254,12 +2256,8 @@
   <string name="bookmark_empty_list_root_title">Tenu viajn plej ŝatatajn legosignojn kune</string>
   <!-- Bookmark screen folder description. %s is the count of bookmark folder children -->
   <string name="bookmarks_folder_description">Legosignoj en dosierujo: %s</string>
-  <!-- Description for the bookmark list empty state when you're not signed into sync. -->
-  <string name="bookmark_empty_list_guest_description">Konservi retejojn dum vi retumas. Komencu seancon por preni legosignojn el aliaj spegulitaj aparatoj.</string>
   <!-- Text for the button to navigate to sync authentication -->
   <string name="bookmark_empty_list_guest_cta">Komenci seancon por speguli</string>
-  <!-- Description for the bookmark list empty state when you're signed into sync. -->
-  <string name="bookmark_empty_list_authenticated_description">Konservi retejojn dum vi retumas. Ni also prenos legosignojn el aliaj spegulitaj aparatoj.</string>
   <!-- Description for the bookmark list empty state when you're in an empty folder. -->
   <string name="bookmark_empty_list_folder_description">Aldonu legosignojn dum vi retumas, tiel ke vi povos pli rapide retrovi viajn ŝatatajn retejojn.</string>
   <!-- Description for the add new folder button when selecting a folder. -->
@@ -2374,8 +2372,6 @@
   <string name="collections_header">Kolektoj</string>
   <!-- Content description (not visible, for screen readers etc.): Opens the collection menu when pressed -->
   <string name="collection_menu_button_content_description">Menuo de kolektoj</string>
-  <!-- Label to describe what collections are to a new user without any collections -->
-  <string name="no_collections_description2">Kolektu la aferojn kiuj gravas por vi.\nGrupigu similajn serĉojn, retejojn kaj langetojn por posta rapida aliro.</string>
   <!-- Title for the "select tabs" step of the collection creator -->
   <string name="create_collection_select_tabs">Elektitaj langetoj</string>
   <!-- Title for the "select collection" step of the collection creator -->
@@ -2681,6 +2677,15 @@
   <string name="preference_enhanced_tracking_protection_explanation_2">%s protektas vin kontraŭ pluraj el la plej oftaj spuriloj, kiuj sekvas kion vi faras dum retumo.</string>
   <!-- Text displayed that links to website about enhanced tracking protection -->
   <string name="preference_enhanced_tracking_protection_explanation_learn_more">Pli da informo</string>
+  <plurals name="trackers_blocked_count_2">
+    <!--
+      Trackers blocked card on homepage
+
+      Text shown on the trackers blocked card. %d is the number of trackers blocked.
+    -->
+    <item quantity="one">%d spurilo blokita</item>
+    <item quantity="other">%d spuriloj blokitaj</item>
+  </plurals>
   <plurals name="trackers_blocked_count">
     <!--
       Trackers blocked card on homepage
@@ -3072,6 +3077,8 @@
   <string name="saved_logins_sort_strategy_last_used">Laste uzita</string>
   <!-- Content description (not visible, for screen readers etc.) -->
   <string name="saved_logins_menu_dropdown_chevron_icon_content_description_2">Menuo por ordigi pasvortojn</string>
+  <!-- Label for button to import passwords from file. -->
+  <string name="passwords_import_menu_button">Importi el dosiero</string>
   <!--
     Email Masks
 
@@ -3102,10 +3109,12 @@
   <string name="ip_protection_title">VPN</string>
   <!-- Label for the browser VPN toggle on the settings screen -->
   <string name="ip_protection_toggle_label">VPN</string>
+  <!-- Content description for the browser VPN settings screen top bar back button -->
+  <string name="ip_protection_navigate_back_button_content_description">Iri reen</string>
   <!-- Headline for the browser VPN promo card. %s is the name of the app (for example "Firefox"). -->
   <string name="ip_protection_promo_headline">VPN integrita en %s</string>
-  <!-- Body text for the browser VPN promo card -->
-  <string name="ip_protection_promo_body">Retumu kun aldonaj protektoj per kaŝo de via loko, eĉ dum vi estas en publika Wi-Fi.</string>
+  <!-- Body text for the browser VPN promo card . %s is a learn more link using ip_protection_learn_more as text. -->
+  <string name="ip_protection_promo_body_2">Retumu kun aldonaj protektoj per kaŝo de via loko, eĉ dum vi estas en publika Wi-Fi. %s</string>
   <!-- Link text that opens additional information about the browser VPN -->
   <string name="ip_protection_learn_more">Pli da informo</string>
   <!-- Label for the monthly data allowance section on the browser VPN settings screen -->
@@ -3157,6 +3166,8 @@
   <string name="ip_protection_toolbar_pill_description">VPN estas aktiva.</string>
   <!-- Label for the button that starts the browser VPN authentication or authorization flow on the settings screen -->
   <string name="ip_protection_get_started">Unuaj paŝoj</string>
+  <!-- Label for the "connecting" state of the button that starts the browser VPN authentication or authorization flow on the settings screen -->
+  <string name="ip_protection_connecting">Konekto…</string>
   <!-- Headline for the browser VPN onboarding card. %s is the name of the app (for example "Firefox"). -->
   <string name="ip_protection_onboarding_card_headline">Provu la integritan VPN de %s</string>
   <!--
@@ -3476,6 +3487,10 @@
   <string name="homepage_shortcuts_show_all_content_description">Montri ĉiujn ŝparvojojn</string>
   <!-- Label for the "Add shortcut" button displayed as a tile. -->
   <string name="homepage_shortcuts_add_shortcut">Aldoni ŝparvojon</string>
+  <!-- Title for the "Add to homepage" bottom sheet. -->
+  <string name="homepage_shortcuts_add_to_homepage">Aldoni al la eka paĝo</string>
+  <!-- Label for the "Add website" button in the "Add to homepage" bottom sheet. -->
+  <string name="homepage_shortcuts_add_website">Aldoni retejon</string>
   <!-- Title text for the "Enter a Website URL" dialog for adding a shortcut. -->
   <string name="homepage_shortcuts_add_website_title">Enigu validan retadreson</string>
   <!-- Title text displayed in the dialog when shortcuts limit is reached. -->
@@ -3564,8 +3579,6 @@
   <string name="default_browser_experiment_card_title">Ŝanĝi vian norman retumilon</string>
   <!-- Default browser card text -->
   <string name="default_browser_experiment_card_text" tools:ignore="BrandUsage">Aŭtomate malfermi ligilon en retejoj, retpoŝtoj kaj mesaĝoj per Firefox.</string>
-  <!-- Content description for close button in collection placeholder. -->
-  <string name="remove_home_collection_placeholder_content_description">Forigi</string>
   <!-- Content description radio buttons with a link to more information -->
   <string name="radio_preference_info_content_description">Alklaku por havi pli da informo</string>
   <!-- Content description for the action bar "up" button -->
@@ -3597,20 +3610,10 @@
     Action label for elements that can be collapsed if interacting with them. Talkback will append this to say "Double tap to collapse".
   -->
   <string name="a11y_action_label_collapse">faldi</string>
-  <!-- Current state for elements that can be collapsed if interacting with them. Talkback will dictate this after a state change. -->
-  <string name="a11y_state_label_collapsed">faldita</string>
   <!-- Action label for elements that can be expanded if interacting with them. Talkback will append this to say "Double tap to expand". -->
   <string name="a11y_action_label_expand">malfaldi</string>
-  <!-- Current state for elements that can be expanded if interacting with them. Talkback will dictate this after a state change. -->
-  <string name="a11y_state_label_expanded">malfaldita</string>
   <!-- Action label for links to a website containing documentation about a wallpaper collection. Talkback will append this to say "Double tap to open link to learn more about this collection". -->
   <string name="a11y_action_label_wallpaper_collection_learn_more">malfermi ligilon por havi pli da informo pri tiu ĉi kolekto</string>
-  <!-- Content description for headings announced by accessibility service. %s is the text of the heading. Talkback will announce the text and then speak the word "Heading" indicating to the user that this text is a heading for a section. -->
-  <string name="a11y_heading">%s, Kaptitolo</string>
-  <!-- Title for dialog displayed when trying to access links present in a text. -->
-  <string name="a11y_links_title">Ligiloj</string>
-  <!-- Additional content description for text bodies that contain urls. -->
-  <string name="a11y_links_available">Disponeblaj ligiloj</string>
   <!-- Translations feature -->
 
   <!--
@@ -3877,6 +3880,19 @@
     %s is the name of the app (for example "Firefox").
   -->
   <string name="protection_panel_banner_protected_title">%s protektas vin</string>
+  <plurals name="protection_panel_banner_protected_blocked_trackers_description">
+    <!--
+      Description text for the protection panel banner when privacy dashboard is enabled.
+      %1$d is the number of trackers blocked.
+    -->
+    <item quantity="one">%1$d spurilo blokita en tiu ĉi retejo.</item>
+    <item quantity="other">%1$d spuriloj blokitaj en tiu ĉi retejo.</item>
+  </plurals>
+  <!--
+    Description text for the protection panel banner when privacy dashboard is enabled.
+    and there are no trackers blocked.
+  -->
+  <string name="protection_panel_banner_protected_no_blocked_trackers_description">Vi estas protektita.</string>
   <!-- Description text for the protection panel banner when tracking protection is enabled. -->
   <string name="protection_panel_banner_protected_description">Vi estas protektita. Se ni malkovras ion, ni sciigos vin.</string>
   <!-- Label text for the Enhanced Tracking Protection toggle. -->
@@ -4523,7 +4539,7 @@
   <!-- Sports widget match status label shown during halftime of a match. -->
   <string name="sports_widget_halftime" tools:ignore="UnusedResources">Intertempa paŭzo</string>
   <!-- Sports widget match status label shown during extra time of a match. -->
-  <string name="sports_widget_extra_time" tools:ignore="UnusedResources">Ekstra tempo</string>
+  <string name="sports_widget_extra_time">Ekstra tempo</string>
   <!-- Sports widget match status label shown during penalties of a match. -->
   <string name="sports_widget_penalties">Penaloj</string>
   <!--
@@ -4563,6 +4579,13 @@
   -->
   <string name="sports_widget_upcoming_match_content_description">Baldaŭ: %1$s kontraŭ %2$s, %3$s ĉe %4$s</string>
   <!--
+    Content description (for accessibility, not displayed) announcing a soccer match.
+    %1$s is the home team name, %2$s is the away team name, %3$s is trailing context
+    (e.g. formatted score "1 - 2 (Full time)", upcoming match info "Jun 19 5:00 PM",
+    or a match status like "Full time").
+  -->
+  <string name="sports_widget_match_content_description">%1$s kontraŭ %2$s, %3$s</string>
+  <!--
     Content description (for accessibility, not displayed)  used for the sports widget card header announcing a live match for a group or stage.
     %s is the soccer tournament group name or stage (e.g. Group A represented by sports_widget_group_a, Round of 32 represented by sports_widget_round_of_32,
     or Final represented by sports_widget_final).
@@ -4575,6 +4598,11 @@
   -->
   <string name="sports_widget_live_score_content_description">%1$s %2$d, %3$s %4$d, %5$s, nuna</string>
   <!--
+    Content description (for accessibility, not displayed) announcing the elapsed minutes of a live match.
+    %1$s is the clock value, which may be a plain number (e.g. "72") or include extra time (e.g. "90+3").
+  -->
+  <string name="sports_widget_match_elapsed_minutes">Tempo pasita en minutoj: %1$s</string>
+  <!--
     Content description (for accessibility, not displayed) for a paginated item.
     %1$s is the soccer tournament group name or stage (e.g. Group A represented by sports_widget_group_a, Round of 32 represented by sports_widget_round_of_32),
     %2$d is the current page number, and %3$d is the total number of pages.
@@ -4585,6 +4613,8 @@
     %1$d is the current page number, and %2$d is the total number of pages.
   -->
   <string name="sports_widget_final_results_page_content_description" tools:ignore="UnusedResources">Definitivaj rezultoj de la piedpilka mondpokalo, paĝo %1$d el %2$d</string>
+  <!-- Content description (for accessibility, not displayed) for the World Cup final results page. -->
+  <string name="sports_widget_final_results_content_description">Finaj rezultoj de la mondpokalo</string>
   <!-- Content description (for accessibility, not displayed) for the remove button that removes the sports widget from the homepage. -->
   <string name="sports_widget_remove_content_description" tools:ignore="UnusedResources">Forigi la piedpilkan mondpokalon el la hejma ekrano</string>
   <!-- Title shown on the sports widget immediately after the user has followed a team. %s is the selected team (e.g., "USA"). -->
@@ -4601,6 +4631,12 @@
   <string name="sports_widget_error_connection_offline_description">Kontrolu vian retaliron kaj provu denove.</string>
   <!-- Sports widget general group stage label in the soccer tournament. -->
   <string name="sports_widget_group_stage">Grupa fazo</string>
+  <!-- Sports widget error card title shown when match data fails to load. -->
+  <string name="sports_widget_error_load_failed_title">En tiu ĉi momento ne haveblas informoj pri la ludo.</string>
+  <!-- Sports widget error card description shown when match data fails to load. -->
+  <string name="sports_widget_error_load_failed_description">Provu refreŝigi post kelkaj minutoj.</string>
+  <!-- Content description (for accessibility, not displayed) for teams which have not yet been determined in the match schedule. -->
+  <string name="sports_widget_team_to_be_determined">Teamo difinota</string>
   <!-- ==== End of Terms of use popup prompt. ==== -->
 
   <!--
@@ -4615,4 +4651,42 @@
   <string name="privacy_notice_updated_homepage_message_privacy_notice" tools:ignore="UnusedResources">rimarkon pri privateco</string>
   <!-- The second active link used in privacy_notice_updated_homepage_message -->
   <string name="privacy_notice_updated_homepage_message_learn_more" tools:ignore="UnusedResources">Pli da informo</string>
+  <!--
+    Firefox Labs
+
+    Firefox Labs is the name of a screen in Settings to allow users to learn about
+    experimental and in-development features, and turn those features on and off.
+    The "Labs" portion can be localized, "Firefox" must be treated as a brand and kept
+    in English.
+  -->
+  <string name="firefox_labs_title" tools:ignore="BrandUsage">Firefox Labs</string>
+  <!-- Banner title text on the Firefox Labs screen. -->
+  <string name="firefox_labs_banner_title_2">Provu niajn eksperimentajn trajtojn!</string>
+  <!--
+    Banner description text on the Firefox Labs screen. Provides information on what Firefox Labs does. %s is the name of the app (for example "Firefox Nightly").
+    Text will appear under the Firefox Labs banner title.
+  -->
+  <string name="firefox_labs_experimental_description">Ili estas programataj kaj evoluas, kio povus efiki sur la funkciado de %s.</string>
+  <!-- The link text shown when a feedback URL for a Firefox Labs feature is available. The feedback URL page will allow users to provide opinions and suggestions. -->
+  <string name="firefox_labs_share_feedback">Sendi komentojn</string>
+  <!-- Content description for the share feedback link on a Firefox Labs feature. This text will be used by screen readers to provide more context on the feedback link. %s is the name of the Firefox Labs feature. -->
+  <string name="firefox_labs_share_feedback_content_description">Sendi komentojn pri %s.</string>
+  <!-- Button text on the Firefox Labs screen for restoring all toggles back to the default settings. The button will turn off any experimental features. -->
+  <string name="firefox_labs_restore_default_button_text">Restarigi normojn</string>
+  <!-- The title used in a confirmation dialog on the Firefox Labs screen when toggling "on" or "off" an experimental feature that requires a restart. -->
+  <string name="firefox_labs_feature_dialog_title">Restarto postulata</string>
+  <!-- The text on the dialog on the Firefox Labs screen for the positive button when toggling "on" and "off" experimental features. This prompts the user to confirm that they want to restart the app. -->
+  <string name="firefox_labs_dialog_restart_button">Restartigi</string>
+  <!-- The text on the dialog on the Firefox Labs screen for the negative button when toggling "on" and "off" experimental features. This is used to cancel the action and return to the previous screen. -->
+  <string name="firefox_labs_dialog_cancel_button">Nuligi</string>
+  <!-- The title used in a confirmation dialog on the Firefox Labs screen when restoring the application to its defaults by turning "off" any experimental features. -->
+  <string name="firefox_labs_restore_defaults_dialog_title">Restarto postulata</string>
+  <!-- The description used in a confirmation dialog on the Firefox Labs screen when restoring the application to its defaults by turning "off" any experimental features. %s is the name of the app (for example "Firefox Nightly") -->
+  <string name="firefox_labs_restore_defaults_dialog_message">Por restarigi normojn, restartigi %s.</string>
+  <!-- The description text that is displayed in the confirmation dialog on the Firefox Labs screen for toggling "on" experimental features. %s is the name of the app (for example "Firefox Nightly") -->
+  <string name="firefox_labs_feature_enable_dialog_message">Por malŝalti tiun ĉi trajton restartigu %s.</string>
+  <!-- The description text that is displayed in the confirmation dialog on the Firefox Labs screen for toggling "off" experimental features. %s is the name of the app (for example "Firefox Nightly") -->
+  <string name="firefox_labs_feature_disable_dialog_message">Por malŝalti tiun ĉi trajton restartigu %s.</string>
+  <!-- Text displayed on the Firefox Labs screen when there are no Labs experimental features present. -->
+  <string name="firefox_labs_no_labs_available_description">Ne estas eksperimentaj trajtoj, kiujn oni povus provi nun</string>
 </resources>

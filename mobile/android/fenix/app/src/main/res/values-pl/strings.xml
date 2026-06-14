@@ -332,21 +332,9 @@
   <!--
     Browser Toolbar
 
-    Content description for the Home screen button on the browser toolbar
-  -->
-  <string name="browser_toolbar_home">Strona startowa</string>
-  <!--
-    Browser Toolbar
-
     Content description for the translate page toolbar button that opens the translations dialog when no translation has occurred.
   -->
   <string name="browser_toolbar_translate">Przetłumacz stronę</string>
-  <!--
-    Content description (not visible, for screen readers etc.) for the translate page toolbar button that opens the translations dialog when the page is translated successfully.
-    %1$s is the name of the language that is displayed in the original page. (For example: English)
-    %2$s is the name of the language which the page was translated to. (For example: French)
-  -->
-  <string name="browser_toolbar_translated_successfully">Język oryginalnej strony: %1$s, język tłumaczenia: %2$s.</string>
   <!-- CFR description for the browser toolbar describing the "Shake to summarize feature" -->
   <string name="browser_toolbar_summarize_cfr_description">Potrząśnij urządzeniem, aby w\u00a0kilka sekund streścić tę stronę. ⚡️</string>
   <!--
@@ -377,8 +365,6 @@
   <string name="ai_controls_banner_headline">W\u00a0przeglądarce %s zawsze masz wybór</string>
   <!-- Supporting text for the AI controls banner. %s is a learn more link using ai_controls_learn_more as text. -->
   <string name="ai_controls_banner_supporting_text_2">Także w\u00a0korzystaniu z\u00a0funkcji ulepszonych za pomocą sztucznej inteligencji. %s</string>
-  <!-- Supporting text for the AI controls banner -->
-  <string name="ai_controls_banner_supporting_text">Także w\u00a0korzystaniu z\u00a0funkcji ulepszonych za pomocą sztucznej inteligencji.</string>
   <!-- Link text for learning more about AI controls -->
   <string name="ai_controls_learn_more">Więcej informacji</string>
   <!-- Title for the block AI enhancements toggle -->
@@ -423,12 +409,6 @@
   <string name="default_locale_text">Język urządzenia</string>
   <!-- Placeholder text shown in the search bar before a user enters text -->
   <string name="locale_search_hint">Szukaj języków</string>
-  <!--
-    Search Fragment
-
-    Button in the search view that lets a user search by scanning a QR code
-  -->
-  <string name="search_scan_button_2">Skanuj kod QR</string>
   <!--
     Search Fragment
 
@@ -1145,7 +1125,7 @@
   <!-- Title for the customize home screen section with sponsored shortcuts. -->
   <string name="customize_toggle_contile">Sponsorowane skróty</string>
   <!-- Title for the customize home screen section that toggles the Homepage sports widget. -->
-  <string name="customize_toggle_world_cup" tools:ignore="UnusedResources">Mistrzostwa świata w\u00a0piłce nożnej</string>
+  <string name="customize_toggle_world_cup">Mistrzostwa świata w\u00a0piłce nożnej</string>
   <!--
     Wallpapers
 
@@ -1485,8 +1465,6 @@
   <string name="library_desktop_bookmarks_unfiled">Pozostałe zakładki</string>
   <!-- Option in Library to open History page -->
   <string name="library_history">Historia</string>
-  <!-- Option in Library to open a new tab -->
-  <string name="library_new_tab">Nowa karta</string>
   <!-- Settings Page Title -->
   <string name="settings_title">Ustawienia</string>
   <!-- Content description (not visible, for screen readers etc.): "Close button for library settings" -->
@@ -2240,12 +2218,8 @@
   <string name="edit_bookmark_folder_fragment_title">Edytuj folder</string>
   <!-- Bookmark URL editing field label -->
   <string name="bookmark_url_label">Adres</string>
-  <!-- Bookmark FOLDER editing field label -->
-  <string name="bookmark_folder_label">Folder</string>
   <!-- Text indicating which folder a bookmark or folder will be saved in -->
   <string name="bookmark_save_in_label">Zachowaj w</string>
-  <!-- Bookmark NAME editing field label -->
-  <string name="bookmark_name_label">Nazwa</string>
   <!-- Label for a text input field for a bookmark or folder name -->
   <string name="bookmark_name_label_normal_case">Nazwa</string>
   <!-- Bookmark select folder screen title -->
@@ -2289,12 +2263,8 @@
   <string name="bookmark_empty_list_root_title">Wszystkie Twoje ulubione zakładki w\u00a0jednym miejscu</string>
   <!-- Bookmark screen folder description. %s is the count of bookmark folder children -->
   <string name="bookmarks_folder_description">Zakładki w\u00a0folderze: %s</string>
-  <!-- Description for the bookmark list empty state when you're not signed into sync. -->
-  <string name="bookmark_empty_list_guest_description">Zachowuj witryny podczas przeglądania. Zaloguj się, aby pobrać zakładki z\u00a0innych synchronizowanych urządzeń.</string>
   <!-- Text for the button to navigate to sync authentication -->
   <string name="bookmark_empty_list_guest_cta">Zaloguj się do synchronizacji</string>
-  <!-- Description for the bookmark list empty state when you're signed into sync. -->
-  <string name="bookmark_empty_list_authenticated_description">Zachowuj witryny podczas przeglądania. Pobierzemy też zakładki z\u00a0innych synchronizowanych urządzeń.</string>
   <!-- Description for the bookmark list empty state when you're in an empty folder. -->
   <string name="bookmark_empty_list_folder_description">Dodawaj zakładki w\u00a0trakcie przeglądania, aby później łatwo znaleźć ulubione witryny.</string>
   <!-- Description for the add new folder button when selecting a folder. -->
@@ -2409,8 +2379,6 @@
   <string name="collections_header">Kolekcje</string>
   <!-- Content description (not visible, for screen readers etc.): Opens the collection menu when pressed -->
   <string name="collection_menu_button_content_description">Menu kolekcji</string>
-  <!-- Label to describe what collections are to a new user without any collections -->
-  <string name="no_collections_description2">Zbierz rzeczy, które są dla Ciebie ważne.\nPołącz ze sobą podobne wyszukiwania, witryny i\u00a0karty, aby szybciej do nich wracać.</string>
   <!-- Title for the "select tabs" step of the collection creator -->
   <string name="create_collection_select_tabs">Wybierz karty</string>
   <!-- Title for the "select collection" step of the collection creator -->
@@ -2864,8 +2832,6 @@
   <string name="etp_suspected_fingerprinters_description">Włącza ochronę przed elementami śledzącymi podejrzewanymi o\u00a0zbieranie informacji o\u00a0konfiguracji.</string>
   <!-- Category of trackers (fingerprinters) that can be blocked by Enhanced Tracking Protection -->
   <string name="etp_known_fingerprinters_title">Znane elementy śledzące przez zbieranie informacji o\u00a0konfiguracji</string>
-  <!-- Label for the fingerprinters category shown in the tracking protections dashboard breakdown -->
-  <string name="tracking_dashboard_fingerprinters_category_name">Elementy śledzące przez zbieranie informacji o\u00a0konfiguracji</string>
   <!--
     Description of the SmartBlock Enhanced Tracking Protection feature. The * symbol is intentionally hardcoded here,
     as we use it on the UI to indicate which trackers have been partially unblocked.
@@ -3158,8 +3124,6 @@
   <string name="ip_protection_promo_headline">Wbudowana sieć VPN przeglądarki %s</string>
   <!-- Body text for the browser VPN promo card . %s is a learn more link using ip_protection_learn_more as text. -->
   <string name="ip_protection_promo_body_2">Przeglądaj Internet z\u00a0dodatkową ochroną, ukrywając swoje położenie, nawet w\u00a0publicznej sieci Wi-Fi. %s</string>
-  <!-- Body text for the browser VPN promo card -->
-  <string name="ip_protection_promo_body">Przeglądaj Internet z\u00a0dodatkową ochroną, ukrywając swoje położenie, nawet w\u00a0publicznej sieci Wi-Fi.</string>
   <!-- Link text that opens additional information about the browser VPN -->
   <string name="ip_protection_learn_more">Więcej informacji</string>
   <!-- Label for the monthly data allowance section on the browser VPN settings screen -->
@@ -3624,8 +3588,6 @@
   <string name="default_browser_experiment_card_title">Przełącz domyślną przeglądarkę</string>
   <!-- Default browser card text -->
   <string name="default_browser_experiment_card_text" tools:ignore="BrandUsage">Ustaw automatyczne otwieranie odnośników z\u00a0witryn, wiadomości e-mail i\u00a0SMS-ów w\u00a0Firefoksie.</string>
-  <!-- Content description for close button in collection placeholder. -->
-  <string name="remove_home_collection_placeholder_content_description">Usuń</string>
   <!-- Content description radio buttons with a link to more information -->
   <string name="radio_preference_info_content_description">Kliknij, aby wyświetlić więcej informacji</string>
   <!-- Content description for the action bar "up" button -->
@@ -3657,20 +3619,10 @@
     Action label for elements that can be collapsed if interacting with them. Talkback will append this to say "Double tap to collapse".
   -->
   <string name="a11y_action_label_collapse">zwinąć</string>
-  <!-- Current state for elements that can be collapsed if interacting with them. Talkback will dictate this after a state change. -->
-  <string name="a11y_state_label_collapsed">zwinięto</string>
   <!-- Action label for elements that can be expanded if interacting with them. Talkback will append this to say "Double tap to expand". -->
   <string name="a11y_action_label_expand">rozwinąć</string>
-  <!-- Current state for elements that can be expanded if interacting with them. Talkback will dictate this after a state change. -->
-  <string name="a11y_state_label_expanded">rozwinięto</string>
   <!-- Action label for links to a website containing documentation about a wallpaper collection. Talkback will append this to say "Double tap to open link to learn more about this collection". -->
   <string name="a11y_action_label_wallpaper_collection_learn_more">otworzyć odnośnik z\u00a0informacjami o\u00a0tej kolekcji</string>
-  <!-- Content description for headings announced by accessibility service. %s is the text of the heading. Talkback will announce the text and then speak the word "Heading" indicating to the user that this text is a heading for a section. -->
-  <string name="a11y_heading">%s, nagłówek</string>
-  <!-- Title for dialog displayed when trying to access links present in a text. -->
-  <string name="a11y_links_title">Odnośniki</string>
-  <!-- Additional content description for text bodies that contain urls. -->
-  <string name="a11y_links_available">Dostępne są odnośniki</string>
   <!-- Translations feature -->
 
   <!--
@@ -3987,11 +3939,6 @@
     %d is a placeholder for the number of trackers blocked.
   -->
   <string name="trackers_blocked_panel_categorical_num_trackers_blocked">%s: %d</string>
-  <!--
-    Text for displaying the number of trackers blocked this week in the trackers blocked panel.
-    %d is a placeholder for the number of trackers blocked this week.
-  -->
-  <string name="trackers_blocked_panel_num_trackers_blocked_this_week">Elementy śledzące zablokowane w\u00a0tym tygodniu: %d</string>
   <!--
     Description text for a dialog confirming whether the user wants to delete all data for current site.
     %s is a placeholder for the base domain of website.
@@ -4602,7 +4549,7 @@
   <!-- Sports widget match status label shown during halftime of a match. -->
   <string name="sports_widget_halftime" tools:ignore="UnusedResources">Przerwa</string>
   <!-- Sports widget match status label shown during extra time of a match. -->
-  <string name="sports_widget_extra_time" tools:ignore="UnusedResources">Dogrywka</string>
+  <string name="sports_widget_extra_time">Dogrywka</string>
   <!-- Sports widget match status label shown during penalties of a match. -->
   <string name="sports_widget_penalties">Rzuty karne</string>
   <!--

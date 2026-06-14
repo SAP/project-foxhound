@@ -42,21 +42,4 @@
   <string name="mozac_protections_dashboard_empty_title">Το %1$s αποκλείει ιχνηλάτες κατά την περιήγησή σας.</string>
   <!-- Subtitle shown when no trackers have been blocked yet -->
   <string name="mozac_protections_dashboard_empty_subtitle">Θα τους δείτε εδώ.</string>
-  <plurals name="mozac_protections_dashboard_trackers_count">
-    <!--
-      Label used for the number of trackers blocked.
-      %1$d is the number of trackers.
-    -->
-    <item quantity="one">%1$d ιχνηλάτης</item>
-    <item quantity="other">%1$d ιχνηλάτες</item>
-  </plurals>
-  <plurals name="mozac_protections_dashboard_total_blocked_since">
-    <!--
-      Footer line shown in the dashboard summarizing total trackers blocked
-      since a specific date. %1$s is the trackers count phrase (e.g.
-      "5,305 trackers"). %2$s is the formatted date (e.g. "February 23, 2026").
-    -->
-    <item quantity="one">Το %1$s αποκλείστηκε από το %2$s</item>
-    <item quantity="other">Τα %1$s αποκλείστηκαν από το %2$s</item>
-  </plurals>
 </resources>

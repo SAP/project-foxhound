@@ -328,21 +328,9 @@
   <!--
     Browser Toolbar
 
-    Content description for the Home screen button on the browser toolbar
-  -->
-  <string name="browser_toolbar_home">Ischermu printzipale</string>
-  <!--
-    Browser Toolbar
-
     Content description for the translate page toolbar button that opens the translations dialog when no translation has occurred.
   -->
   <string name="browser_toolbar_translate">Tradue sa pàgina</string>
-  <!--
-    Content description (not visible, for screen readers etc.) for the translate page toolbar button that opens the translations dialog when the page is translated successfully.
-    %1$s is the name of the language that is displayed in the original page. (For example: English)
-    %2$s is the name of the language which the page was translated to. (For example: French)
-  -->
-  <string name="browser_toolbar_translated_successfully">Pàgina traduida in %2$s dae: %1$s</string>
   <!--
     Translation Toolbar
 
@@ -365,12 +353,6 @@
   <string name="default_locale_text">Sighi sa lìngua de su dispositivu</string>
   <!-- Placeholder text shown in the search bar before a user enters text -->
   <string name="locale_search_hint">Chirca una lìngua</string>
-  <!--
-    Search Fragment
-
-    Button in the search view that lets a user search by scanning a QR code
-  -->
-  <string name="search_scan_button_2">Iscansiona unu còdighe QR</string>
   <!--
     Search Fragment
 
@@ -1234,8 +1216,6 @@
   <string name="library_desktop_bookmarks_unfiled">Àteros sinnalibros</string>
   <!-- Option in Library to open History page -->
   <string name="library_history">Cronologia</string>
-  <!-- Option in Library to open a new tab -->
-  <string name="library_new_tab">Ischeda noa</string>
   <!-- Settings Page Title -->
   <string name="settings_title">Cunfiguratzione</string>
   <!-- Content description (not visible, for screen readers etc.): "Close button for library settings" -->
@@ -1785,12 +1765,8 @@
   <string name="edit_bookmark_folder_fragment_title">Modìfica sa cartella</string>
   <!-- Bookmark URL editing field label -->
   <string name="bookmark_url_label">URL</string>
-  <!-- Bookmark FOLDER editing field label -->
-  <string name="bookmark_folder_label">CARTELLA</string>
   <!-- Text indicating which folder a bookmark or folder will be saved in -->
   <string name="bookmark_save_in_label">Sarva in</string>
-  <!-- Bookmark NAME editing field label -->
-  <string name="bookmark_name_label">NÒMINE</string>
   <!-- Label for a text input field for a bookmark or folder name -->
   <string name="bookmark_name_label_normal_case">Nòmine</string>
   <!-- Bookmark select folder screen title -->
@@ -1828,12 +1804,8 @@
   <string name="bookmark_empty_list_title">Ancora nissunu sinnalibru</string>
   <!-- Bookmark screen folder description. %s is the count of bookmark folder children -->
   <string name="bookmarks_folder_description">Sinnalibros in sa cartella: %s</string>
-  <!-- Description for the bookmark list empty state when you're not signed into sync. -->
-  <string name="bookmark_empty_list_guest_description">Sarva sitos comente ses navighende. Identìfica·ti pro pigare sinnalibros dae àteros dispositivos sincronizados.</string>
   <!-- Text for the button to navigate to sync authentication -->
   <string name="bookmark_empty_list_guest_cta">Identìfica·ti pro sa sincronizatzione</string>
-  <!-- Description for the bookmark list empty state when you're signed into sync. -->
-  <string name="bookmark_empty_list_authenticated_description">Sarva sitos comente ses navighende. Amus a pigare is sinnalibros dae àteros dispositivos sincronizados.</string>
   <!-- Description for the bookmark list empty state when you're in an empty folder. -->
   <string name="bookmark_empty_list_folder_description">Agiunghe sinnalibros comente ses navighende, in manera chi potzas agatare is sitos preferidos tuos a pustis.</string>
   <!-- Description for the add new folder button when selecting a folder. -->
@@ -1948,8 +1920,6 @@
   <string name="collections_header">Colletziones</string>
   <!-- Content description (not visible, for screen readers etc.): Opens the collection menu when pressed -->
   <string name="collection_menu_button_content_description">Menù de sa colletzione</string>
-  <!-- Label to describe what collections are to a new user without any collections -->
-  <string name="no_collections_description2">Regolle is cosas chi t’interessant.\nAgrupa in paris is chircas, is sitos e is ischedas simigiantes pro nche atzedere a lestru luego.</string>
   <!-- Title for the "select tabs" step of the collection creator -->
   <string name="create_collection_select_tabs">Seletziona is ischedas</string>
   <!-- Title for the "select collection" step of the collection creator -->
@@ -2936,8 +2906,6 @@
   <string name="default_browser_experiment_card_title">Passa a su navigadore predeterminadu tuo</string>
   <!-- Default browser card text -->
   <string name="default_browser_experiment_card_text" tools:ignore="BrandUsage">Aberi in Firefox in manera automàtica is ligòngios de sitos web, de posta eletrònica e de messàgios.</string>
-  <!-- Content description for close button in collection placeholder. -->
-  <string name="remove_home_collection_placeholder_content_description">Boga</string>
   <!-- Content description radio buttons with a link to more information -->
   <string name="radio_preference_info_content_description">Incarca inoghe pro àteros detàllios</string>
   <!-- Content description for the action bar "up" button -->
@@ -2967,20 +2935,10 @@
     Action label for elements that can be collapsed if interacting with them. Talkback will append this to say "Double tap to collapse".
   -->
   <string name="a11y_action_label_collapse">mìnima</string>
-  <!-- Current state for elements that can be collapsed if interacting with them. Talkback will dictate this after a state change. -->
-  <string name="a11y_state_label_collapsed">minimadu</string>
   <!-- Action label for elements that can be expanded if interacting with them. Talkback will append this to say "Double tap to expand". -->
   <string name="a11y_action_label_expand">ismànnia</string>
-  <!-- Current state for elements that can be expanded if interacting with them. Talkback will dictate this after a state change. -->
-  <string name="a11y_state_label_expanded">ismanniadu</string>
   <!-- Action label for links to a website containing documentation about a wallpaper collection. Talkback will append this to say "Double tap to open link to learn more about this collection". -->
   <string name="a11y_action_label_wallpaper_collection_learn_more">aberi su ligòngiu pro àteras informatziones in pitzus de custa colletzione</string>
-  <!-- Content description for headings announced by accessibility service. %s is the text of the heading. Talkback will announce the text and then speak the word "Heading" indicating to the user that this text is a heading for a section. -->
-  <string name="a11y_heading">%s, intestatzione</string>
-  <!-- Title for dialog displayed when trying to access links present in a text. -->
-  <string name="a11y_links_title">Ligòngios</string>
-  <!-- Additional content description for text bodies that contain urls. -->
-  <string name="a11y_links_available">Ligòngios a disponimentu</string>
   <!-- Translations feature -->
 
   <!--

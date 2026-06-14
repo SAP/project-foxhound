@@ -225,12 +225,6 @@
   <!--
     Browser Toolbar
 
-    Content description for the Home screen button on the browser toolbar
-  -->
-  <string name="browser_toolbar_home">Pantalla nue kajie\'e</string>
-  <!--
-    Browser Toolbar
-
     Content description for the translate page toolbar button that opens the translations dialog when no translation has occurred.
   -->
   <string name="browser_toolbar_translate">Traducir página</string>
@@ -701,8 +695,6 @@
   <string name="library_desktop_bookmarks_unfiled">Inka a ta´a ini noo´o</string>
   <!-- Option in Library to open History page -->
   <string name="library_history">Daa nnánukunu</string>
-  <!-- Option in Library to open a new tab -->
-  <string name="library_new_tab">Sukua jíía</string>
   <!-- Settings Page Title -->
   <string name="settings_title">Ke´i</string>
   <!-- Content description (not visible, for screen readers etc.): "Close button for library settings" -->
@@ -934,10 +926,6 @@
   <string name="edit_bookmark_folder_fragment_title">Natee carpeta</string>
   <!-- Bookmark URL editing field label -->
   <string name="bookmark_url_label">URL</string>
-  <!-- Bookmark FOLDER editing field label -->
-  <string name="bookmark_folder_label">CARPETA</string>
-  <!-- Bookmark NAME editing field label -->
-  <string name="bookmark_name_label">Sivɨ</string>
   <!-- Bookmark select folder screen title -->
   <string name="bookmark_select_folder_fragment_label">Kaji carpeta</string>
   <!-- Bookmark editing error missing or improper URL -->
@@ -1051,8 +1039,6 @@
   <string name="collections_header">Colecciones</string>
   <!-- Content description (not visible, for screen readers etc.): Opens the collection menu when pressed -->
   <string name="collection_menu_button_content_description">Menú de la colección</string>
-  <!-- Label to describe what collections are to a new user without any collections -->
-  <string name="no_collections_description2">Nake\'e daa natiñu jitu ininu. \nStutu daa nnanuku, daa nuu jíi daa pestañas inu saa kuvi kuvɨnu ñama.</string>
   <!-- Title for the "select tabs" step of the collection creator -->
   <string name="create_collection_select_tabs">Kaji daa pestañas</string>
   <!-- Title for the "select collection" step of the collection creator -->
@@ -1820,8 +1806,6 @@
     Default browser card title
   -->
   <string name="default_browser_experiment_card_title">Sama ka̱a̱ a ni´inu ntaka íchi</string>
-  <!-- Content description for close button in collection placeholder. -->
-  <string name="remove_home_collection_placeholder_content_description">Xita</string>
   <!-- Content description radio buttons with a link to more information -->
   <string name="radio_preference_info_content_description">Kaxin sa kuninu detalles</string>
   <!-- Content description for the action bar "up" button -->
@@ -1838,20 +1822,10 @@
     Action label for elements that can be collapsed if interacting with them. Talkback will append this to say "Double tap to collapse".
   -->
   <string name="a11y_action_label_collapse">contraer</string>
-  <!-- Current state for elements that can be collapsed if interacting with them. Talkback will dictate this after a state change. -->
-  <string name="a11y_state_label_collapsed">colapsado</string>
   <!-- Action label for elements that can be expanded if interacting with them. Talkback will append this to say "Double tap to expand". -->
   <string name="a11y_action_label_expand">Sá´á ka´nu</string>
-  <!-- Current state for elements that can be expanded if interacting with them. Talkback will dictate this after a state change. -->
-  <string name="a11y_state_label_expanded">expandido</string>
   <!-- Action label for links to a website containing documentation about a wallpaper collection. Talkback will append this to say "Double tap to open link to learn more about this collection". -->
   <string name="a11y_action_label_wallpaper_collection_learn_more">Síne enlace sa kuninuka jiee colección ya\'a</string>
-  <!-- Content description for headings announced by accessibility service. %s is the text of the heading. Talkback will announce the text and then speak the word "Heading" indicating to the user that this text is a heading for a section. -->
-  <string name="a11y_heading">%s, Xini</string>
-  <!-- Title for dialog displayed when trying to access links present in a text. -->
-  <string name="a11y_links_title">Enlaces</string>
-  <!-- Additional content description for text bodies that contain urls. -->
-  <string name="a11y_links_available">Enlaces íyo</string>
   <!-- Translations feature -->
 
   <!--

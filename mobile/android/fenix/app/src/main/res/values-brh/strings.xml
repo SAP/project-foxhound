@@ -177,12 +177,6 @@
   <string name="default_locale_text">ڈیوائس نا دووی اے ارف</string>
   <!-- Placeholder text shown in the search bar before a user enters text -->
   <string name="locale_search_hint">دووی گچین کر</string>
-  <!--
-    Search Fragment
-
-    Button in the search view that lets a user search by scanning a QR code
-  -->
-  <string name="search_scan_button_2">QR کوڈ اسکین کر</string>
   <!-- Button in the search suggestions onboarding that allows search suggestions in private sessions -->
   <string name="search_suggestions_onboarding_allow_button">اجازت ایت</string>
   <!-- Button in the search suggestions onboarding that does not allow search suggestions in private sessions -->
@@ -399,8 +393,6 @@
   <string name="library_desktop_bookmarks_unfiled">ایلو بکمارکاک</string>
   <!-- Option in Library to open History page -->
   <string name="library_history">تاریخچہ</string>
-  <!-- Option in Library to open a new tab -->
-  <string name="library_new_tab">پوسکنو ٹیب اس</string>
   <!-- Settings Page Title -->
   <string name="settings_title">سیٹنگاک</string>
   <!-- Content description (not visible, for screen readers etc.): "Close button for library settings" -->

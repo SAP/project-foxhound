@@ -11,6 +11,13 @@
   <string name="mozac_feature_applinks_open_in">Malfermi per…</string>
   <!-- The title of the prompt that warns users their normal browsing session is trying to open another app -->
   <string name="mozac_feature_applinks_normal_confirm_dialog_title">Malfermi per alia apo</string>
+  <!-- The title of the prompt that warns users their normal browsing session is trying to open another app -->
+  <string name="mozac_feature_applinks_normal_confirm_dialog_title_2">Ĉu malfermi ligilon en alia programo?</string>
+  <!--
+    The title of the prompt with app suffix.
+    %s is a placeholder that will be replaced by an app name
+  -->
+  <string name="mozac_feature_applinks_normal_confirm_dialog_title_with_app_name_2">Ĉu malfermi ligilon en la programo %s?</string>
   <!--
     The title of the prompt that warns users their normal browsing session is trying to open another app
     %s is a placeholder that will be replaced by an app name
@@ -23,6 +30,8 @@
   <string name="mozac_feature_applinks_normal_confirm_dialog_message">Ĉu vi ŝatus forlasi %s por vidi tiun ĉi enhavon?</string>
   <!-- Opens the selected time -->
   <string name="mozac_feature_applinks_confirm_dialog_confirm">Malfermi</string>
+  <!-- Opens the selected app link -->
+  <string name="mozac_feature_applinks_confirm_dialog_confirm_2">Malfermi en programo</string>
   <!-- Cancels the prompt -->
   <string name="mozac_feature_applinks_confirm_dialog_deny">Nuligi</string>
   <!-- The label of the checkbox that, depending of user's choice, can change the Open links in apps setting -->
@@ -41,4 +50,6 @@
   <string name="mozac_feature_applinks_unique_identifier">Unika identigilo</string>
   <!-- The text shown when there is no Firefox URL -->
   <string name="mozac_feature_applinks_none">Neniu</string>
+  <!-- The subtitle showing where the link was navigated from. %s is the domain. -->
+  <string name="mozac_feature_applinks_link_from">Ligilo el %s</string>
 </resources>

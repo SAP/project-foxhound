@@ -17,10 +17,6 @@
   <string name="mozac_browser_toolbar_long_press_popup_paste">ਚੇਪੋ</string>
   <!-- Contextual menu option for long pressing on the toolbar URL. Clicking it will paste the text from clipboard and search for or load it as an URL. '&amp;' is replaced with the ampersand symbol: & -->
   <string name="mozac_browser_toolbar_long_press_popup_paste_and_go">ਚੇਪੋ ਤੇ ਜਾਓ</string>
-  <!-- Text for the title displayed in the contextual feature recommendation popup promoting the new toolbar redesign. -->
-  <string name="mozac_toolbar_cfr_title">Android ਲਈ ਡਿਜ਼ਾਇਨ ਕੀਤਾ। ਤੁਹਾਡੇ ਲਈ ਸੁਧਾਰਿਆ</string>
-  <!-- Text for the description displayed in the contextual feature recommendation popup promoting the new toolbar redesign. -->
-  <string name="mozac_toolbar_cfr_description">ਅਸੀਂ ਡਿਜ਼ਾਈਨ ਨੂੰ ਹਲਕੇ, ਮਾਡਰਨ ਦਿੱਖ ਨਾਲ ਨਵੇਂ ਸਿਰਿਓ ਬਣਾਇਆ ਹੈ।</string>
   <!-- Content description (not visible, for screen readers etc.) for the "minimal toolbar" containing just the URL instead of the big toolbar containing also other buttons. %1$s will be replaced with the domain name of the current website. -->
   <string name="mozac_minimal_display_toolbar_content_description">%1$s ਵਿੱਚ ਲਿਖਤ ਦਿੱਤਾ ਜਾ ਰਿਹਾ ਹੈ। ਰੋਕਣ ਲਈ ਦੋ ਵਾਰ ਛੂਹੋ</string>
 </resources>

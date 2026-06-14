@@ -189,18 +189,6 @@
   <!-- Browser menu label that navigates to the Password screen -->
   <string name="browser_menu_passwords">Contraseñes</string>
   <!--
-    Browser Toolbar
-
-    Content description for the Home screen button on the browser toolbar
-  -->
-  <string name="browser_toolbar_home">Pantalla d\'aniciu</string>
-  <!--
-    Content description (not visible, for screen readers etc.) for the translate page toolbar button that opens the translations dialog when the page is translated successfully.
-    %1$s is the name of the language that is displayed in the original page. (For example: English)
-    %2$s is the name of the language which the page was translated to. (For example: French)
-  -->
-  <string name="browser_toolbar_translated_successfully">La páxina tradúxose del «%1$s» al «%2$s».</string>
-  <!--
     Locale Settings Fragment
 
     Content description for tick mark on selected language
@@ -544,8 +532,6 @@
   <string name="library_desktop_bookmarks_unfiled">Otros marcadores</string>
   <!-- Option in Library to open History page -->
   <string name="library_history">Historial</string>
-  <!-- Option in Library to open a new tab -->
-  <string name="library_new_tab">Llingüeta nueva</string>
   <!-- Settings Page Title -->
   <string name="settings_title">Configuración</string>
   <!-- Content description (not visible, for screen readers etc.): "Close button for library settings" -->
@@ -751,10 +737,6 @@
   <string name="edit_bookmark_folder_fragment_title">Edición d\'una carpeta</string>
   <!-- Bookmark URL editing field label -->
   <string name="bookmark_url_label">URL</string>
-  <!-- Bookmark FOLDER editing field label -->
-  <string name="bookmark_folder_label">CARPETA</string>
-  <!-- Bookmark NAME editing field label -->
-  <string name="bookmark_name_label">NOME</string>
   <!-- Bookmark select folder screen title -->
   <string name="bookmark_select_folder_fragment_label">Seleición d\'una carpeta</string>
   <!-- Bookmark editing error missing or improper URL -->
@@ -840,8 +822,6 @@
   <string name="collections_header">Coleiciones</string>
   <!-- Content description (not visible, for screen readers etc.): Opens the collection menu when pressed -->
   <string name="collection_menu_button_content_description">Menú de la coleición</string>
-  <!-- Label to describe what collections are to a new user without any collections -->
-  <string name="no_collections_description2">Coleiciona les coses que t\'importen.\nAgrupa busques, sitios y llingüetes asemeyaes p\'acceder aína a estos elementos dempués.</string>
   <!-- Title for the "select tabs" step of the collection creator -->
   <string name="create_collection_select_tabs">Seleición de llingüetes</string>
   <!-- Title for the "select collection" step of the collection creator -->
@@ -1384,12 +1364,8 @@
   <string name="firefox_suggest_header" tools:ignore="BrandUsage">Firefox Suggest</string>
   <!-- Title for search suggestions when the default search suggestion engine is anything other than Google. %s is default search engine name. -->
   <string name="other_default_search_engine_suggestion_header">Busca nel motor «%s»</string>
-  <!-- Content description for close button in collection placeholder. -->
-  <string name="remove_home_collection_placeholder_content_description">Quitar</string>
   <!-- Content description radio buttons with a link to more information -->
   <string name="radio_preference_info_content_description">Calca pa consiguir más detalles</string>
-  <!-- Current state for elements that can be expanded if interacting with them. Talkback will dictate this after a state change. -->
-  <string name="a11y_state_label_expanded">espandida</string>
   <!-- Translations feature -->
 
   <!--

@@ -44,23 +44,4 @@
   <string name="mozac_protections_dashboard_empty_title">%1$s блокира праћење док прегледате веб.</string>
   <!-- Subtitle shown when no trackers have been blocked yet -->
   <string name="mozac_protections_dashboard_empty_subtitle">Видећете их овде.</string>
-  <plurals name="mozac_protections_dashboard_trackers_count">
-    <!--
-      Label used for the number of trackers blocked.
-      %1$d is the number of trackers.
-    -->
-    <item quantity="one">%1$d пратилац</item>
-    <item quantity="few">%1$d пратилаца</item>
-    <item quantity="other">%1$d пратилаца</item>
-  </plurals>
-  <plurals name="mozac_protections_dashboard_total_blocked_since">
-    <!--
-      Footer line shown in the dashboard summarizing total trackers blocked
-      since a specific date. %1$s is the trackers count phrase (e.g.
-      "5,305 trackers"). %2$s is the formatted date (e.g. "February 23, 2026").
-    -->
-    <item quantity="one">%1$s блокиран од %2$s</item>
-    <item quantity="few">%1$s блокирана од %2$s</item>
-    <item quantity="other">%1$s блокираних од %2$s</item>
-  </plurals>
 </resources>

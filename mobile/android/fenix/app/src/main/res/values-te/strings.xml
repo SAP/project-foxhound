@@ -141,12 +141,6 @@
   <!-- Browser menu label that navigates to the Password screen -->
   <string name="browser_menu_passwords">సంకేతపదాలు</string>
   <!--
-    Browser Toolbar
-
-    Content description for the Home screen button on the browser toolbar
-  -->
-  <string name="browser_toolbar_home">ముంగిలి తెర</string>
-  <!--
     Locale Settings Fragment
 
     Content description for tick mark on selected language
@@ -454,8 +448,6 @@
   <string name="library_desktop_bookmarks_unfiled">ఇతర ఇష్టాంశాలు</string>
   <!-- Option in Library to open History page -->
   <string name="library_history">చరిత్ర</string>
-  <!-- Option in Library to open a new tab -->
-  <string name="library_new_tab">కొత్త ట్యాబు</string>
   <!-- Settings Page Title -->
   <string name="settings_title">అమరికలు</string>
   <!-- Content description (not visible, for screen readers etc.): "Close button for library settings" -->
@@ -652,10 +644,6 @@
   <string name="edit_bookmark_folder_fragment_title">సంచయాన్ని సవరించు</string>
   <!-- Bookmark URL editing field label -->
   <string name="bookmark_url_label">చిరునామా</string>
-  <!-- Bookmark FOLDER editing field label -->
-  <string name="bookmark_folder_label">సంచయం</string>
-  <!-- Bookmark NAME editing field label -->
-  <string name="bookmark_name_label">పేరు</string>
   <!-- Label for a text input field for a bookmark or folder name -->
   <string name="bookmark_name_label_normal_case">పేరు</string>
   <!-- Bookmark select folder screen title -->
@@ -761,8 +749,6 @@
   <string name="collections_header">సేకరణలు</string>
   <!-- Content description (not visible, for screen readers etc.): Opens the collection menu when pressed -->
   <string name="collection_menu_button_content_description">సేకరణ మెనూ</string>
-  <!-- Label to describe what collections are to a new user without any collections -->
-  <string name="no_collections_description2">మీకు ముఖ్యమైన విషయాలను సేకరించండి.\nత్వరగా చేరుకోవడం కోసం సంబంధిత వెతుకులాటలను, సైట్లను, ట్యాబులను ఒకచోట పెట్టుకోండి.</string>
   <!-- Title for the "select tabs" step of the collection creator -->
   <string name="create_collection_select_tabs">ట్యాబుల ఎంపిక</string>
   <!-- Title for the "select collection" step of the collection creator -->
@@ -1303,14 +1289,10 @@
   <string name="inactive_tabs_title">అచేతన ట్యాబులు</string>
   <!-- Content description for closing all inactive tabs -->
   <string name="inactive_tabs_delete_all">అచేతన ట్యాబులన్నిటినీ మూసివేయి</string>
-  <!-- Content description for close button in collection placeholder. -->
-  <string name="remove_home_collection_placeholder_content_description">తొలగించు</string>
   <!-- Content description radio buttons with a link to more information -->
   <string name="radio_preference_info_content_description">మరిన్ని వివరాలకు నొక్కండి</string>
   <!-- Snackbar button text to navigate to telemetry settings. -->
   <string name="experiments_snackbar_button">అమరికలకు వెళ్ళు</string>
-  <!-- Title for dialog displayed when trying to access links present in a text. -->
-  <string name="a11y_links_title">లంకెలు</string>
   <!-- Translations feature -->
 
   <!-- Text that links to additional information about the Firefox translations feature. -->

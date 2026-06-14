@@ -17,10 +17,6 @@
   <string name="mozac_browser_toolbar_long_press_popup_paste">Encollar</string>
   <!-- Contextual menu option for long pressing on the toolbar URL. Clicking it will paste the text from clipboard and search for or load it as an URL. '&amp;' is replaced with the ampersand symbol: & -->
   <string name="mozac_browser_toolbar_long_press_popup_paste_and_go">Encollar &amp; dai</string>
-  <!-- Text for the title displayed in the contextual feature recommendation popup promoting the new toolbar redesign. -->
-  <string name="mozac_toolbar_cfr_title">Concepì per Android. Perfecziunà per tai</string>
-  <!-- Text for the description displayed in the contextual feature recommendation popup promoting the new toolbar redesign. -->
-  <string name="mozac_toolbar_cfr_description">Nus avain actualisà il design cun ina parita pli eleganta e moderna</string>
   <!-- Content description (not visible, for screen readers etc.) for the "minimal toolbar" containing just the URL instead of the big toolbar containing also other buttons. %1$s will be replaced with the domain name of the current website. -->
   <string name="mozac_minimal_display_toolbar_content_description">Endataziun da text en %1$s. Tutgar duas giadas per interrumper</string>
 </resources>

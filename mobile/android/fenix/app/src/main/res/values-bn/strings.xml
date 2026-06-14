@@ -96,12 +96,6 @@
   <!-- Browser menu button to open the current page in an external app -->
   <string name="browser_menu_open_app_link">অ্যাপে খুলুন</string>
   <!--
-    Browser Toolbar
-
-    Content description for the Home screen button on the browser toolbar
-  -->
-  <string name="browser_toolbar_home">হোম স্ক্রিন</string>
-  <!--
     Locale Settings Fragment
 
     Content description for tick mark on selected language
@@ -438,10 +432,6 @@
   <string name="edit_bookmark_folder_fragment_title">ফোল্ডার সম্পাদনা করুন</string>
   <!-- Bookmark URL editing field label -->
   <string name="bookmark_url_label">URL</string>
-  <!-- Bookmark FOLDER editing field label -->
-  <string name="bookmark_folder_label">FOLDER</string>
-  <!-- Bookmark NAME editing field label -->
-  <string name="bookmark_name_label">NAME</string>
   <!-- Bookmark select folder screen title -->
   <string name="bookmark_select_folder_fragment_label">ফোল্ডার নির্বাচন করুন</string>
   <!-- Bookmark editing error missing or improper URL -->

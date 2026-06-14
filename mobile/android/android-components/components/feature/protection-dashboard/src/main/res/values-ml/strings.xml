@@ -7,6 +7,8 @@
 -->
 
 <resources>
+  <!-- Title shown in the protection dashboard indicating the user is protected -->
+  <string name="mozac_protections_dashboard_youre_protected">നിങ്ങൾക്കു പരിരക്ഷയുണ്ടു്</string>
   <plurals name="mozac_protections_dashboard_trackers_blocked_this_week">
     <!--
       Label shown below the tracker count in the dashboard. The count is displayed separately
@@ -16,8 +18,19 @@
     <item quantity="one">ഈ ആഴ്ച തടഞ്ഞ പിന്തുടൎച്ചയന്ത്രങ്ങൾ</item>
     <item quantity="other">ഈ ആഴ്ച തടഞ്ഞ പിന്തുടൎച്ചയന്ത്രങ്ങൾ</item>
   </plurals>
+  <plurals name="mozac_protections_dashboard_data_saved">
+    <!-- Label showing data saved in megabytes. %1$d is the number of MB saved -->
+    <item quantity="one">%1$d എം.ബി കരുതിവച്ചു</item>
+    <item quantity="other">%1$d എം.ബി കരുതിവച്ചു</item>
+  </plurals>
+  <!-- Section header for tracker category breakdown -->
+  <string name="protections_dashboard_where_they_came_from">ഇവ എവിടെ നിന്നാണു വന്നതു്</string>
   <!-- Tracker category: Advertising trackers -->
   <string name="protections_dashboard_category_ads">പരസ്യങ്ങൾ</string>
+  <!-- Tracker category: Analytics trackers -->
+  <string name="protections_dashboard_category_analytics">വിശകലനതന്ത്രം</string>
+  <!-- Tracker category: Social media trackers -->
+  <string name="protections_dashboard_category_social">സാമൂഹികം</string>
   <!-- Tracker category: Other trackers -->
   <string name="protections_dashboard_category_others">മറ്റുള്ളവ</string>
   <!-- Title shown in the protection dashboard header next to the shield icon -->
@@ -29,4 +42,13 @@
   <string name="mozac_protections_dashboard_empty_title">താങ്ങൾ തിരയുമ്പോഴു് %1$s പിന്തുടൎച്ചയന്ത്രങ്ങളെ തടയും.</string>
   <!-- Subtitle shown when no trackers have been blocked yet -->
   <string name="mozac_protections_dashboard_empty_subtitle">താങ്ങൾക്കുവയെ ഇവിടെ കാണാം.</string>
+  <plurals name="mozac_protections_dashboard_total_blocked_since_2">
+    <!--
+      Footer line shown in the dashboard summarizing total trackers blocked
+      since a specific date. %1$d is the trackers count number (e.g. 123).
+      %2$s is the formatted date (e.g. "February 23, 2026").
+    -->
+    <item quantity="one">%2$s-മുതൽ %1$d പിന്തുടൎച്ചയന്ത്രങ്ങളെ തടഞ്ഞു</item>
+    <item quantity="other">%2$s-മുതൽ %1$d പിന്തുടൎച്ചയന്ത്രങ്ങളെ തടഞ്ഞു</item>
+  </plurals>
 </resources>

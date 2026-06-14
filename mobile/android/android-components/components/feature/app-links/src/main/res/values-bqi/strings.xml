@@ -11,6 +11,13 @@
   <string name="mozac_feature_applinks_open_in">گۊشیڌن من…</string>
   <!-- The title of the prompt that warns users their normal browsing session is trying to open another app -->
   <string name="mozac_feature_applinks_normal_confirm_dialog_title">گۊشیڌن من برنومه یل دی</string>
+  <!-- The title of the prompt that warns users their normal browsing session is trying to open another app -->
+  <string name="mozac_feature_applinks_normal_confirm_dialog_title_2">ای لینگ ن من ی برنومه دی اگۊشین؟</string>
+  <!--
+    The title of the prompt with app suffix.
+    %s is a placeholder that will be replaced by an app name
+  -->
+  <string name="mozac_feature_applinks_normal_confirm_dialog_title_with_app_name_2">ای لینگ من برنومه %s بوگوئشه؟</string>
   <!--
     The title of the prompt that warns users their normal browsing session is trying to open another app
     %s is a placeholder that will be replaced by an app name
@@ -35,6 +42,12 @@
   <string name="mozac_feature_applinks_hide_details">بؽڌار کردن جۊزعیات</string>
   <!-- The label for the source URL in the details section -->
   <string name="mozac_feature_applinks_source_url">نشۊوی اینترنتی بونچک</string>
+  <!-- The label for the destination URL in the details section -->
+  <string name="mozac_feature_applinks_destination_url">نشۊوی اینترنتی مقسد</string>
+  <!-- The label for the URL if opening in the browser in the details section. %s is the browser name. -->
+  <string name="mozac_feature_applinks_firefox_url">ٱر نشۊوی اینترنتی (URL) من %s بوگوئشه</string>
+  <!-- The label for the unique identifier in the details section -->
+  <string name="mozac_feature_applinks_unique_identifier">شناسه مونهسر ب فرد</string>
   <!-- The text shown when there is no Firefox URL -->
   <string name="mozac_feature_applinks_none">هیچ کویکسووݩ</string>
   <!-- The subtitle showing where the link was navigated from. %s is the domain. -->

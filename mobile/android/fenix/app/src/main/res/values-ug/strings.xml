@@ -332,21 +332,9 @@
   <!--
     Browser Toolbar
 
-    Content description for the Home screen button on the browser toolbar
-  -->
-  <string name="browser_toolbar_home">باش ئېكران</string>
-  <!--
-    Browser Toolbar
-
     Content description for the translate page toolbar button that opens the translations dialog when no translation has occurred.
   -->
   <string name="browser_toolbar_translate">بەت تەرجىمىسى</string>
-  <!--
-    Content description (not visible, for screen readers etc.) for the translate page toolbar button that opens the translations dialog when the page is translated successfully.
-    %1$s is the name of the language that is displayed in the original page. (For example: English)
-    %2$s is the name of the language which the page was translated to. (For example: French)
-  -->
-  <string name="browser_toolbar_translated_successfully">بەت %1$s دىن %2$s غا تەرجىمە قىلىندى.</string>
   <!-- CFR description for the browser toolbar describing the "Shake to summarize feature" -->
   <string name="browser_toolbar_summarize_cfr_description">ئۈسكۈنىنى سىلكىسىڭىز بۇ بەتنىڭ قىسقىچە مەزمۇنىنى شۇ ھامان ھاسىللايدۇ. ⚡️</string>
   <!--
@@ -377,8 +365,6 @@
   <string name="ai_controls_banner_headline">%s تا تاللاش ھەمىشە سىزدە</string>
   <!-- Supporting text for the AI controls banner. %s is a learn more link using ai_controls_learn_more as text. -->
   <string name="ai_controls_banner_supporting_text_2">سۇنئىي ئەقىلنىڭ ئالىي ئىقتىدارىنى ئىشلىتىش ئىشلەتمەسلىكمۇ شۇنىڭ ئىچىدە. %s</string>
-  <!-- Supporting text for the AI controls banner -->
-  <string name="ai_controls_banner_supporting_text">سۇنئىي ئەقىلنىڭ ئالىي ئىقتىدارىنى ئىشلىتىش ئىشلەتمەسلىكمۇ شۇنىڭ ئىچىدە.</string>
   <!-- Link text for learning more about AI controls -->
   <string name="ai_controls_learn_more">تەپسىلاتى</string>
   <!-- Title for the block AI enhancements toggle -->
@@ -424,12 +410,6 @@
   <!--
     Search Fragment
 
-    Button in the search view that lets a user search by scanning a QR code
-  -->
-  <string name="search_scan_button_2">QR كودىنى تارا</string>
-  <!--
-    Search Fragment
-
     Button in the search view that lets a user navigate to the site in their clipboard
   -->
   <string name="awesomebar_clipboard_title">چاپلاش تاختىسىدىكى ئۇلىنىشنى ئېچىش</string>
@@ -464,6 +444,8 @@
   <string name="search_suggestions_delete_history_item_snackbar">تارىختىن %1$s ى ئۆچۈرۈلدى</string>
   <!-- Content description (not visible, for screen readers etc.): Button shown near a history search result allowing to delete it from browsing history. -->
   <string name="mozac_browser_awesomebar_remove_suggestion" tools:ignore="UnusedResources">بۇ تارىخىي تۈر ئۆچۈرۈلىدۇ</string>
+  <!-- Button in the app links prompt that keeps the user in the browser instead of opening the external app. %1$s is the name of the app (for example "Firefox"). -->
+  <string name="applinks_prompt_negative_button">%1$s دا قال</string>
   <!--
     Home onboarding
 
@@ -1120,7 +1102,7 @@
   <!-- Title for the customize home screen section with sponsored shortcuts. -->
   <string name="customize_toggle_contile">قوللايدىغان تېزلەتمىلەر</string>
   <!-- Title for the customize home screen section that toggles the Homepage sports widget. -->
-  <string name="customize_toggle_world_cup" tools:ignore="UnusedResources">دۇنيا لوڭقىسى</string>
+  <string name="customize_toggle_world_cup">دۇنيا لوڭقىسى</string>
   <!--
     Wallpapers
 
@@ -1460,8 +1442,6 @@
   <string name="library_desktop_bookmarks_unfiled">باشقا خەتكۈچ</string>
   <!-- Option in Library to open History page -->
   <string name="library_history">تارىخ</string>
-  <!-- Option in Library to open a new tab -->
-  <string name="library_new_tab">يېڭى بەتكۈچ</string>
   <!-- Settings Page Title -->
   <string name="settings_title">تەڭشەك</string>
   <!-- Content description (not visible, for screen readers etc.): "Close button for library settings" -->
@@ -2160,6 +2140,12 @@
   <string name="bookmark_sort_menu_a_to_z">A دىن Z غىچە تەرتىپلەيدۇ</string>
   <!-- Label for button to sort bookmarks in reverse alphabetical order in the bookmark sorting overflow menu. -->
   <string name="bookmark_sort_menu_z_to_a">Z دىن A غىچە تەرتىپلەيدۇ</string>
+  <!-- Label for button to import bookmarks from file. -->
+  <string name="bookmark_import_menu_button">ھۆججەتتىن ئەكىر</string>
+  <!-- Snackbar message shown when a bookmark import attempt fails. -->
+  <string name="bookmark_import_failure_snackbar">خەتكۈچنى ئەكىرەلمەيدۇ. قايتا سىناڭ.</string>
+  <!-- Default name for the folder created when importing bookmarks from a file. -->
+  <string name="bookmark_import_destination_default_name">ئەكىرگەن خەتكۈچ</string>
   <!--
     Bookmark multi select title in app bar
     %1$d is the number of bookmarks selected
@@ -2171,12 +2157,8 @@
   <string name="edit_bookmark_folder_fragment_title">قىسقۇچ تەھرىر</string>
   <!-- Bookmark URL editing field label -->
   <string name="bookmark_url_label">تور ئادرېسى</string>
-  <!-- Bookmark FOLDER editing field label -->
-  <string name="bookmark_folder_label">قىسقۇچ</string>
   <!-- Text indicating which folder a bookmark or folder will be saved in -->
   <string name="bookmark_save_in_label">ساقلا</string>
-  <!-- Bookmark NAME editing field label -->
-  <string name="bookmark_name_label">ئىسىم</string>
   <!-- Label for a text input field for a bookmark or folder name -->
   <string name="bookmark_name_label_normal_case">ئىسمى</string>
   <!-- Bookmark select folder screen title -->
@@ -2212,16 +2194,16 @@
   <string name="bookmark_select_folder_close_folder_content_description">قىسقۇچنى ياپ: %s</string>
   <!-- Content description for the "close" button in bookmarks screen. -->
   <string name="bookmark_close_button_content_description">خەتكۈچنى تاقا</string>
+  <!-- Content description for the Import bookmarks button in bookmarks screen. -->
+  <string name="bookmark_import_bookmarks_button_content_description">ھۆججەتتىن ئەكىر</string>
   <!-- Title for the bookmark list empty state -->
   <string name="bookmark_empty_list_title">ھېچقانداق خەتكۈچ يوق</string>
+  <!-- Title for the bookmark list empty state at the root level. -->
+  <string name="bookmark_empty_list_root_title">ئامراق خەتكۈچلىرىڭىزنى بىر جايدا ساقلاڭ</string>
   <!-- Bookmark screen folder description. %s is the count of bookmark folder children -->
   <string name="bookmarks_folder_description">قىسقۇچتىكى خەتكۈچ: %s</string>
-  <!-- Description for the bookmark list empty state when you're not signed into sync. -->
-  <string name="bookmark_empty_list_guest_description">زىيارەت قىلىۋاتقان تور بېكىتىڭىزنى ساقلايدۇ. تىزىمغا كىرگەندىن كېيىن قەدەمداشلانغان باشقا ئۈسكۈنىدىكى خەتكۈچنى ئىشلىتەلەيدۇ.</string>
   <!-- Text for the button to navigate to sync authentication -->
   <string name="bookmark_empty_list_guest_cta">قەدەمداشقا تىزىمغا كىرىڭ</string>
-  <!-- Description for the bookmark list empty state when you're signed into sync. -->
-  <string name="bookmark_empty_list_authenticated_description">زىيارەت قىلىۋاتقان تور بېكىتىڭىزنى ساقلايدۇ. تىزىمغا كىرگەندىن كېيىن قەدەمداشلانغان باشقا ئۈسكۈنىدىكى خەتكۈچنى ئىشلىتەلەيمىز.</string>
   <!-- Description for the bookmark list empty state when you're in an empty folder. -->
   <string name="bookmark_empty_list_folder_description">زىيارەت قىلىۋاتقاندا خەتكۈچكە قوشسىڭىز كېيىن ياقتۇرغان تور بېكەتلىرىڭىزنى تاپالايسىز.</string>
   <!-- Description for the add new folder button when selecting a folder. -->
@@ -2336,8 +2318,6 @@
   <string name="collections_header">يىغقۇچ</string>
   <!-- Content description (not visible, for screen readers etc.): Opens the collection menu when pressed -->
   <string name="collection_menu_button_content_description">يىغقۇچ تىزىملىكى</string>
-  <!-- Label to describe what collections are to a new user without any collections -->
-  <string name="no_collections_description2">كېرەكلىك نەرسىلەر بۇ جايغا يىغىلىدۇ.\nكېيىن تېز زىيارەت قىلىش ئۈچۈن ئوخشىشىپ كېتىدىغان ئىزدەش، بېكەت ۋە بەتكۈچلەر گۇرۇپپىلىنىدۇ.</string>
   <!-- Title for the "select tabs" step of the collection creator -->
   <string name="create_collection_select_tabs">بەتكۈچنى تاللا</string>
   <!-- Title for the "select collection" step of the collection creator -->
@@ -2403,8 +2383,14 @@
   <string name="share_device_subheader">ئۈسكۈنىگە يوللا</string>
   <!-- Content description for the drag handle that dismisses the Send to Device bottom sheet -->
   <string name="send_to_devices_bottom_sheet_close_content_description">«ئۈسكۈنىگە يوللا» نى ياپ</string>
+  <!-- Text for the QR code action in the native share sheet -->
+  <string name="share_qr_code">QR كودى</string>
+  <!-- Title shown in the QR code display screen -->
+  <string name="qr_code_display_title">QR كودى</string>
   <!-- Content description for the close button in the QR code display screen -->
   <string name="qr_code_display_close">ياپ</string>
+  <!-- Heading on the QR code display screen -->
+  <string name="qr_code_display_share_nearby">ئۇلانمىنى يېقىن ئەتراپقا ھەمبەھىرلە</string>
   <!-- Label for the download button on the QR code display screen -->
   <string name="qr_code_display_download">چۈشۈر</string>
   <!-- Sub-header in the dialog to share a link to an app from the full list -->
@@ -3054,6 +3040,8 @@
   <string name="preferences_ip_protection_on">ئوچۇق</string>
   <!-- Badge label shown in the menu item when the browser VPN is off -->
   <string name="preferences_ip_protection_off">تاقاق</string>
+  <!-- Badge label shown in the menu item when the browser VPN has an error -->
+  <string name="ip_protection_menu_error">خاتالىق</string>
   <!-- Label for the dismiss button on the onboarding bottom sheet. -->
   <string name="ip_protection_onboarding_not_now_button">ھازىر ئەمەس</string>
   <!--
@@ -3354,6 +3342,10 @@
     which navigates the user to a screen displaying all the shortcuts.
   -->
   <string name="homepage_shortcuts_show_all_content_description">ھەممە تېزلەتمىنى كۆرسىتىدۇ</string>
+  <!-- Label for the "Add shortcut" button displayed as a tile. -->
+  <string name="homepage_shortcuts_add_shortcut">تېزلەتمىگە قوش</string>
+  <!-- Title text for the "Enter a Website URL" dialog for adding a shortcut. -->
+  <string name="homepage_shortcuts_add_website_title">تور بېكەت ئۇلانمىسى كىرگۈزۈلىدۇ</string>
   <!-- Title text displayed in the dialog when shortcuts limit is reached. -->
   <string name="shortcut_max_limit_title">تېزلەتمە چېكىگە يەتتى</string>
   <!-- Content description text displayed in the dialog when shortcut limit is reached. -->
@@ -3440,8 +3432,6 @@
   <string name="default_browser_experiment_card_title">كۆڭۈلدىكى توركۆرگۈڭىزنى ئالماشتۇرۇڭ</string>
   <!-- Default browser card text -->
   <string name="default_browser_experiment_card_text" tools:ignore="BrandUsage">تور بېكەت، ئېلخەت ۋە ئۇچۇر ئۇلانمىلىرىنى Firefox تا ئاپتوماتىك ئېچىشقا تەڭشەيدۇ.</string>
-  <!-- Content description for close button in collection placeholder. -->
-  <string name="remove_home_collection_placeholder_content_description">چىقىرىۋەت</string>
   <!-- Content description radio buttons with a link to more information -->
   <string name="radio_preference_info_content_description">تەپسىلات ئۈچۈن چېكىڭ</string>
   <!-- Content description for the action bar "up" button -->
@@ -3473,20 +3463,10 @@
     Action label for elements that can be collapsed if interacting with them. Talkback will append this to say "Double tap to collapse".
   -->
   <string name="a11y_action_label_collapse">يىغ</string>
-  <!-- Current state for elements that can be collapsed if interacting with them. Talkback will dictate this after a state change. -->
-  <string name="a11y_state_label_collapsed">يىغىلدى</string>
   <!-- Action label for elements that can be expanded if interacting with them. Talkback will append this to say "Double tap to expand". -->
   <string name="a11y_action_label_expand">ياي</string>
-  <!-- Current state for elements that can be expanded if interacting with them. Talkback will dictate this after a state change. -->
-  <string name="a11y_state_label_expanded">يېيىلدى</string>
   <!-- Action label for links to a website containing documentation about a wallpaper collection. Talkback will append this to say "Double tap to open link to learn more about this collection". -->
   <string name="a11y_action_label_wallpaper_collection_learn_more">بۇ يىغقۇچ ھەققىدە تېخىمۇ كۆپ ئۇچۇرنى بىلمەكچى بولسىڭىز ئۇلانمىنى ئېچىڭ</string>
-  <!-- Content description for headings announced by accessibility service. %s is the text of the heading. Talkback will announce the text and then speak the word "Heading" indicating to the user that this text is a heading for a section. -->
-  <string name="a11y_heading">%s، ماۋزۇ</string>
-  <!-- Title for dialog displayed when trying to access links present in a text. -->
-  <string name="a11y_links_title">ئۇلانما</string>
-  <!-- Additional content description for text bodies that contain urls. -->
-  <string name="a11y_links_available">ئۇلانما بار</string>
   <!-- Translations feature -->
 
   <!--
@@ -3590,6 +3570,10 @@
   <string name="translation_settings_automatic_never_translate_sites">بۇ تور بېكەتلەرنى تەرجىمە قىلمىسۇن</string>
   <!-- Button text for the button that will take the user to the download languages dialog. On the download languages dialog, the user can manage which languages they would like to download for translations. -->
   <string name="translation_settings_download_language">تىل چۈشۈر</string>
+  <!-- Toggle switch title and description for the translation settings control. -->
+  <string name="translation_settings_control_title">تەرجىمە</string>
+  <!-- Clickable text for the translations settings item that links to a website. -->
+  <string name="translation_settings_control_learn_more">تەپسىلاتى</string>
   <!--
     Automatic translation preference screen
 
@@ -4276,8 +4260,94 @@
   <string name="terms_of_use_prompt_body_line_two_alternative" tools:ignore="UnusedResources">سىز %1$s ھەققىدە مول بىلىمگە ئېرىشەلەيسىز.</string>
   <!-- Link text for terms_of_use_prompt_body_line_two_alternative that links to a site with more information about the Terms of Use -->
   <string name="terms_of_use_prompt_body_line_two_alternative_link" tools:ignore="UnusedResources">بۇ جاي</string>
+  <!--
+    Sports widget
+
+    Title text shown at the top of the sports widget country selector, encouraging the user to pick a national team to follow.
+  -->
+  <string name="sports_widget_country_selector_title">كوماندىڭىزغا ئەگىشىڭ</string>
+  <!-- Section header for the North America region in the sports widget country selector. -->
+  <string name="sports_widget_confederation_north_america">شىمالىي ئامېرىكا</string>
   <!-- Section header for the Africa confederation group in the sports widget country selector. -->
   <string name="sports_widget_confederation_africa">ئافرىقا</string>
+  <!-- Section header for the Asia confederation group in the sports widget country selector. -->
+  <string name="sports_widget_confederation_asia">ئاسىيا</string>
+  <!-- Section header for the Europe confederation group in the sports widget country selector. -->
+  <string name="sports_widget_confederation_europe">ياۋروپا</string>
+  <!-- Section header for the South America confederation group in the sports widget country selector. -->
+  <string name="sports_widget_confederation_south_america">جەنۇبىي ئامېرىكا</string>
+  <!-- Country name for England in the sports widget. England cannot be resolved with the Android Intl APIs so it needs an explicit string. -->
+  <string name="sports_widget_country_england">ئەنگلىيە</string>
+  <!-- Title shown on the sports widget champion scoreboard row celebrating the soccer tournament winner. -->
+  <string name="sports_widget_champions_title">2026-يىللىق دۇنيا لوڭقىسى چېمپىيونى</string>
+  <!-- Title shown on the sports widget champion scoreboard celebrating the soccer tournament runners-up. Runners-up means second place. -->
+  <string name="sports_widget_runner_up_title" tools:ignore="UnusedResources">ئىككىنچىلەر</string>
+  <!-- Title shown on the sports widget champion scoreboard celebrating the soccer tournament third place winners. -->
+  <string name="sports_widget_third_place_title">ئۈچىنچىلەر</string>
+  <!-- Sports widget action label to refresh match data after an error. -->
+  <string name="sports_widget_error_refresh">يېڭىلا</string>
+  <!-- Sports widget group stage label for group A in the soccer tournament. -->
+  <string name="sports_widget_group_a">A گۇرۇپپا</string>
+  <!-- Sports widget group stage label for group B in the soccer tournament. -->
+  <string name="sports_widget_group_b">B گۇرۇپپا</string>
+  <!-- Sports widget group stage label for group C in the soccer tournament. -->
+  <string name="sports_widget_group_c">C گۇرۇپپا</string>
+  <!-- Sports widget group stage label for group D in the soccer tournament. -->
+  <string name="sports_widget_group_d">D گۇرۇپپا</string>
+  <!-- Sports widget group stage label for group E in the soccer tournament. -->
+  <string name="sports_widget_group_e">E گۇرۇپپا</string>
+  <!-- Sports widget group stage label for group F in the soccer tournament. -->
+  <string name="sports_widget_group_f">F گۇرۇپپا</string>
+  <!-- Sports widget group stage label for group G in the soccer tournament. -->
+  <string name="sports_widget_group_g">G گۇرۇپپا</string>
+  <!-- Sports widget group stage label for group H in the soccer tournament. -->
+  <string name="sports_widget_group_h">H گۇرۇپپا</string>
+  <!-- Sports widget group stage label for group I in the soccer tournament. -->
+  <string name="sports_widget_group_i">I گۇرۇپپا</string>
+  <!-- Sports widget group stage label for group J in the soccer tournament. -->
+  <string name="sports_widget_group_j">J گۇرۇپپا</string>
+  <!-- Sports widget group stage label for group K in the soccer tournament. -->
+  <string name="sports_widget_group_k">K گۇرۇپپا</string>
+  <!-- Sports widget group stage label for group L in the soccer tournament. -->
+  <string name="sports_widget_group_l">L گۇرۇپپا</string>
+  <!-- Sports widget button label to see match results. -->
+  <string name="sports_widget_see_results" tools:ignore="UnusedResources">مۇسابىقە نەتىجىسىنى كۆرسەت</string>
+  <!-- Sports widget button label to view details of a soccer match results. -->
+  <string name="sports_widget_view_match_details" tools:ignore="UnusedResources">مۇسابىقە تەپسىلاتىنى كۆرسەت</string>
+  <!-- Sports widget section header for related soccer matches in the same group. -->
+  <string name="sports_widget_related_matches" tools:ignore="UnusedResources">مۇناسىۋەتلىك مۇسابىقە</string>
+  <!--
+    Sports widget card title encouraging the user to follow the soccer tournament. “Keep tabs on” is an informal expression
+    meaning to stay updated on or regularly follow something (in this case, World Cup matches and updates).
+    It’s playfully related to Firefox in that “tabs” are a browser feature.
+    It suggests ongoing awareness rather than active monitoring or control. Not to be translated literally as physical “tabs”
+    or tracking in a technical sense; the meaning is about staying informed.
+  -->
+  <string name="sports_widget_card_title">دۇنيا لوڭقىسى مۇسابىقە ئۇچۇرى</string>
+  <!-- Sports widget menu item to change the selected team. -->
+  <string name="sports_widget_change_team">كوماندا ئالماشتۇر</string>
+  <!-- Sports widget menu item to remove the widget from the homepage. -->
+  <string name="sports_widget_remove">چىقىرىۋەت</string>
+  <!-- Sports widget button label to follow another team after the current team is eliminated. -->
+  <string name="sports_widget_follow_another_team">باشقا كوماندىغا ئەگەش</string>
+  <!-- Sports widget button label that dismisses the step of choosing a team to follow. -->
+  <string name="sports_widget_skip">ئاتلا</string>
+  <!--
+    Sports widget countdown label for days. D is short for Day. The layout only allows for 1–2 characters:
+    if there is an equivalent single character for your language, use that (e.g. T for German).
+    Your translation will be automatically truncated at 2 characters to avoid layout issues.
+  -->
+  <string name="sports_widget_countdown_days">ك</string>
+  <!-- Content description (for accessibility, not displayed) for the close button on the sports widget card. -->
+  <string name="sports_widget_close_content_description">ياپ</string>
+  <!-- Content description (for accessibility, not displayed) for the overflow (more options) menu button on the sports widget card. -->
+  <string name="sports_widget_more_options_content_description">تېخىمۇ كۆپ تاللانما</string>
+  <!-- Sports widget error card description shown when the user is offline. -->
+  <string name="sports_widget_error_connection_offline_description">ئىنتېرنېت باغلىنىشىڭىزنى تەكشۈرۈپ ئاندىن قايتا سىناڭ.</string>
+  <!-- Sports widget error card title shown when match data fails to load. -->
+  <string name="sports_widget_error_load_failed_title">ھازىرچە مۇسابىقە ئۇچۇرى يوق.</string>
+  <!-- Sports widget error card description shown when match data fails to load. -->
+  <string name="sports_widget_error_load_failed_description">بىر نەچچە مىنۇتتىن كېيىن يېڭىلاپ كۆرۈڭ.</string>
   <!-- ==== End of Terms of use popup prompt. ==== -->
 
   <!--

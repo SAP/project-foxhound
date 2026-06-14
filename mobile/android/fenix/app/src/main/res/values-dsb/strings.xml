@@ -332,21 +332,9 @@
   <!--
     Browser Toolbar
 
-    Content description for the Home screen button on the browser toolbar
-  -->
-  <string name="browser_toolbar_home">Startowa wobrazowka</string>
-  <!--
-    Browser Toolbar
-
     Content description for the translate page toolbar button that opens the translations dialog when no translation has occurred.
   -->
   <string name="browser_toolbar_translate">Bok pśełožyś</string>
-  <!--
-    Content description (not visible, for screen readers etc.) for the translate page toolbar button that opens the translations dialog when the page is translated successfully.
-    %1$s is the name of the language that is displayed in the original page. (For example: English)
-    %2$s is the name of the language which the page was translated to. (For example: French)
-  -->
-  <string name="browser_toolbar_translated_successfully">Bok jo se pśełožył z rěcy %1$s do rěcy %2$s.</string>
   <!-- CFR description for the browser toolbar describing the "Shake to summarize feature" -->
   <string name="browser_toolbar_summarize_cfr_description">Tśěsćo swój rěd, aby toś ten bok za sekundow zespominał. ⚡️</string>
   <!--
@@ -377,8 +365,6 @@
   <string name="ai_controls_banner_headline">W %s maśo pśecej wólbu</string>
   <!-- Supporting text for the AI controls banner. %s is a learn more link using ai_controls_learn_more as text. -->
   <string name="ai_controls_banner_supporting_text_2">To wopśimjejo, lěc se maju funkcije wužywaś, kótarež su pśez KI pólěpšone. %s</string>
-  <!-- Supporting text for the AI controls banner -->
-  <string name="ai_controls_banner_supporting_text">To wopśimjejo, lěc se maju funkcije wužywaś, kótarež su pśez KI pólěpšone.</string>
   <!-- Link text for learning more about AI controls -->
   <string name="ai_controls_learn_more">Dalšne informacije</string>
   <!-- Title for the block AI enhancements toggle -->
@@ -423,12 +409,6 @@
   <string name="default_locale_text">Rědowu rěc wužywaś</string>
   <!-- Placeholder text shown in the search bar before a user enters text -->
   <string name="locale_search_hint">Rěc pytaś</string>
-  <!--
-    Search Fragment
-
-    Button in the search view that lets a user search by scanning a QR code
-  -->
-  <string name="search_scan_button_2">QR-kod scannowaś</string>
   <!--
     Search Fragment
 
@@ -1143,10 +1123,12 @@
   <string name="customize_toggle_pocket_sponsored">Sponserowane tšojeńka</string>
   <!-- Title for the opening wallpaper settings screen -->
   <string name="customize_wallpapers">Slězynowe wobraze</string>
+  <!-- Label for the menu item that opens the wallpaper settings screen. -->
+  <string name="browser_menu_change_wallpaper">Slězynowy wobraz změniś</string>
   <!-- Title for the customize home screen section with sponsored shortcuts. -->
   <string name="customize_toggle_contile">Sponserowane zwězanja</string>
   <!-- Title for the customize home screen section that toggles the Homepage sports widget. -->
-  <string name="customize_toggle_world_cup" tools:ignore="UnusedResources">Swětowe mejstaŕstwo</string>
+  <string name="customize_toggle_world_cup">Swětowe mejstaŕstwo</string>
   <!--
     Wallpapers
 
@@ -1486,8 +1468,6 @@
   <string name="library_desktop_bookmarks_unfiled">Druge cytańske znamjenja</string>
   <!-- Option in Library to open History page -->
   <string name="library_history">Historija</string>
-  <!-- Option in Library to open a new tab -->
-  <string name="library_new_tab">Nowy rejtarik</string>
   <!-- Settings Page Title -->
   <string name="settings_title">Nastajenja</string>
   <!-- Content description (not visible, for screen readers etc.): "Close button for library settings" -->
@@ -2119,6 +2099,12 @@
   <string name="webcompat_reporter_preview_bottom_sheet_header">Pśeglěd rozpšawy</string>
   <!-- Label for the “Send” button shown in the WebCompat Report preview panel, which the user taps to submit the report. -->
   <string name="webcompat_reporter_preview_bottom_sheet_send">Pósłaś</string>
+  <!-- Title for the Edit URL confirmation dialog in the WebCompatReporter -->
+  <string name="webcompat_reporter_edit_url_dialog_title">URL websedła wobźěłaś</string>
+  <!-- Text shown on the save button for the Edit URL confirmation dialog in the WebCompatReporter. -->
+  <string name="webcompat_reporter_edit_url_dialog_save">Składowaś</string>
+  <!-- Text shown on the dismiss button for the Edit URL confirmation dialog in the WebCompatReporter. -->
+  <string name="webcompat_reporter_edit_url_dialog_dismiss">Zachyśiś</string>
   <!--
     These reason strings are dropdown options on a WebCompat reporter form, indicating what is broken on the site.
 
@@ -2247,12 +2233,8 @@
   <string name="edit_bookmark_folder_fragment_title">Zarědnik wobźěłaś</string>
   <!-- Bookmark URL editing field label -->
   <string name="bookmark_url_label">URL</string>
-  <!-- Bookmark FOLDER editing field label -->
-  <string name="bookmark_folder_label">ZARĚDNIK</string>
   <!-- Text indicating which folder a bookmark or folder will be saved in -->
   <string name="bookmark_save_in_label">Składowaś do</string>
-  <!-- Bookmark NAME editing field label -->
-  <string name="bookmark_name_label">MĚ</string>
   <!-- Label for a text input field for a bookmark or folder name -->
   <string name="bookmark_name_label_normal_case">Mě</string>
   <!-- Bookmark select folder screen title -->
@@ -2296,12 +2278,8 @@
   <string name="bookmark_empty_list_root_title">Wobchowajśo wšykne swóje nejlubše cytańske znamjenja gromaźe</string>
   <!-- Bookmark screen folder description. %s is the count of bookmark folder children -->
   <string name="bookmarks_folder_description">Cytańske znamjenja w zarědniku: %s</string>
-  <!-- Description for the bookmark list empty state when you're not signed into sync. -->
-  <string name="bookmark_empty_list_guest_description">Składujśo sedła, gaž pśeglědujośo. Pśizjawśo se, aby cytańske znamjenja z drugich synchronizěrowanych rědow dostał.</string>
   <!-- Text for the button to navigate to sync authentication -->
   <string name="bookmark_empty_list_guest_cta">Pśizjawśo se za synchronizaciju</string>
-  <!-- Description for the bookmark list empty state when you're signed into sync. -->
-  <string name="bookmark_empty_list_authenticated_description">Składujśo sedła, gaž pśeglědujośo. Wobstarajomy teke cytańske znamjenja z drugich synchronizěrowanych rědow.</string>
   <!-- Description for the bookmark list empty state when you're in an empty folder. -->
   <string name="bookmark_empty_list_folder_description">Pśidajśo cytańske znamjenja, gaž pśeglědujośo, aby swóje nejlubše sedła pózdźej namakał.</string>
   <!-- Description for the add new folder button when selecting a folder. -->
@@ -2416,8 +2394,6 @@
   <string name="collections_header">Zběrki</string>
   <!-- Content description (not visible, for screen readers etc.): Opens the collection menu when pressed -->
   <string name="collection_menu_button_content_description">Meni zběrkow</string>
-  <!-- Label to describe what collections are to a new user without any collections -->
-  <string name="no_collections_description2">Zběrajśo wěcy, kótarež su wam wažne.\nZrědujśo pódobne pytanja a rejtariki za malsny pśistup pózdźej.</string>
   <!-- Title for the "select tabs" step of the collection creator -->
   <string name="create_collection_select_tabs">Rejtariki wubraś</string>
   <!-- Title for the "select collection" step of the collection creator -->
@@ -2873,8 +2849,6 @@
   <string name="etp_suspected_fingerprinters_description">Zmóžnja šćit pśeśiwo zběrarjam palcowych wótśišćow, aby suspektne zběrarje palcowych wótśišćow blokěrował.</string>
   <!-- Category of trackers (fingerprinters) that can be blocked by Enhanced Tracking Protection -->
   <string name="etp_known_fingerprinters_title">Znate zběrarje palcowych wótśišćow</string>
-  <!-- Label for the fingerprinters category shown in the tracking protections dashboard breakdown -->
-  <string name="tracking_dashboard_fingerprinters_category_name">Zběrarje palcowych wótśišćow</string>
   <!--
     Description of the SmartBlock Enhanced Tracking Protection feature. The * symbol is intentionally hardcoded here,
     as we use it on the UI to indicate which trackers have been partially unblocked.
@@ -3167,8 +3141,6 @@
   <string name="ip_protection_promo_headline">Zatwarjony VPN %s</string>
   <!-- Body text for the browser VPN promo card . %s is a learn more link using ip_protection_learn_more as text. -->
   <string name="ip_protection_promo_body_2">Schowajśo swójo stojnišćo, aby z pśidatnym šćit pśeglědował, samo w zjawnem WLAN. %s</string>
-  <!-- Body text for the browser VPN promo card -->
-  <string name="ip_protection_promo_body">Schowajśo swójo stojnišćo, aby z pśidatnym šćit pśeglědował, samo w zjawnem WLAN.</string>
   <!-- Link text that opens additional information about the browser VPN -->
   <string name="ip_protection_learn_more">Dalšne informacije</string>
   <!-- Label for the monthly data allowance section on the browser VPN settings screen -->
@@ -3232,6 +3204,14 @@
   <string name="ip_protection_onboarding_body">%1$s, schowajśo swójo stojnišćo, samo w zjawnem WLAN. Wobstarajśo se %2$d GB kuždy mjasec zadermo.</string>
   <!-- Used as text for a link in ip_protection_onboarding_body. Make sure to adapt capitalization if the link is in the middle of the sentence. -->
   <string name="ip_protection_onboarding_body_link">Pśeglědujśo z pśidatnym šćitom</string>
+  <!--
+    The body of the VPN onboarding card for a promotion that provides unlimited data bandwidth for a certain time.
+    %1$s is a localized date (for example "Jun 9") indicating the end of the promotional period.
+    %2$s is a link using ip_protection_onboarding_body_link_promo (“Learn more”) as text. It links to a support article about VPN on Firefox.
+  -->
+  <string name="ip_protection_onboarding_body_promo">Zmóžniśo jen, aby swójo pśeglědowanje priwatnjejše a śěžčej pśeslědujobne cynił. Wopytajśo jen něnto, aby njewobgranicowanu šyrokosć pasma pśez %1$s dostał. %2$s</string>
+  <!-- Used as text for a link in ip_protection_onboarding_body. Make sure to adapt capitalization if the link is in the middle of the sentence. -->
+  <string name="ip_protection_onboarding_body_link_promo">Dalšne informacije</string>
   <!-- Label for the dismiss button on the onboarding bottom sheet. -->
   <string name="ip_protection_onboarding_not_now_button">Nic něnto</string>
   <!-- Snackbar (in-app pop-up notification) text to signal the browser VPN connection error -->
@@ -3241,6 +3221,8 @@
     %1$d is the total monthly allowance in GB (for example "50").
   -->
   <string name="ip_protection_data_limit_reached_snackbar">%1$d GB datow VPN jo se pśetrjebało. Pśistup se w pśiducem mjasecu slědk stajijo.</string>
+  <!-- Snackbar (in-app pop-up notification) action button text that takes the user to the VPN settings screen. -->
+  <string name="ip_protection_data_limit_reached_snackbar_action">Nastajenja</string>
   <!--
     Autofill
 
@@ -3547,6 +3529,8 @@
   <string name="homepage_shortcuts_add_website">Websedło pśidaś</string>
   <!-- Title text for the "Enter a Website URL" dialog for adding a shortcut. -->
   <string name="homepage_shortcuts_add_website_title">Zapódajśo URL websedła</string>
+  <!-- Title for the "Popular sites" section in the "Add to homepage" bottom sheet. -->
+  <string name="homepage_shortcuts_popular_sites">Woblubowane sedła</string>
   <!-- Title text displayed in the dialog when shortcuts limit is reached. -->
   <string name="shortcut_max_limit_title">Zwězański limit dostany</string>
   <!-- Content description text displayed in the dialog when shortcut limit is reached. -->
@@ -3633,8 +3617,6 @@
   <string name="default_browser_experiment_card_title">Standardny wobglědowak změniś</string>
   <!-- Default browser card text -->
   <string name="default_browser_experiment_card_text" tools:ignore="BrandUsage">Nastajśo wótkaze z websedłow, mejlkow a powěsćow, aby se awtomatiski we Firefox wócynili.</string>
-  <!-- Content description for close button in collection placeholder. -->
-  <string name="remove_home_collection_placeholder_content_description">Wótwónoźeś</string>
   <!-- Content description radio buttons with a link to more information -->
   <string name="radio_preference_info_content_description">Klikniśo za dalšne drobnostki</string>
   <!-- Content description for the action bar "up" button -->
@@ -3666,20 +3648,10 @@
     Action label for elements that can be collapsed if interacting with them. Talkback will append this to say "Double tap to collapse".
   -->
   <string name="a11y_action_label_collapse">schowaś</string>
-  <!-- Current state for elements that can be collapsed if interacting with them. Talkback will dictate this after a state change. -->
-  <string name="a11y_state_label_collapsed">złožony</string>
   <!-- Action label for elements that can be expanded if interacting with them. Talkback will append this to say "Double tap to expand". -->
   <string name="a11y_action_label_expand">pokazaś</string>
-  <!-- Current state for elements that can be expanded if interacting with them. Talkback will dictate this after a state change. -->
-  <string name="a11y_state_label_expanded">rozłožony</string>
   <!-- Action label for links to a website containing documentation about a wallpaper collection. Talkback will append this to say "Double tap to open link to learn more about this collection". -->
   <string name="a11y_action_label_wallpaper_collection_learn_more">wocyńśo wótkaz, aby wěcej wó toś tej zběrce zgónił</string>
-  <!-- Content description for headings announced by accessibility service. %s is the text of the heading. Talkback will announce the text and then speak the word "Heading" indicating to the user that this text is a heading for a section. -->
-  <string name="a11y_heading">%s, nadpismo</string>
-  <!-- Title for dialog displayed when trying to access links present in a text. -->
-  <string name="a11y_links_title">Wótkaze</string>
-  <!-- Additional content description for text bodies that contain urls. -->
-  <string name="a11y_links_available">Wótkaze, kótarež su k dispoziciji</string>
   <!-- Translations feature -->
 
   <!--
@@ -3986,6 +3958,76 @@
   <string name="protection_panel_privacy_and_security_settings_2">Nastajenja priwatnosći</string>
   <!-- Title text for the protection panel permissions section. -->
   <string name="protection_panel_permissions_title">Pšawa</string>
+  <plurals name="trackers_blocked_panel_total_num_trackers_blocked_2">
+    <!--
+      Text for displaying the total number of trackers blocked in the trackers blocked panel.
+      %1$d is a placeholder for the number of trackers blocked.
+    -->
+    <item quantity="one">%1$d pśeslědowak jo se blokěrował na toś tom sedle</item>
+    <item quantity="two">%1$d pśeslědowaka stej se blokěrowałej na toś tom sedle</item>
+    <item quantity="few">%1$d pśeslědowaki su se blokěrowali na toś tom sedle</item>
+    <item quantity="other">%1$d pśeslědowakow jo se blokěrowało na toś tom sedle</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_social_media_trackers">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked social media trackers.
+      %1$d is a placeholder for the number of social media trackers blocked.
+    -->
+    <item quantity="one">%1$d pśeslědowak socialnych medijow</item>
+    <item quantity="two">%1$d pśeslědowaka socialnych medijow</item>
+    <item quantity="few">%1$d pśeslědowaki socialnych medijow</item>
+    <item quantity="other">%1$d pśeslědowakow socialnych medijow</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_cross_site_cookies">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked cross-site tracking cookies.
+      %1$d is a placeholder for the number of cross-site tracking cookies blocked.
+    -->
+    <item quantity="one">%1$d sedła pśesegujucy slědujucy cookie</item>
+    <item quantity="two">%1$d sedła pśesegujucej slědujucej cookieja</item>
+    <item quantity="few">%1$d sedła pśesegujuce slědujuce cookieje</item>
+    <item quantity="other">%1$d sedła pśesegujucych slědujucych cookiejow</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_cryptominers">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked cryptomining scripts.
+      %1$d is a placeholder for the number of cryptominers blocked.
+    -->
+    <item quantity="one">%1$d kryptokopak</item>
+    <item quantity="two">%1$d kryptokopaka</item>
+    <item quantity="few">%1$d kryptokopaki</item>
+    <item quantity="other">%1$d kryptokopakow</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_fingerprinters">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked fingerprinter scripts.
+      %1$d is a placeholder for the number of fingerprinters blocked.
+    -->
+    <item quantity="one">%1$d zběraŕ palcowych wótśišćow</item>
+    <item quantity="two">%1$d zběrarja palcowych wótśišćow</item>
+    <item quantity="few">%1$d zběrarje palcowych wótśišćow</item>
+    <item quantity="other">%1$d zběrarjow palcowych wótśišćow</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_trackers_2">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked generic tracking scripts.
+      %1$d is a placeholder for the number of trackers blocked.
+    -->
+    <item quantity="one">%1$d slědujuce wopśimjeśe</item>
+    <item quantity="two">%1$d slědujucej wopśimjeśi</item>
+    <item quantity="few">%1$d slědujuce wopśimjeśa</item>
+    <item quantity="other">%1$d slědujucych wopśimjeśow</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_trackers_blocked_this_week_2">
+    <!--
+      Text for displaying the number of trackers blocked this week in the trackers blocked panel.
+      %1$d is a placeholder for the number of trackers blocked this week.
+    -->
+    <item quantity="one">%1$d pśeslědowak, kótaryž jo se blokěrował toś ten tyźeń</item>
+    <item quantity="two">%1$d pśeslědowaka, kótarejž stej se blokěrowałej toś ten tyźeń</item>
+    <item quantity="few">%1$d pśeslědowaki, kótarež su se blokěrowali toś ten tyźeń</item>
+    <item quantity="other">%1$d pśeslědowakow, kótarež jo se blokěrowało toś ten tyźeń</item>
+  </plurals>
   <!--
     Text for displaying the total number of trackers blocked in the trackers blocked panel.
     %d is a placeholder for the number of trackers blocked.
@@ -3997,11 +4039,6 @@
     %d is a placeholder for the number of trackers blocked.
   -->
   <string name="trackers_blocked_panel_categorical_num_trackers_blocked">%s: %d</string>
-  <!--
-    Text for displaying the number of trackers blocked this week in the trackers blocked panel.
-    %d is a placeholder for the number of trackers blocked this week.
-  -->
-  <string name="trackers_blocked_panel_num_trackers_blocked_this_week">Pśeslědowaki, kótare su se blokěrowali toś ten tyźeń: %d</string>
   <!--
     Description text for a dialog confirming whether the user wants to delete all data for current site.
     %s is a placeholder for the base domain of website.
@@ -4612,7 +4649,7 @@
   <!-- Sports widget match status label shown during halftime of a match. -->
   <string name="sports_widget_halftime" tools:ignore="UnusedResources">Połcas</string>
   <!-- Sports widget match status label shown during extra time of a match. -->
-  <string name="sports_widget_extra_time" tools:ignore="UnusedResources">Pódlejšenje</string>
+  <string name="sports_widget_extra_time">Pódlejšenje</string>
   <!-- Sports widget match status label shown during penalties of a match. -->
   <string name="sports_widget_penalties">Pokutne kopy</string>
   <!--

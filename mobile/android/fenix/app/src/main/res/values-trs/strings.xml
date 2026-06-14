@@ -330,21 +330,9 @@
   <!--
     Browser Toolbar
 
-    Content description for the Home screen button on the browser toolbar
-  -->
-  <string name="browser_toolbar_home">Raga\' ayi\'ìt</string>
-  <!--
-    Browser Toolbar
-
     Content description for the translate page toolbar button that opens the translations dialog when no translation has occurred.
   -->
   <string name="browser_toolbar_translate">Pajinâ riñā gā’hue nādunō’ a’ngô nuguan’an</string>
-  <!--
-    Content description (not visible, for screen readers etc.) for the translate page toolbar button that opens the translations dialog when the page is translated successfully.
-    %1$s is the name of the language that is displayed in the original page. (For example: English)
-    %2$s is the name of the language which the page was translated to. (For example: French)
-  -->
-  <string name="browser_toolbar_translated_successfully">Pajinâ nachrûn ni āsìj %1$s ndà %2$s.</string>
   <!-- CFR description for the browser toolbar describing the "Shake to summarize feature" -->
   <string name="browser_toolbar_summarize_cfr_description">Dūsiki’ si āga’t da’ gīni’hiāj rā’ñànjt nej sa ‘na’ riña pajinâ nan.</string>
   <!--
@@ -375,8 +363,6 @@
   <string name="ai_controls_banner_headline">Nīgànj chre hua sa nāguīt riña %s</string>
   <!-- Supporting text for the AI controls banner. %s is a learn more link using ai_controls_learn_more as text. -->
   <string name="ai_controls_banner_supporting_text_2">Ngà ‘na’ nej nuguan’ yākàn doj sa gā’hue nāgi’hiaj sà’t ngà IA. %s</string>
-  <!-- Supporting text for the AI controls banner -->
-  <string name="ai_controls_banner_supporting_text">Ngà ‘na’ nej nuguan’ yākàn doj sa gā’hue nāgi’hiaj sà’t ngà IA.</string>
   <!-- Link text for learning more about AI controls -->
   <string name="ai_controls_learn_more">Gāhuin chrūn doj</string>
   <!-- Title for the block AI enhancements toggle -->
@@ -421,12 +407,6 @@
   <string name="default_locale_text">Gārāsun nânj nikāj aga\' nan \'naj</string>
   <!-- Placeholder text shown in the search bar before a user enters text -->
   <string name="locale_search_hint">Nānà\'uì\' nânj huāa</string>
-  <!--
-    Search Fragment
-
-    Button in the search view that lets a user search by scanning a QR code
-  -->
-  <string name="search_scan_button_2">Nārī ñadu’hua da’nga’ QR</string>
   <!--
     Search Fragment
 
@@ -1407,8 +1387,6 @@
   <string name="library_desktop_bookmarks_unfiled">A\'ngô nej sa râj sun nichrà\'t doj</string>
   <!-- Option in Library to open History page -->
   <string name="library_history">Sa gahuin</string>
-  <!-- Option in Library to open a new tab -->
-  <string name="library_new_tab">Rakïj ñanj nākàa</string>
   <!-- Settings Page Title -->
   <string name="settings_title">Nāgi\'iô\'</string>
   <!-- Content description (not visible, for screen readers etc.): "Close button for library settings" -->
@@ -1740,12 +1718,8 @@
   <string name="edit_bookmark_folder_fragment_title">Nādūnā sa huā riña kārpeta</string>
   <!-- Bookmark URL editing field label -->
   <string name="bookmark_url_label">URL</string>
-  <!-- Bookmark FOLDER editing field label -->
-  <string name="bookmark_folder_label">KĀRPÊTA</string>
   <!-- Text indicating which folder a bookmark or folder will be saved in -->
   <string name="bookmark_save_in_label">Nā’nïnj sà\' riña</string>
-  <!-- Bookmark NAME editing field label -->
-  <string name="bookmark_name_label">SI YŪGUI</string>
   <!-- Label for a text input field for a bookmark or folder name -->
   <string name="bookmark_name_label_normal_case">Si yugui</string>
   <!-- Bookmark select folder screen title -->
@@ -1855,8 +1829,6 @@
   <string name="collections_header">Koleksiôn</string>
   <!-- Content description (not visible, for screen readers etc.): Opens the collection menu when pressed -->
   <string name="collection_menu_button_content_description">Si menû koleksiûn</string>
-  <!-- Label to describe what collections are to a new user without any collections -->
-  <string name="no_collections_description2">Nāgi’hiaj chrē’ nej sa ñā’an doj ruhuât.\nNāgi’hiaj chrē’ nej sa nana’huî’t, nej sitio nī nej rakïj ñanj nīkò’ dugui’ hua da’ hìo doj gātūt ne’ ñān doj.</string>
   <!-- Title for the "select tabs" step of the collection creator -->
   <string name="create_collection_select_tabs">Nāguī nej rakïj ñanj</string>
   <!-- Title for the "select collection" step of the collection creator -->
@@ -2634,8 +2606,6 @@
   <string name="other_default_search_engine_suggestion_header">Nānà\'uì\' ngà %s</string>
   <!-- Default browser card text -->
   <string name="default_browser_experiment_card_text" tools:ignore="BrandUsage">Nāgi’hiaj nej enlasê sitiô web, nej korrêo nī nej nuguan’ huāa da’ nāyi’nïn man’an nej man riña Firefox.</string>
-  <!-- Content description for close button in collection placeholder. -->
-  <string name="remove_home_collection_placeholder_content_description">Nādure\'</string>
   <!-- Content description radio buttons with a link to more information -->
   <string name="radio_preference_info_content_description">Gā’huì’ klik da’ gīni’înt doj sa huāa</string>
   <!-- Content description for the action bar "up" button -->
@@ -2765,7 +2735,7 @@
   <!-- Sports widget match status label shown during halftime of a match. -->
   <string name="sports_widget_halftime" tools:ignore="UnusedResources">Diû dā’āj a</string>
   <!-- Sports widget match status label shown during extra time of a match. -->
-  <string name="sports_widget_extra_time" tools:ignore="UnusedResources">Diû nata\'a</string>
+  <string name="sports_widget_extra_time">Diû nata\'a</string>
   <!-- Sports widget match status label shown during penalties of a match. -->
   <string name="sports_widget_penalties">Nej penal</string>
   <!-- ==== End of Terms of use popup prompt. ==== -->

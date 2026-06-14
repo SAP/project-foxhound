@@ -17,6 +17,4 @@
   <string name="mozac_browser_toolbar_long_press_popup_paste">Incolla</string>
   <!-- Contextual menu option for long pressing on the toolbar URL. Clicking it will paste the text from clipboard and search for or load it as an URL. '&amp;' is replaced with the ampersand symbol: & -->
   <string name="mozac_browser_toolbar_long_press_popup_paste_and_go">Incolla e bae</string>
-  <!-- Text for the title displayed in the contextual feature recommendation popup promoting the new toolbar redesign. -->
-  <string name="mozac_toolbar_cfr_title">Progetadu pro Android. Perfetzionadu pro tue</string>
 </resources>

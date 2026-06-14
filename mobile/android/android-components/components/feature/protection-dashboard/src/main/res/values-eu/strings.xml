@@ -42,4 +42,13 @@
   <string name="mozac_protections_dashboard_empty_title">%1$s(e)k jarraipen-elementuak blokeatzen ditu zuk nabigatu ahala.</string>
   <!-- Subtitle shown when no trackers have been blocked yet -->
   <string name="mozac_protections_dashboard_empty_subtitle">Hemen ikusiko dituzu.</string>
+  <plurals name="mozac_protections_dashboard_total_blocked_since_2">
+    <!--
+      Footer line shown in the dashboard summarizing total trackers blocked
+      since a specific date. %1$d is the trackers count number (e.g. 123).
+      %2$s is the formatted date (e.g. "February 23, 2026").
+    -->
+    <item quantity="one">Jarraipen-elementu %1$d blokeatuta %2$s datatik</item>
+    <item quantity="other">%1$d jarraipen-elementu blokeatuta %2$s datatik</item>
+  </plurals>
 </resources>

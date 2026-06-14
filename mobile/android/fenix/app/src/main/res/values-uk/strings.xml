@@ -23,6 +23,8 @@
   <string name="content_description_normal_browsing">Звичайний перегляд</string>
   <!-- Placeholder text shown in the search bar before a user enters text for the default engine -->
   <string name="search_hint">Введіть запит чи адресу</string>
+  <!-- Shorter placeholder text shown in the search bar when an additional action (voice search) is rendered alongside the hint. -->
+  <string name="search_hint_short">Пошук</string>
   <!-- Placeholder text shown in the search bar before a user enters text for a general engine -->
   <string name="search_hint_general_engine">Пошук в інтернеті</string>
   <!-- Placeholder text shown in search bar when using history search -->
@@ -330,21 +332,9 @@
   <!--
     Browser Toolbar
 
-    Content description for the Home screen button on the browser toolbar
-  -->
-  <string name="browser_toolbar_home">Домашній екран</string>
-  <!--
-    Browser Toolbar
-
     Content description for the translate page toolbar button that opens the translations dialog when no translation has occurred.
   -->
   <string name="browser_toolbar_translate">Перекласти сторінку</string>
-  <!--
-    Content description (not visible, for screen readers etc.) for the translate page toolbar button that opens the translations dialog when the page is translated successfully.
-    %1$s is the name of the language that is displayed in the original page. (For example: English)
-    %2$s is the name of the language which the page was translated to. (For example: French)
-  -->
-  <string name="browser_toolbar_translated_successfully">Сторінку перекладено: %1$s – %2$s.</string>
   <!-- CFR description for the browser toolbar describing the "Shake to summarize feature" -->
   <string name="browser_toolbar_summarize_cfr_description">Потрусіть пристрій, щоб підсумувати вміст сторінки за лічені секунди. ⚡️</string>
   <!--
@@ -375,8 +365,6 @@
   <string name="ai_controls_banner_headline">З %s у вас завжди є вибір</string>
   <!-- Supporting text for the AI controls banner. %s is a learn more link using ai_controls_learn_more as text. -->
   <string name="ai_controls_banner_supporting_text_2">Це передбачає можливість використання функцій, вдосконалених ШІ. %s</string>
-  <!-- Supporting text for the AI controls banner -->
-  <string name="ai_controls_banner_supporting_text">Це передбачає можливість використання функцій, вдосконалених ШІ.</string>
   <!-- Link text for learning more about AI controls -->
   <string name="ai_controls_learn_more">Докладніше</string>
   <!-- Title for the block AI enhancements toggle -->
@@ -424,12 +412,6 @@
   <!--
     Search Fragment
 
-    Button in the search view that lets a user search by scanning a QR code
-  -->
-  <string name="search_scan_button_2">Сканувати QR-код</string>
-  <!--
-    Search Fragment
-
     Button in the search view that lets a user navigate to the site in their clipboard
   -->
   <string name="awesomebar_clipboard_title">Заповнити посилання з буфера обміну</string>
@@ -464,6 +446,8 @@
   <string name="search_suggestions_delete_history_item_snackbar">Видалено %1$s з історії</string>
   <!-- Content description (not visible, for screen readers etc.): Button shown near a history search result allowing to delete it from browsing history. -->
   <string name="mozac_browser_awesomebar_remove_suggestion" tools:ignore="UnusedResources">Видалити цей запис історії</string>
+  <!-- Button in the app links prompt that keeps the user in the browser instead of opening the external app. %1$s is the name of the app (for example "Firefox"). -->
+  <string name="applinks_prompt_negative_button">Залишитись у %1$s</string>
   <!--
     Home onboarding
 
@@ -733,6 +717,8 @@
   <string name="nova_onboarding_marketing_body_link_text">Як ми використовуємо дані</string>
   <!-- Marketing onboarding primary button text. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage">Підтримайте Firefox</string>
+  <!-- Marketing onboarding primary button text. -->
+  <string name="nova_onboarding_marketing_primary_button_text_2">Дозволити й продовжити</string>
   <!-- Marketing onboarding secondary button text. -->
   <string name="nova_onboarding_marketing_secondary_button_text">Ні, дякую</string>
   <!-- Notifications onboarding title. 'Firefox' is intentionally hardcoded. -->
@@ -1136,10 +1122,12 @@
   <string name="customize_toggle_pocket_sponsored">Матеріали від спонсорів</string>
   <!-- Title for the opening wallpaper settings screen -->
   <string name="customize_wallpapers">Шпалери</string>
+  <!-- Label for the menu item that opens the wallpaper settings screen. -->
+  <string name="browser_menu_change_wallpaper">Змінити шпалери</string>
   <!-- Title for the customize home screen section with sponsored shortcuts. -->
   <string name="customize_toggle_contile">Спонсоровані ярлики</string>
   <!-- Title for the customize home screen section that toggles the Homepage sports widget. -->
-  <string name="customize_toggle_world_cup" tools:ignore="UnusedResources">Чемпіонат світу</string>
+  <string name="customize_toggle_world_cup">Чемпіонат світу</string>
   <!--
     Wallpapers
 
@@ -1479,8 +1467,6 @@
   <string name="library_desktop_bookmarks_unfiled">Інші закладки</string>
   <!-- Option in Library to open History page -->
   <string name="library_history">Історія</string>
-  <!-- Option in Library to open a new tab -->
-  <string name="library_new_tab">Нова вкладка</string>
   <!-- Settings Page Title -->
   <string name="settings_title">Налаштування</string>
   <!-- Content description (not visible, for screen readers etc.): "Close button for library settings" -->
@@ -1645,6 +1631,8 @@
   <string name="tab_manager_search_bar_placeholder">Шукати у вкладках</string>
   <!-- Text shown in the menu to view recently closed tabs -->
   <string name="tab_tray_menu_recently_closed">Недавно закриті вкладки</string>
+  <!-- Text shown in the menu to select all tabs. -->
+  <string name="tab_tray_menu_select_all_tabs">Вибрати все</string>
   <!-- Text shown in the menu to view account settings -->
   <string name="tab_tray_menu_account_settings">Обліковий запис</string>
   <!-- Text shown in the menu to view tab settings -->
@@ -1707,6 +1695,14 @@
   <string name="pwa_site_controls_title_private">%1$s (Приватний режим)</string>
   <!-- Content description (not visible, for screen readers etc.) for the button to open the Tab Search feature to search through tabs. -->
   <string name="tab_manager_open_tab_search">Відкрити пошук у вкладках</string>
+  <!-- Title for introducing tab groups via an onboarding card shown in the tab manager. -->
+  <string name="tab_group_onboarding_item_title">Створити групу вкладок</string>
+  <!-- Description for tab groups onboarding shown in the tab manager when in grid view. -->
+  <string name="tab_group_onboarding_grid_item_description">Перетягніть одну вкладку на іншу, щоб згрупувати їх.</string>
+  <!-- Description for tab groups onboarding shown in the tab manager when in list view. -->
+  <string name="tab_group_onboarding_list_item_description">Виберіть кілька вкладок, щоб створити групу.</string>
+  <!-- Content description (accessibility label) for button to dismiss the tab group onboarding item. -->
+  <string name="tab_group_onboarding_item_dismiss_content_description">Закрити знайомство з групою вкладок</string>
   <!-- The header text displayed on the tab groups page when no tab groups are open -->
   <string name="tab_manager_empty_tab_groups_page_header">Спробуйте групи вкладок – менше дій та краща продуктивність</string>
   <!-- The description displayed on the tab groups page when no tab groups are open -->
@@ -2069,6 +2065,8 @@
   <!-- The error message of the dropdown, prompting the user to select a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_choose_reason_error">Виберіть причину</string>
   <!-- The label/title of an optional field in the Web Compat Reporter feature for adding additional information. -->
+  <string name="webcompat_reporter_label_description_2">Детально опишіть проблему, щоб допомогти нам її дослідити (необов’язково)</string>
+  <!-- The label/title of an optional field in the Web Compat Reporter feature for adding additional information. -->
   <string name="webcompat_reporter_label_description">Опишіть проблему (необов’язково)</string>
   <!-- The button text for navigating away from the feature to provide more information on the broken site's bug report. -->
   <string name="webcompat_reporter_add_more_info">Додати інформацію</string>
@@ -2079,7 +2077,11 @@
   <!-- Text for a snackbar to confirm the successful submission of a WebCompat report. -->
   <string name="webcompat_reporter_success_snackbar_text_2">Звіт надіслано</string>
   <!-- Placeholder text for the description field to prompt the user on what they should type. -->
+  <string name="webcompat_reporter_problem_description_placeholder_text_2">Що сталося? Чого ви очікували? Зазначте кроки для відтворення проблеми.</string>
+  <!-- Placeholder text for the description field to prompt the user on what they should type. -->
   <string name="webcompat_reporter_problem_description_placeholder_text">Що сталося? Що мало статися?</string>
+  <!-- Label of the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. -->
+  <string name="webcompat_reporter_etp_checkbox_text_2">Надіслати список об’єктів, заблокованих захистом від відстеження</string>
   <!-- Label of the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. -->
   <string name="webcompat_reporter_etp_checkbox_text">Надсилати URL-адреси, заблоковані захистом від стеження</string>
   <!-- Description text for the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. It informs the user when checked, the report will include the list of URLs that were blocked by Enhanced Tracking Protection on the current page. -->
@@ -2090,6 +2092,12 @@
   <string name="webcompat_reporter_preview_bottom_sheet_header">Перегляд звіту</string>
   <!-- Label for the “Send” button shown in the WebCompat Report preview panel, which the user taps to submit the report. -->
   <string name="webcompat_reporter_preview_bottom_sheet_send">Надіслати</string>
+  <!-- Title for the Edit URL confirmation dialog in the WebCompatReporter -->
+  <string name="webcompat_reporter_edit_url_dialog_title">Редагувати URL-адресу вебсайту</string>
+  <!-- Text shown on the save button for the Edit URL confirmation dialog in the WebCompatReporter. -->
+  <string name="webcompat_reporter_edit_url_dialog_save">Зберегти</string>
+  <!-- Text shown on the dismiss button for the Edit URL confirmation dialog in the WebCompatReporter. -->
+  <string name="webcompat_reporter_edit_url_dialog_dismiss">Відхилити</string>
   <!--
     These reason strings are dropdown options on a WebCompat reporter form, indicating what is broken on the site.
 
@@ -2218,12 +2226,8 @@
   <string name="edit_bookmark_folder_fragment_title">Змінити теку</string>
   <!-- Bookmark URL editing field label -->
   <string name="bookmark_url_label">URL</string>
-  <!-- Bookmark FOLDER editing field label -->
-  <string name="bookmark_folder_label">ТЕКА</string>
   <!-- Text indicating which folder a bookmark or folder will be saved in -->
   <string name="bookmark_save_in_label">Зберегти в</string>
-  <!-- Bookmark NAME editing field label -->
-  <string name="bookmark_name_label">НАЗВА</string>
   <!-- Label for a text input field for a bookmark or folder name -->
   <string name="bookmark_name_label_normal_case">Назва</string>
   <!-- Bookmark select folder screen title -->
@@ -2267,12 +2271,8 @@
   <string name="bookmark_empty_list_root_title">Зберігайте всі свої улюблені закладки разом</string>
   <!-- Bookmark screen folder description. %s is the count of bookmark folder children -->
   <string name="bookmarks_folder_description">Закладки в теці: %s</string>
-  <!-- Description for the bookmark list empty state when you're not signed into sync. -->
-  <string name="bookmark_empty_list_guest_description">Зберігайте сайти під час перегляду. Увійдіть, щоб отримати закладки з інших синхронізованих пристроїв.</string>
   <!-- Text for the button to navigate to sync authentication -->
   <string name="bookmark_empty_list_guest_cta">Увійти до синхронізації</string>
-  <!-- Description for the bookmark list empty state when you're signed into sync. -->
-  <string name="bookmark_empty_list_authenticated_description">Зберігайте сайти під час перегляду. Ви також побачите закладки з інших синхронізованих пристроїв.</string>
   <!-- Description for the bookmark list empty state when you're in an empty folder. -->
   <string name="bookmark_empty_list_folder_description">Додавайте закладки для сайтів під час перегляду, щоб потім легко їх знайти.</string>
   <!-- Description for the add new folder button when selecting a folder. -->
@@ -2387,8 +2387,6 @@
   <string name="collections_header">Збірки</string>
   <!-- Content description (not visible, for screen readers etc.): Opens the collection menu when pressed -->
   <string name="collection_menu_button_content_description">Меню збірок</string>
-  <!-- Label to describe what collections are to a new user without any collections -->
-  <string name="no_collections_description2">Збирайте все важливе для вас. \nГрупуйте подібні пошуки, вебсайти та вкладки для швидкого доступу надалі.</string>
   <!-- Title for the "select tabs" step of the collection creator -->
   <string name="create_collection_select_tabs">Виберіть вкладки</string>
   <!-- Title for the "select collection" step of the collection creator -->
@@ -2694,6 +2692,16 @@
   <string name="preference_enhanced_tracking_protection_explanation_2">%s захищає вас від численних найпоширеніших елементів стеження, що переслідують вас в мережі.</string>
   <!-- Text displayed that links to website about enhanced tracking protection -->
   <string name="preference_enhanced_tracking_protection_explanation_learn_more">Докладніше</string>
+  <plurals name="trackers_blocked_count_2">
+    <!--
+      Trackers blocked card on homepage
+
+      Text shown on the trackers blocked card. %d is the number of trackers blocked.
+    -->
+    <item quantity="one">%d вистежувач заблоковано</item>
+    <item quantity="few">%d вистежувачі заблоковано</item>
+    <item quantity="other">%d вистежувачів заблоковано</item>
+  </plurals>
   <plurals name="trackers_blocked_count">
     <!--
       Trackers blocked card on homepage
@@ -3086,6 +3094,8 @@
   <string name="saved_logins_sort_strategy_last_used">Востаннє використано</string>
   <!-- Content description (not visible, for screen readers etc.) -->
   <string name="saved_logins_menu_dropdown_chevron_icon_content_description_2">Меню сортування паролів</string>
+  <!-- Label for button to import passwords from file. -->
+  <string name="passwords_import_menu_button">Імпортувати з файлу</string>
   <!--
     Email Masks
 
@@ -3116,10 +3126,12 @@
   <string name="ip_protection_title">VPN</string>
   <!-- Label for the browser VPN toggle on the settings screen -->
   <string name="ip_protection_toggle_label">VPN</string>
+  <!-- Content description for the browser VPN settings screen top bar back button -->
+  <string name="ip_protection_navigate_back_button_content_description">Перейти назад</string>
   <!-- Headline for the browser VPN promo card. %s is the name of the app (for example "Firefox"). -->
   <string name="ip_protection_promo_headline">VPN, вбудована у %s</string>
-  <!-- Body text for the browser VPN promo card -->
-  <string name="ip_protection_promo_body">Переглядайте вебсторінки з додатковим захистом, приховуючи своє розташування, навіть у публічних мережах Wi-Fi.</string>
+  <!-- Body text for the browser VPN promo card . %s is a learn more link using ip_protection_learn_more as text. -->
+  <string name="ip_protection_promo_body_2">Переглядайте вебсторінки з додатковим захистом, приховуючи своє розташування навіть у громадських мережах Wi-Fi. %s</string>
   <!-- Link text that opens additional information about the browser VPN -->
   <string name="ip_protection_learn_more">Докладніше</string>
   <!-- Label for the monthly data allowance section on the browser VPN settings screen -->
@@ -3171,6 +3183,8 @@
   <string name="ip_protection_toolbar_pill_description">VPN-з’єднання активне.</string>
   <!-- Label for the button that starts the browser VPN authentication or authorization flow on the settings screen -->
   <string name="ip_protection_get_started">Розпочати</string>
+  <!-- Label for the "connecting" state of the button that starts the browser VPN authentication or authorization flow on the settings screen -->
+  <string name="ip_protection_connecting">З’єднання…</string>
   <!-- Headline for the browser VPN onboarding card. %s is the name of the app (for example "Firefox"). -->
   <string name="ip_protection_onboarding_card_headline">Спробуйте VPN, вбудовану в %s</string>
   <!--
@@ -3490,6 +3504,10 @@
   <string name="homepage_shortcuts_show_all_content_description">Показати всі ярлики</string>
   <!-- Label for the "Add shortcut" button displayed as a tile. -->
   <string name="homepage_shortcuts_add_shortcut">Додати ярлик</string>
+  <!-- Title for the "Add to homepage" bottom sheet. -->
+  <string name="homepage_shortcuts_add_to_homepage">Додати на домівку</string>
+  <!-- Label for the "Add website" button in the "Add to homepage" bottom sheet. -->
+  <string name="homepage_shortcuts_add_website">Додати вебсайт</string>
   <!-- Title text for the "Enter a Website URL" dialog for adding a shortcut. -->
   <string name="homepage_shortcuts_add_website_title">Введіть URL-адресу вебсайту</string>
   <!-- Title text displayed in the dialog when shortcuts limit is reached. -->
@@ -3578,8 +3596,6 @@
   <string name="default_browser_experiment_card_title">Змініть типовий браузер</string>
   <!-- Default browser card text -->
   <string name="default_browser_experiment_card_text" tools:ignore="BrandUsage">Автоматично відкривати посилання з вебсайтів, електронних листів та повідомлень у Firefox.</string>
-  <!-- Content description for close button in collection placeholder. -->
-  <string name="remove_home_collection_placeholder_content_description">Вилучити</string>
   <!-- Content description radio buttons with a link to more information -->
   <string name="radio_preference_info_content_description">Показати подробиці</string>
   <!-- Content description for the action bar "up" button -->
@@ -3611,20 +3627,10 @@
     Action label for elements that can be collapsed if interacting with them. Talkback will append this to say "Double tap to collapse".
   -->
   <string name="a11y_action_label_collapse">згорнути</string>
-  <!-- Current state for elements that can be collapsed if interacting with them. Talkback will dictate this after a state change. -->
-  <string name="a11y_state_label_collapsed">згорнуто</string>
   <!-- Action label for elements that can be expanded if interacting with them. Talkback will append this to say "Double tap to expand". -->
   <string name="a11y_action_label_expand">розгорнути</string>
-  <!-- Current state for elements that can be expanded if interacting with them. Talkback will dictate this after a state change. -->
-  <string name="a11y_state_label_expanded">розгорнуто</string>
   <!-- Action label for links to a website containing documentation about a wallpaper collection. Talkback will append this to say "Double tap to open link to learn more about this collection". -->
   <string name="a11y_action_label_wallpaper_collection_learn_more">відкрийте посилання, щоб дізнатися більше про цю збірку</string>
-  <!-- Content description for headings announced by accessibility service. %s is the text of the heading. Talkback will announce the text and then speak the word "Heading" indicating to the user that this text is a heading for a section. -->
-  <string name="a11y_heading">%s, заголовок</string>
-  <!-- Title for dialog displayed when trying to access links present in a text. -->
-  <string name="a11y_links_title">Посилання</string>
-  <!-- Additional content description for text bodies that contain urls. -->
-  <string name="a11y_links_available">Доступні посилання</string>
   <!-- Translations feature -->
 
   <!--
@@ -3891,6 +3897,20 @@
     %s is the name of the app (for example "Firefox").
   -->
   <string name="protection_panel_banner_protected_title">%s на сторожі</string>
+  <plurals name="protection_panel_banner_protected_blocked_trackers_description">
+    <!--
+      Description text for the protection panel banner when privacy dashboard is enabled.
+      %1$d is the number of trackers blocked.
+    -->
+    <item quantity="one">На цьому сайті заблоковано %1$d вистежувач.</item>
+    <item quantity="few">На цьому сайті заблоковано %1$d вистежувачі.</item>
+    <item quantity="other">На цьому сайті заблоковано %1$d вистежувачів.</item>
+  </plurals>
+  <!--
+    Description text for the protection panel banner when privacy dashboard is enabled.
+    and there are no trackers blocked.
+  -->
+  <string name="protection_panel_banner_protected_no_blocked_trackers_description">Ви захищені.</string>
   <!-- Description text for the protection panel banner when tracking protection is enabled. -->
   <string name="protection_panel_banner_protected_description">Ви захищені. Якщо ми щось помітимо, то повідомимо вас.</string>
   <!-- Label text for the Enhanced Tracking Protection toggle. -->
@@ -3916,6 +3936,69 @@
   <string name="protection_panel_privacy_and_security_settings_2">Налаштування приватності</string>
   <!-- Title text for the protection panel permissions section. -->
   <string name="protection_panel_permissions_title">Дозволи</string>
+  <plurals name="trackers_blocked_panel_total_num_trackers_blocked_2">
+    <!--
+      Text for displaying the total number of trackers blocked in the trackers blocked panel.
+      %1$d is a placeholder for the number of trackers blocked.
+    -->
+    <item quantity="one">На цьому сайті заблоковано %1$d вистежувач</item>
+    <item quantity="few">На цьому сайті заблоковано %1$d вистежувачі</item>
+    <item quantity="other">На цьому сайті заблоковано %1$d вистежувачів</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_social_media_trackers">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked social media trackers.
+      %1$d is a placeholder for the number of social media trackers blocked.
+    -->
+    <item quantity="one">%1$d елемент стеження соціальних мереж</item>
+    <item quantity="few">%1$d елементи стеження соціальних мереж</item>
+    <item quantity="other">%1$d елементів стеження соціальних мереж</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_cross_site_cookies">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked cross-site tracking cookies.
+      %1$d is a placeholder for the number of cross-site tracking cookies blocked.
+    -->
+    <item quantity="one">%1$d файл cookie для стеження між сайтами</item>
+    <item quantity="few">%1$d файли cookie для стеження між сайтами</item>
+    <item quantity="other">%1$d файлів cookie для стеження між сайтами</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_cryptominers">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked cryptomining scripts.
+      %1$d is a placeholder for the number of cryptominers blocked.
+    -->
+    <item quantity="one">%1$d криптомайнер</item>
+    <item quantity="few">%1$d криптомайнери</item>
+    <item quantity="other">%1$d криптомайнерів</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_fingerprinters">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked fingerprinter scripts.
+      %1$d is a placeholder for the number of fingerprinters blocked.
+    -->
+    <item quantity="one">%1$d зчитувач цифрового відбитка</item>
+    <item quantity="few">%1$d зчитувачі цифрового відбитка</item>
+    <item quantity="other">%1$d зчитувачів цифрового відбитка</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_trackers_2">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked generic tracking scripts.
+      %1$d is a placeholder for the number of trackers blocked.
+    -->
+    <item quantity="one">%1$d об’єкт зі стеженням</item>
+    <item quantity="few">%1$d об’єкти зі стеженням</item>
+    <item quantity="other">%1$d об’єктів зі стеженням</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_trackers_blocked_this_week_2">
+    <!--
+      Text for displaying the number of trackers blocked this week in the trackers blocked panel.
+      %1$d is a placeholder for the number of trackers blocked this week.
+    -->
+    <item quantity="one">Цього тижня заблоковано %1$d вистежувач</item>
+    <item quantity="few">Цього тижня заблоковано %1$d вистежувачі</item>
+    <item quantity="other">Цього тижня заблоковано %1$d вистежувачів</item>
+  </plurals>
   <!--
     Text for displaying the total number of trackers blocked in the trackers blocked panel.
     %d is a placeholder for the number of trackers blocked.
@@ -4537,7 +4620,7 @@
   <!-- Sports widget match status label shown during halftime of a match. -->
   <string name="sports_widget_halftime" tools:ignore="UnusedResources">Перерва</string>
   <!-- Sports widget match status label shown during extra time of a match. -->
-  <string name="sports_widget_extra_time" tools:ignore="UnusedResources">Додатковий час</string>
+  <string name="sports_widget_extra_time">Додатковий час</string>
   <!-- Sports widget match status label shown during penalties of a match. -->
   <string name="sports_widget_penalties">Пенальті</string>
   <!--
@@ -4577,6 +4660,13 @@
   -->
   <string name="sports_widget_upcoming_match_content_description">Майбутні матчі: %1$s проти %2$s, %3$s проти %4$s</string>
   <!--
+    Content description (for accessibility, not displayed) announcing a soccer match.
+    %1$s is the home team name, %2$s is the away team name, %3$s is trailing context
+    (e.g. formatted score "1 - 2 (Full time)", upcoming match info "Jun 19 5:00 PM",
+    or a match status like "Full time").
+  -->
+  <string name="sports_widget_match_content_description">%1$s проти %2$s, %3$s</string>
+  <!--
     Content description (for accessibility, not displayed)  used for the sports widget card header announcing a live match for a group or stage.
     %s is the soccer tournament group name or stage (e.g. Group A represented by sports_widget_group_a, Round of 32 represented by sports_widget_round_of_32,
     or Final represented by sports_widget_final).
@@ -4589,6 +4679,11 @@
   -->
   <string name="sports_widget_live_score_content_description">%1$s %2$d, %3$s %4$d, %5$s, ефір</string>
   <!--
+    Content description (for accessibility, not displayed) announcing the elapsed minutes of a live match.
+    %1$s is the clock value, which may be a plain number (e.g. "72") or include extra time (e.g. "90+3").
+  -->
+  <string name="sports_widget_match_elapsed_minutes">Минулий час у хвилинах: %1$s</string>
+  <!--
     Content description (for accessibility, not displayed) for a paginated item.
     %1$s is the soccer tournament group name or stage (e.g. Group A represented by sports_widget_group_a, Round of 32 represented by sports_widget_round_of_32),
     %2$d is the current page number, and %3$d is the total number of pages.
@@ -4599,6 +4694,8 @@
     %1$d is the current page number, and %2$d is the total number of pages.
   -->
   <string name="sports_widget_final_results_page_content_description" tools:ignore="UnusedResources">Фінальні результати Чемпіонату світу, сторінка %1$d з %2$d</string>
+  <!-- Content description (for accessibility, not displayed) for the World Cup final results page. -->
+  <string name="sports_widget_final_results_content_description">Фінальні результати Чемпіонату світу</string>
   <!-- Content description (for accessibility, not displayed) for the remove button that removes the sports widget from the homepage. -->
   <string name="sports_widget_remove_content_description" tools:ignore="UnusedResources">Вилучити Чемпіонат світу з домівки</string>
   <!-- Title shown on the sports widget immediately after the user has followed a team. %s is the selected team (e.g., "USA"). -->
@@ -4615,6 +4712,12 @@
   <string name="sports_widget_error_connection_offline_description">Перевірте інтернет-з’єднання і повторіть спробу.</string>
   <!-- Sports widget general group stage label in the soccer tournament. -->
   <string name="sports_widget_group_stage">Груповий етап</string>
+  <!-- Sports widget error card title shown when match data fails to load. -->
+  <string name="sports_widget_error_load_failed_title">Інформація про матч наразі недоступна.</string>
+  <!-- Sports widget error card description shown when match data fails to load. -->
+  <string name="sports_widget_error_load_failed_description">Спробуйте оновити через кілька хвилин.</string>
+  <!-- Content description (for accessibility, not displayed) for teams which have not yet been determined in the match schedule. -->
+  <string name="sports_widget_team_to_be_determined">Команду буде визначено згодом</string>
   <!-- ==== End of Terms of use popup prompt. ==== -->
 
   <!--
@@ -4629,4 +4732,42 @@
   <string name="privacy_notice_updated_homepage_message_privacy_notice" tools:ignore="UnusedResources">Положення про приватність</string>
   <!-- The second active link used in privacy_notice_updated_homepage_message -->
   <string name="privacy_notice_updated_homepage_message_learn_more" tools:ignore="UnusedResources">Докладніше</string>
+  <!--
+    Firefox Labs
+
+    Firefox Labs is the name of a screen in Settings to allow users to learn about
+    experimental and in-development features, and turn those features on and off.
+    The "Labs" portion can be localized, "Firefox" must be treated as a brand and kept
+    in English.
+  -->
+  <string name="firefox_labs_title" tools:ignore="BrandUsage">Firefox Labs</string>
+  <!-- Banner title text on the Firefox Labs screen. -->
+  <string name="firefox_labs_banner_title_2">Спробуйте наші експериментальні функції!</string>
+  <!--
+    Banner description text on the Firefox Labs screen. Provides information on what Firefox Labs does. %s is the name of the app (for example "Firefox Nightly").
+    Text will appear under the Firefox Labs banner title.
+  -->
+  <string name="firefox_labs_experimental_description">Вони перебувають у стадії розробки та розвитку, що може вплинути на роботу %s.</string>
+  <!-- The link text shown when a feedback URL for a Firefox Labs feature is available. The feedback URL page will allow users to provide opinions and suggestions. -->
+  <string name="firefox_labs_share_feedback">Поділитися відгуком</string>
+  <!-- Content description for the share feedback link on a Firefox Labs feature. This text will be used by screen readers to provide more context on the feedback link. %s is the name of the Firefox Labs feature. -->
+  <string name="firefox_labs_share_feedback_content_description">Поділіться відгуком про %s.</string>
+  <!-- Button text on the Firefox Labs screen for restoring all toggles back to the default settings. The button will turn off any experimental features. -->
+  <string name="firefox_labs_restore_default_button_text">Відновити типові</string>
+  <!-- The title used in a confirmation dialog on the Firefox Labs screen when toggling "on" or "off" an experimental feature that requires a restart. -->
+  <string name="firefox_labs_feature_dialog_title">Потрібен перезапуск</string>
+  <!-- The text on the dialog on the Firefox Labs screen for the positive button when toggling "on" and "off" experimental features. This prompts the user to confirm that they want to restart the app. -->
+  <string name="firefox_labs_dialog_restart_button">Перезапустити</string>
+  <!-- The text on the dialog on the Firefox Labs screen for the negative button when toggling "on" and "off" experimental features. This is used to cancel the action and return to the previous screen. -->
+  <string name="firefox_labs_dialog_cancel_button">Скасувати</string>
+  <!-- The title used in a confirmation dialog on the Firefox Labs screen when restoring the application to its defaults by turning "off" any experimental features. -->
+  <string name="firefox_labs_restore_defaults_dialog_title">Потрібен перезапуск</string>
+  <!-- The description used in a confirmation dialog on the Firefox Labs screen when restoring the application to its defaults by turning "off" any experimental features. %s is the name of the app (for example "Firefox Nightly") -->
+  <string name="firefox_labs_restore_defaults_dialog_message">Щоб відновити типові налаштування, перезапустіть %s.</string>
+  <!-- The description text that is displayed in the confirmation dialog on the Firefox Labs screen for toggling "on" experimental features. %s is the name of the app (for example "Firefox Nightly") -->
+  <string name="firefox_labs_feature_enable_dialog_message">Щоб увімкнути цю функцію, перезапустіть %s.</string>
+  <!-- The description text that is displayed in the confirmation dialog on the Firefox Labs screen for toggling "off" experimental features. %s is the name of the app (for example "Firefox Nightly") -->
+  <string name="firefox_labs_feature_disable_dialog_message">Щоб вимкнути цю функцію, перезапустіть %s.</string>
+  <!-- Text displayed on the Firefox Labs screen when there are no Labs experimental features present. -->
+  <string name="firefox_labs_no_labs_available_description">Наразі немає експериментальних функцій</string>
 </resources>

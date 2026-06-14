@@ -50,29 +50,4 @@
   <string name="mozac_protections_dashboard_empty_title">Mae %1$s yn rhwystro tracwyr wrth i chi bori.</string>
   <!-- Subtitle shown when no trackers have been blocked yet -->
   <string name="mozac_protections_dashboard_empty_subtitle">Byddwch yn eu gweld yma.</string>
-  <plurals name="mozac_protections_dashboard_trackers_count">
-    <!--
-      Label used for the number of trackers blocked.
-      %1$d is the number of trackers.
-    -->
-    <item quantity="one">Traciwr %1$d</item>
-    <item quantity="zero">%1$d o dracwyr</item>
-    <item quantity="two">%1$d o dracwyr</item>
-    <item quantity="few">%1$d o dracwyr</item>
-    <item quantity="many">%1$d o dracwyr</item>
-    <item quantity="other">%1$d o dracwyr</item>
-  </plurals>
-  <plurals name="mozac_protections_dashboard_total_blocked_since">
-    <!--
-      Footer line shown in the dashboard summarizing total trackers blocked
-      since a specific date. %1$s is the trackers count phrase (e.g.
-      "5,305 trackers"). %2$s is the formatted date (e.g. "February 23, 2026").
-    -->
-    <item quantity="one">%1$s wedi\'i rwystro ers %2$s</item>
-    <item quantity="zero">%1$s wedi\'i rwystro ers %2$s</item>
-    <item quantity="two">%1$s wedi\'i rwystro ers %2$s</item>
-    <item quantity="few">%1$s wedi\'i rwystro ers %2$s</item>
-    <item quantity="many">%1$s wedi\'i rwystro ers %2$s</item>
-    <item quantity="other">%1$s wedi\'i rwystro ers %2$s</item>
-  </plurals>
 </resources>

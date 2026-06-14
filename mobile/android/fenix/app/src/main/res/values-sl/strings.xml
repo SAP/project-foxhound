@@ -328,21 +328,9 @@
   <!--
     Browser Toolbar
 
-    Content description for the Home screen button on the browser toolbar
-  -->
-  <string name="browser_toolbar_home">Domači zaslon</string>
-  <!--
-    Browser Toolbar
-
     Content description for the translate page toolbar button that opens the translations dialog when no translation has occurred.
   -->
   <string name="browser_toolbar_translate">Prevedi stran</string>
-  <!--
-    Content description (not visible, for screen readers etc.) for the translate page toolbar button that opens the translations dialog when the page is translated successfully.
-    %1$s is the name of the language that is displayed in the original page. (For example: English)
-    %2$s is the name of the language which the page was translated to. (For example: French)
-  -->
-  <string name="browser_toolbar_translated_successfully">Stran prevedena iz jezika %1$s v jezik %2$s.</string>
   <!--
     Translation Toolbar
 
@@ -355,8 +343,6 @@
   <string name="translation_toolbar_close_action">Skrij sporočilo</string>
   <!-- Headline text for the AI controls banner. %s is the name of the app (for example "Firefox"). -->
   <string name="ai_controls_banner_headline">V %su imate vedno izbiro</string>
-  <!-- Supporting text for the AI controls banner -->
-  <string name="ai_controls_banner_supporting_text">Vključno s tem, ali želite uporabljati možnosti, izboljšane z umetno inteligenco.</string>
   <!-- Link text for learning more about AI controls -->
   <string name="ai_controls_learn_more">Več o tem</string>
   <!-- Title for the block AI enhancements toggle -->
@@ -402,12 +388,6 @@
   <!--
     Search Fragment
 
-    Button in the search view that lets a user search by scanning a QR code
-  -->
-  <string name="search_scan_button_2">Skeniraj kodo QR</string>
-  <!--
-    Search Fragment
-
     Button in the search view that lets a user navigate to the site in their clipboard
   -->
   <string name="awesomebar_clipboard_title">Izpolni povezavo iz odložišča</string>
@@ -442,6 +422,8 @@
   <string name="search_suggestions_delete_history_item_snackbar">Stran %1$s izbrisana iz zgodovine</string>
   <!-- Content description (not visible, for screen readers etc.): Button shown near a history search result allowing to delete it from browsing history. -->
   <string name="mozac_browser_awesomebar_remove_suggestion" tools:ignore="UnusedResources">Izbriši to stran iz zgodovine</string>
+  <!-- Button in the app links prompt that keeps the user in the browser instead of opening the external app. %1$s is the name of the app (for example "Firefox"). -->
+  <string name="applinks_prompt_negative_button">Ostani v %1$su</string>
   <!--
     Home onboarding
 
@@ -1093,7 +1075,7 @@
   <!-- Title for the customize home screen section with sponsored shortcuts. -->
   <string name="customize_toggle_contile">Sponzorirane bližnjice</string>
   <!-- Title for the customize home screen section that toggles the Homepage sports widget. -->
-  <string name="customize_toggle_world_cup" tools:ignore="UnusedResources">Svetovno prvenstvo</string>
+  <string name="customize_toggle_world_cup">Svetovno prvenstvo</string>
   <!--
     Wallpapers
 
@@ -1431,8 +1413,6 @@
   <string name="library_desktop_bookmarks_unfiled">Drugi zaznamki</string>
   <!-- Option in Library to open History page -->
   <string name="library_history">Zgodovina</string>
-  <!-- Option in Library to open a new tab -->
-  <string name="library_new_tab">Nov zavihek</string>
   <!-- Settings Page Title -->
   <string name="settings_title">Nastavitve</string>
   <!-- Content description (not visible, for screen readers etc.): "Close button for library settings" -->
@@ -2012,6 +1992,8 @@
   <!-- The error message of the dropdown, prompting the user to select a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_choose_reason_error">Izberite razlog</string>
   <!-- The label/title of an optional field in the Web Compat Reporter feature for adding additional information. -->
+  <string name="webcompat_reporter_label_description_2">Podrobneje opišite težavo, da nam jo pomagate raziskati (neobvezno)</string>
+  <!-- The label/title of an optional field in the Web Compat Reporter feature for adding additional information. -->
   <string name="webcompat_reporter_label_description">Opišite težavo (neobvezno)</string>
   <!-- The button text for navigating away from the feature to provide more information on the broken site's bug report. -->
   <string name="webcompat_reporter_add_more_info">Dodaj več informacij</string>
@@ -2022,7 +2004,11 @@
   <!-- Text for a snackbar to confirm the successful submission of a WebCompat report. -->
   <string name="webcompat_reporter_success_snackbar_text_2">Poročilo poslano</string>
   <!-- Placeholder text for the description field to prompt the user on what they should type. -->
+  <string name="webcompat_reporter_problem_description_placeholder_text_2">Kaj se je zgodilo? Kaj bi se moralo zgoditi? Navedite korake, ki privedejo do pojava težave.</string>
+  <!-- Placeholder text for the description field to prompt the user on what they should type. -->
   <string name="webcompat_reporter_problem_description_placeholder_text">Kaj se je zgodilo? Kaj bi se moralo zgoditi?</string>
+  <!-- Label of the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. -->
+  <string name="webcompat_reporter_etp_checkbox_text_2">Pošlji seznam elementov, ki jih je zaščita pred sledenjem blokirala</string>
   <!-- Label of the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. -->
   <string name="webcompat_reporter_etp_checkbox_text">Pošlji URL-je, ki jih je zaščita pred sledenjem blokirala</string>
   <!-- Description text for the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. It informs the user when checked, the report will include the list of URLs that were blocked by Enhanced Tracking Protection on the current page. -->
@@ -2148,6 +2134,8 @@
   <string name="bookmark_import_menu_button">Uvozi iz datoteke</string>
   <!-- Snackbar message shown when a bookmark import attempt fails. -->
   <string name="bookmark_import_failure_snackbar">Zaznamkov ni bilo mogoče uvoziti. Poskusite znova.</string>
+  <!-- Default name for the folder created when importing bookmarks from a file. -->
+  <string name="bookmark_import_destination_default_name">Uvoženi zaznamki</string>
   <!--
     Bookmark multi select title in app bar
     %1$d is the number of bookmarks selected
@@ -2159,12 +2147,8 @@
   <string name="edit_bookmark_folder_fragment_title">Uredi mapo</string>
   <!-- Bookmark URL editing field label -->
   <string name="bookmark_url_label">URL</string>
-  <!-- Bookmark FOLDER editing field label -->
-  <string name="bookmark_folder_label">MAPA</string>
   <!-- Text indicating which folder a bookmark or folder will be saved in -->
   <string name="bookmark_save_in_label">Shrani v</string>
-  <!-- Bookmark NAME editing field label -->
-  <string name="bookmark_name_label">IME</string>
   <!-- Label for a text input field for a bookmark or folder name -->
   <string name="bookmark_name_label_normal_case">Ime</string>
   <!-- Bookmark select folder screen title -->
@@ -2208,12 +2192,8 @@
   <string name="bookmark_empty_list_root_title">Obdržite vse svoje priljubljene zaznamke na kupu</string>
   <!-- Bookmark screen folder description. %s is the count of bookmark folder children -->
   <string name="bookmarks_folder_description">Zaznamki v mapi: %s</string>
-  <!-- Description for the bookmark list empty state when you're not signed into sync. -->
-  <string name="bookmark_empty_list_guest_description">Shranite spletna mesta med brskanjem. Prijavite se za uporabo zaznamkov iz drugih sinhroniziranih naprav.</string>
   <!-- Text for the button to navigate to sync authentication -->
   <string name="bookmark_empty_list_guest_cta">Prijava v Sync</string>
-  <!-- Description for the bookmark list empty state when you're signed into sync. -->
-  <string name="bookmark_empty_list_authenticated_description">Shranjujte spletna mesta med brskanjem. Uporabili bomo tudi zaznamke iz drugih sinhroniziranih naprav.</string>
   <!-- Description for the bookmark list empty state when you're in an empty folder. -->
   <string name="bookmark_empty_list_folder_description">Med brskanjem dodajajte zaznamke, da boste lahko svoja priljubljena spletna mesta našli pozneje.</string>
   <!-- Description for the add new folder button when selecting a folder. -->
@@ -2328,8 +2308,6 @@
   <string name="collections_header">Zbirke</string>
   <!-- Content description (not visible, for screen readers etc.): Opens the collection menu when pressed -->
   <string name="collection_menu_button_content_description">Meni zbirk</string>
-  <!-- Label to describe what collections are to a new user without any collections -->
-  <string name="no_collections_description2">Zbirajte stvari, ki vam kaj pomenijo.\nZdružite podobna iskanja, spletna mesta in zavihke za hitrejši dostop.</string>
   <!-- Title for the "select tabs" step of the collection creator -->
   <string name="create_collection_select_tabs">Izberi zavihke</string>
   <!-- Title for the "select collection" step of the collection creator -->
@@ -2633,6 +2611,17 @@
   <string name="preference_enhanced_tracking_protection_explanation_2">%s vas ščiti pred številnimi najpogostejšimi sledilci, ki sledijo vašemu brskanju po spletu.</string>
   <!-- Text displayed that links to website about enhanced tracking protection -->
   <string name="preference_enhanced_tracking_protection_explanation_learn_more">Več o tem</string>
+  <plurals name="trackers_blocked_count_2">
+    <!--
+      Trackers blocked card on homepage
+
+      Text shown on the trackers blocked card. %d is the number of trackers blocked.
+    -->
+    <item quantity="one">%d blokiran sledilec</item>
+    <item quantity="two">%d blokirana sledilca</item>
+    <item quantity="few">%d blokirani sledilci</item>
+    <item quantity="other">%d blokiranih sledilcev</item>
+  </plurals>
   <plurals name="trackers_blocked_count">
     <!--
       Trackers blocked card on homepage
@@ -3074,6 +3063,8 @@
   <string name="ip_protection_menu_paused">Začasno ustavljeno</string>
   <!-- Badge label shown in the menu item when the browser VPN has an error -->
   <string name="ip_protection_menu_error">Napaka</string>
+  <!-- Badge label shown in the menu item when the user is eligible to use the browser VPN but should authenticate or authorize it first. -->
+  <string name="ip_protection_menu_auth_required">Preizkusite ga</string>
   <!-- Content description for the chevron button that opens the browser VPN settings screen -->
   <string name="ip_protection_navigate_settings">Odpri nastavitve VPN</string>
   <!-- Label shown next to the browser protection icon in the address bar when the browser VPN is active -->
@@ -3082,12 +3073,16 @@
   <string name="ip_protection_toolbar_pill_description">VPN deluje.</string>
   <!-- Label for the button that starts the browser VPN authentication or authorization flow on the settings screen -->
   <string name="ip_protection_get_started">Začnite</string>
+  <!-- Label for the "connecting" state of the button that starts the browser VPN authentication or authorization flow on the settings screen -->
+  <string name="ip_protection_connecting">Povezovanje …</string>
   <!-- Headline for the browser VPN onboarding card. %s is the name of the app (for example "Firefox"). -->
   <string name="ip_protection_onboarding_card_headline">Preizkusite %sov vgrajeni VPN</string>
   <!-- Used as text for a link in ip_protection_onboarding_body. Make sure to adapt capitalization if the link is in the middle of the sentence. -->
   <string name="ip_protection_onboarding_body_link">Brskajte z dodatno zaščito</string>
   <!-- Label for the dismiss button on the onboarding bottom sheet. -->
   <string name="ip_protection_onboarding_not_now_button">Ne zdaj</string>
+  <!-- Snackbar (in-app pop-up notification) text to signal the browser VPN connection error -->
+  <string name="ip_protection_connection_error_snackbar">Povezava z VPN ni uspela. Poskusite znova čez nekaj minut.</string>
   <!--
     Autofill
 
@@ -3480,8 +3475,6 @@
   <string name="default_browser_experiment_card_title">Zamenjajte privzeti brskalnik</string>
   <!-- Default browser card text -->
   <string name="default_browser_experiment_card_text" tools:ignore="BrandUsage">Nastavite, naj se povezave s spletnih strani, e-pošte in sporočil samodejno odpirajo v Firefoxu.</string>
-  <!-- Content description for close button in collection placeholder. -->
-  <string name="remove_home_collection_placeholder_content_description">Odstrani</string>
   <!-- Content description radio buttons with a link to more information -->
   <string name="radio_preference_info_content_description">Kliknite za podrobnosti</string>
   <!-- Content description for the action bar "up" button -->
@@ -3513,20 +3506,10 @@
     Action label for elements that can be collapsed if interacting with them. Talkback will append this to say "Double tap to collapse".
   -->
   <string name="a11y_action_label_collapse">strnete</string>
-  <!-- Current state for elements that can be collapsed if interacting with them. Talkback will dictate this after a state change. -->
-  <string name="a11y_state_label_collapsed">strnjeno</string>
   <!-- Action label for elements that can be expanded if interacting with them. Talkback will append this to say "Double tap to expand". -->
   <string name="a11y_action_label_expand">razširite</string>
-  <!-- Current state for elements that can be expanded if interacting with them. Talkback will dictate this after a state change. -->
-  <string name="a11y_state_label_expanded">razširjeno</string>
   <!-- Action label for links to a website containing documentation about a wallpaper collection. Talkback will append this to say "Double tap to open link to learn more about this collection". -->
   <string name="a11y_action_label_wallpaper_collection_learn_more">odprete povezavo s podrobnostmi o tej zbirki</string>
-  <!-- Content description for headings announced by accessibility service. %s is the text of the heading. Talkback will announce the text and then speak the word "Heading" indicating to the user that this text is a heading for a section. -->
-  <string name="a11y_heading">%s, naslov</string>
-  <!-- Title for dialog displayed when trying to access links present in a text. -->
-  <string name="a11y_links_title">Povezave</string>
-  <!-- Additional content description for text bodies that contain urls. -->
-  <string name="a11y_links_available">Na voljo so povezave</string>
   <!-- Translations feature -->
 
   <!--
@@ -4355,6 +4338,8 @@
   <string name="sports_widget_match_live">V ŽIVO</string>
   <!-- Title shown on the sports widget champion scoreboard row celebrating the soccer tournament winner. -->
   <string name="sports_widget_champions_title">Zmagovalci svetovnega prvenstva 2026</string>
+  <!-- Title shown on the sports widget champion scoreboard celebrating the soccer tournament runners-up. Runners-up means second place. -->
+  <string name="sports_widget_runner_up_title" tools:ignore="UnusedResources">Podprvaki</string>
   <!-- Title shown on the sports widget champion scoreboard celebrating the soccer tournament third place winners. -->
   <string name="sports_widget_third_place_title">Tretje mesto</string>
   <!-- Round name shown on the sports widget for the Round of 32 stage in the soccer tournament. -->
@@ -4432,7 +4417,7 @@
   <!-- Sports widget match status label shown during halftime of a match. -->
   <string name="sports_widget_halftime" tools:ignore="UnusedResources">Polčas</string>
   <!-- Sports widget match status label shown during extra time of a match. -->
-  <string name="sports_widget_extra_time" tools:ignore="UnusedResources">Podaljški</string>
+  <string name="sports_widget_extra_time">Podaljški</string>
   <!-- Sports widget match status label shown during penalties of a match. -->
   <string name="sports_widget_penalties">Enajstmetrovke</string>
   <!-- Content description (for accessibility, not displayed) for the close button on the sports widget team / country selector. -->

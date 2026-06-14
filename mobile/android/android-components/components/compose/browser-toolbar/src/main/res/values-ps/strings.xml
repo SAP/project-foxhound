@@ -17,10 +17,6 @@
   <string name="mozac_browser_toolbar_long_press_popup_paste">پېسټ کړئ</string>
   <!-- Contextual menu option for long pressing on the toolbar URL. Clicking it will paste the text from clipboard and search for or load it as an URL. '&amp;' is replaced with the ampersand symbol: & -->
   <string name="mozac_browser_toolbar_long_press_popup_paste_and_go">پېسټ کړئ او لاړ شئ</string>
-  <!-- Text for the title displayed in the contextual feature recommendation popup promoting the new toolbar redesign. -->
-  <string name="mozac_toolbar_cfr_title">د اندرويډ لپاره جوړ شوی، ستاسو لپاره لا ښه شوی</string>
-  <!-- Text for the description displayed in the contextual feature recommendation popup promoting the new toolbar redesign. -->
-  <string name="mozac_toolbar_cfr_description">موږ ډيزاين د يو ښکلي او عصري احساس لپاره تازه کړی دی</string>
   <!-- Content description (not visible, for screen readers etc.) for the "minimal toolbar" containing just the URL instead of the big toolbar containing also other buttons. %1$s will be replaced with the domain name of the current website. -->
   <string name="mozac_minimal_display_toolbar_content_description">په %1$s کې متن داخلول. د بندولو لپاره دوه ځله ټېپ کړئ</string>
 </resources>

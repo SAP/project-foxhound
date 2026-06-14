@@ -332,21 +332,9 @@
   <!--
     Browser Toolbar
 
-    Content description for the Home screen button on the browser toolbar
-  -->
-  <string name="browser_toolbar_home">主畫面</string>
-  <!--
-    Browser Toolbar
-
     Content description for the translate page toolbar button that opens the translations dialog when no translation has occurred.
   -->
   <string name="browser_toolbar_translate">翻譯頁面</string>
-  <!--
-    Content description (not visible, for screen readers etc.) for the translate page toolbar button that opens the translations dialog when the page is translated successfully.
-    %1$s is the name of the language that is displayed in the original page. (For example: English)
-    %2$s is the name of the language which the page was translated to. (For example: French)
-  -->
-  <string name="browser_toolbar_translated_successfully">已將頁面從 %1$s 翻譯為 %2$s。</string>
   <!-- CFR description for the browser toolbar describing the "Shake to summarize feature" -->
   <string name="browser_toolbar_summarize_cfr_description">搖晃您的裝置，即可在幾秒內獲得頁面摘要內容。⚡️</string>
   <!--
@@ -377,8 +365,6 @@
   <string name="ai_controls_banner_headline">使用 %s，您隨時都可以自行選擇</string>
   <!-- Supporting text for the AI controls banner. %s is a learn more link using ai_controls_learn_more as text. -->
   <string name="ai_controls_banner_supporting_text_2">包含是否使用以 AI 加強的功能。%s</string>
-  <!-- Supporting text for the AI controls banner -->
-  <string name="ai_controls_banner_supporting_text">包含是否使用以 AI 加強的功能。</string>
   <!-- Link text for learning more about AI controls -->
   <string name="ai_controls_learn_more">更多資訊</string>
   <!-- Title for the block AI enhancements toggle -->
@@ -423,12 +409,6 @@
   <string name="default_locale_text">依照裝置語言顯示</string>
   <!-- Placeholder text shown in the search bar before a user enters text -->
   <string name="locale_search_hint">搜尋語言</string>
-  <!--
-    Search Fragment
-
-    Button in the search view that lets a user search by scanning a QR code
-  -->
-  <string name="search_scan_button_2">掃描 QR Code</string>
   <!--
     Search Fragment
 
@@ -1141,10 +1121,12 @@
   <string name="customize_toggle_pocket_sponsored">贊助內容</string>
   <!-- Title for the opening wallpaper settings screen -->
   <string name="customize_wallpapers">背景圖</string>
+  <!-- Label for the menu item that opens the wallpaper settings screen. -->
+  <string name="browser_menu_change_wallpaper">更改背景圖</string>
   <!-- Title for the customize home screen section with sponsored shortcuts. -->
   <string name="customize_toggle_contile">贊助捷徑</string>
   <!-- Title for the customize home screen section that toggles the Homepage sports widget. -->
-  <string name="customize_toggle_world_cup" tools:ignore="UnusedResources">世界盃足球賽</string>
+  <string name="customize_toggle_world_cup">世界盃足球賽</string>
   <!--
     Wallpapers
 
@@ -1484,8 +1466,6 @@
   <string name="library_desktop_bookmarks_unfiled">其他書籤</string>
   <!-- Option in Library to open History page -->
   <string name="library_history">瀏覽紀錄</string>
-  <!-- Option in Library to open a new tab -->
-  <string name="library_new_tab">開新分頁</string>
   <!-- Settings Page Title -->
   <string name="settings_title">設定</string>
   <!-- Content description (not visible, for screen readers etc.): "Close button for library settings" -->
@@ -2100,6 +2080,12 @@
   <string name="webcompat_reporter_preview_bottom_sheet_header">回報預覽</string>
   <!-- Label for the “Send” button shown in the WebCompat Report preview panel, which the user taps to submit the report. -->
   <string name="webcompat_reporter_preview_bottom_sheet_send">傳送</string>
+  <!-- Title for the Edit URL confirmation dialog in the WebCompatReporter -->
+  <string name="webcompat_reporter_edit_url_dialog_title">編輯網址</string>
+  <!-- Text shown on the save button for the Edit URL confirmation dialog in the WebCompatReporter. -->
+  <string name="webcompat_reporter_edit_url_dialog_save">儲存</string>
+  <!-- Text shown on the dismiss button for the Edit URL confirmation dialog in the WebCompatReporter. -->
+  <string name="webcompat_reporter_edit_url_dialog_dismiss">知道了！</string>
   <!--
     These reason strings are dropdown options on a WebCompat reporter form, indicating what is broken on the site.
 
@@ -2228,12 +2214,8 @@
   <string name="edit_bookmark_folder_fragment_title">編輯資料夾</string>
   <!-- Bookmark URL editing field label -->
   <string name="bookmark_url_label">網址</string>
-  <!-- Bookmark FOLDER editing field label -->
-  <string name="bookmark_folder_label">資料夾</string>
   <!-- Text indicating which folder a bookmark or folder will be saved in -->
   <string name="bookmark_save_in_label">儲存於</string>
-  <!-- Bookmark NAME editing field label -->
-  <string name="bookmark_name_label">名稱</string>
   <!-- Label for a text input field for a bookmark or folder name -->
   <string name="bookmark_name_label_normal_case">名稱</string>
   <!-- Bookmark select folder screen title -->
@@ -2277,12 +2259,8 @@
   <string name="bookmark_empty_list_root_title">將您最愛的書籤放在一起</string>
   <!-- Bookmark screen folder description. %s is the count of bookmark folder children -->
   <string name="bookmarks_folder_description">資料夾中的書籤數量：%s</string>
-  <!-- Description for the bookmark list empty state when you're not signed into sync. -->
-  <string name="bookmark_empty_list_guest_description">一邊上網，一邊存下網站。登入後即可取回其他已同步裝置上的書籤。</string>
   <!-- Text for the button to navigate to sync authentication -->
   <string name="bookmark_empty_list_guest_cta">登入 Sync</string>
-  <!-- Description for the bookmark list empty state when you're signed into sync. -->
-  <string name="bookmark_empty_list_authenticated_description">一邊上網，一邊存下網站。我們也會取回您在其他已同步裝置上的書籤。</string>
   <!-- Description for the bookmark list empty state when you're in an empty folder. -->
   <string name="bookmark_empty_list_folder_description">一邊上網，一邊加入書籤，這樣之後就可以再找回您最愛的網站。</string>
   <!-- Description for the add new folder button when selecting a folder. -->
@@ -2397,8 +2375,6 @@
   <string name="collections_header">收藏集</string>
   <!-- Content description (not visible, for screen readers etc.): Opens the collection menu when pressed -->
   <string name="collection_menu_button_content_description">收藏集選單</string>
-  <!-- Label to describe what collections are to a new user without any collections -->
-  <string name="no_collections_description2">收集對您來說重要的東西。\n將類似的搜尋項目、網站、上網分頁收集起來，方便以後快速開啟。</string>
   <!-- Title for the "select tabs" step of the collection creator -->
   <string name="create_collection_select_tabs">選擇分頁</string>
   <!-- Title for the "select collection" step of the collection creator -->
@@ -2848,8 +2824,6 @@
   <string name="etp_suspected_fingerprinters_description">開啟數位指紋追蹤程式保護，阻擋疑似是數位指紋追蹤程式的內容。</string>
   <!-- Category of trackers (fingerprinters) that can be blocked by Enhanced Tracking Protection -->
   <string name="etp_known_fingerprinters_title">已知的數位指紋追蹤程式</string>
-  <!-- Label for the fingerprinters category shown in the tracking protections dashboard breakdown -->
-  <string name="tracking_dashboard_fingerprinters_category_name">數位指紋追蹤程式</string>
   <!--
     Description of the SmartBlock Enhanced Tracking Protection feature. The * symbol is intentionally hardcoded here,
     as we use it on the UI to indicate which trackers have been partially unblocked.
@@ -3142,8 +3116,6 @@
   <string name="ip_protection_promo_headline">%s 內建的 VPN</string>
   <!-- Body text for the browser VPN promo card . %s is a learn more link using ip_protection_learn_more as text. -->
   <string name="ip_protection_promo_body_2">隱藏您的實際所在位置，就算是使用公共 Wi-Fi 也能獲得額外保護。%s</string>
-  <!-- Body text for the browser VPN promo card -->
-  <string name="ip_protection_promo_body">隱藏您的實際所在位置，就算是使用公共 Wi-Fi 也能獲得額外保護。</string>
   <!-- Link text that opens additional information about the browser VPN -->
   <string name="ip_protection_learn_more">更多資訊</string>
   <!-- Label for the monthly data allowance section on the browser VPN settings screen -->
@@ -3207,6 +3179,14 @@
   <string name="ip_protection_onboarding_body">透過隱藏您的實際所在位置，%1$s。就算使用公共 Wi-Fi 也沒問題。每月有 %2$d GB 免費流量。</string>
   <!-- Used as text for a link in ip_protection_onboarding_body. Make sure to adapt capitalization if the link is in the middle of the sentence. -->
   <string name="ip_protection_onboarding_body_link">為上網再加一層保護</string>
+  <!--
+    The body of the VPN onboarding card for a promotion that provides unlimited data bandwidth for a certain time.
+    %1$s is a localized date (for example "Jun 9") indicating the end of the promotional period.
+    %2$s is a link using ip_protection_onboarding_body_link_promo (“Learn more”) as text. It links to a support article about VPN on Firefox.
+  -->
+  <string name="ip_protection_onboarding_body_promo">開啟此功能即可讓您的上網過程更有隱私、更難被追蹤。立即試用，即可在 %1$s 前享用無限頻寬。%2$s</string>
+  <!-- Used as text for a link in ip_protection_onboarding_body. Make sure to adapt capitalization if the link is in the middle of the sentence. -->
+  <string name="ip_protection_onboarding_body_link_promo">更多資訊</string>
   <!-- Label for the dismiss button on the onboarding bottom sheet. -->
   <string name="ip_protection_onboarding_not_now_button">現在不要</string>
   <!-- Snackbar (in-app pop-up notification) text to signal the browser VPN connection error -->
@@ -3216,6 +3196,8 @@
     %1$d is the total monthly allowance in GB (for example "50").
   -->
   <string name="ip_protection_data_limit_reached_snackbar">已使用 %1$d GB VPN 流量。將於下個月重設存取權限。</string>
+  <!-- Snackbar (in-app pop-up notification) action button text that takes the user to the VPN settings screen. -->
+  <string name="ip_protection_data_limit_reached_snackbar_action">設定</string>
   <!--
     Autofill
 
@@ -3522,6 +3504,8 @@
   <string name="homepage_shortcuts_add_website">新增網站</string>
   <!-- Title text for the "Enter a Website URL" dialog for adding a shortcut. -->
   <string name="homepage_shortcuts_add_website_title">輸入網站網址</string>
+  <!-- Title for the "Popular sites" section in the "Add to homepage" bottom sheet. -->
+  <string name="homepage_shortcuts_popular_sites">熱門網站</string>
   <!-- Title text displayed in the dialog when shortcuts limit is reached. -->
   <string name="shortcut_max_limit_title">已達捷徑數量限制</string>
   <!-- Content description text displayed in the dialog when shortcut limit is reached. -->
@@ -3608,8 +3592,6 @@
   <string name="default_browser_experiment_card_title">切換您的預設瀏覽器</string>
   <!-- Default browser card text -->
   <string name="default_browser_experiment_card_text" tools:ignore="BrandUsage">設定使用 Firefox 自動開啟網站、郵件、簡訊當中的鏈結。</string>
-  <!-- Content description for close button in collection placeholder. -->
-  <string name="remove_home_collection_placeholder_content_description">移除</string>
   <!-- Content description radio buttons with a link to more information -->
   <string name="radio_preference_info_content_description">點這裡取得詳細資訊</string>
   <!-- Content description for the action bar "up" button -->
@@ -3641,20 +3623,10 @@
     Action label for elements that can be collapsed if interacting with them. Talkback will append this to say "Double tap to collapse".
   -->
   <string name="a11y_action_label_collapse">摺疊</string>
-  <!-- Current state for elements that can be collapsed if interacting with them. Talkback will dictate this after a state change. -->
-  <string name="a11y_state_label_collapsed">已摺疊</string>
   <!-- Action label for elements that can be expanded if interacting with them. Talkback will append this to say "Double tap to expand". -->
   <string name="a11y_action_label_expand">展開</string>
-  <!-- Current state for elements that can be expanded if interacting with them. Talkback will dictate this after a state change. -->
-  <string name="a11y_state_label_expanded">已展開</string>
   <!-- Action label for links to a website containing documentation about a wallpaper collection. Talkback will append this to say "Double tap to open link to learn more about this collection". -->
   <string name="a11y_action_label_wallpaper_collection_learn_more">開啟鏈結，了解此收藏集的更多資訊</string>
-  <!-- Content description for headings announced by accessibility service. %s is the text of the heading. Talkback will announce the text and then speak the word "Heading" indicating to the user that this text is a heading for a section. -->
-  <string name="a11y_heading">標題 %s</string>
-  <!-- Title for dialog displayed when trying to access links present in a text. -->
-  <string name="a11y_links_title">鏈結</string>
-  <!-- Additional content description for text bodies that contain urls. -->
-  <string name="a11y_links_available">可用鏈結</string>
   <!-- Translations feature -->
 
   <!--
@@ -3958,6 +3930,55 @@
   <string name="protection_panel_privacy_and_security_settings_2">隱私權設定</string>
   <!-- Title text for the protection panel permissions section. -->
   <string name="protection_panel_permissions_title">權限</string>
+  <plurals name="trackers_blocked_panel_total_num_trackers_blocked_2">
+    <!--
+      Text for displaying the total number of trackers blocked in the trackers blocked panel.
+      %1$d is a placeholder for the number of trackers blocked.
+    -->
+    <item quantity="other">已封鎖此網站上的 %1$d 組追蹤器</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_social_media_trackers">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked social media trackers.
+      %1$d is a placeholder for the number of social media trackers blocked.
+    -->
+    <item quantity="other">%1$d 組社群網路追蹤器</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_cross_site_cookies">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked cross-site tracking cookies.
+      %1$d is a placeholder for the number of cross-site tracking cookies blocked.
+    -->
+    <item quantity="other">%1$d 組跨網站追蹤 Cookie</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_cryptominers">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked cryptomining scripts.
+      %1$d is a placeholder for the number of cryptominers blocked.
+    -->
+    <item quantity="other">%1$d 組加密貨幣採礦程式</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_fingerprinters">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked fingerprinter scripts.
+      %1$d is a placeholder for the number of fingerprinters blocked.
+    -->
+    <item quantity="other">%1$d 組數位指紋追蹤程式</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_trackers_2">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked generic tracking scripts.
+      %1$d is a placeholder for the number of trackers blocked.
+    -->
+    <item quantity="other">%1$d 組追蹤用內容</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_trackers_blocked_this_week_2">
+    <!--
+      Text for displaying the number of trackers blocked this week in the trackers blocked panel.
+      %1$d is a placeholder for the number of trackers blocked this week.
+    -->
+    <item quantity="other">本週已封鎖 %1$d 組追蹤器</item>
+  </plurals>
   <!--
     Text for displaying the total number of trackers blocked in the trackers blocked panel.
     %d is a placeholder for the number of trackers blocked.
@@ -3969,11 +3990,6 @@
     %d is a placeholder for the number of trackers blocked.
   -->
   <string name="trackers_blocked_panel_categorical_num_trackers_blocked">%s：%d 組</string>
-  <!--
-    Text for displaying the number of trackers blocked this week in the trackers blocked panel.
-    %d is a placeholder for the number of trackers blocked this week.
-  -->
-  <string name="trackers_blocked_panel_num_trackers_blocked_this_week">本週封鎖的追蹤器：%d</string>
   <!--
     Description text for a dialog confirming whether the user wants to delete all data for current site.
     %s is a placeholder for the base domain of website.
@@ -4566,7 +4582,7 @@
   <!-- Sports widget menu item to change the selected team. -->
   <string name="sports_widget_change_team">更換隊伍</string>
   <!-- Sports widget menu item to get a custom wallpaper for the widget. -->
-  <string name="sports_widget_get_custom_wallpaper">獲得自訂桌布</string>
+  <string name="sports_widget_get_custom_wallpaper">獲得自訂背景圖</string>
   <!-- Sports widget menu item to remove the widget from the homepage. -->
   <string name="sports_widget_remove">移除</string>
   <!-- Sports widget card title shown after a team is eliminated, asking if the user still wants to continue following the soccer tournament. -->
@@ -4584,7 +4600,7 @@
   <!-- Sports widget match status label shown during halftime of a match. -->
   <string name="sports_widget_halftime" tools:ignore="UnusedResources">中場休息</string>
   <!-- Sports widget match status label shown during extra time of a match. -->
-  <string name="sports_widget_extra_time" tools:ignore="UnusedResources">加時</string>
+  <string name="sports_widget_extra_time">加時</string>
   <!-- Sports widget match status label shown during penalties of a match. -->
   <string name="sports_widget_penalties">PK 大戰</string>
   <!--
@@ -4657,7 +4673,7 @@
     Content description (for accessibility, not displayed) for a page within the World Cup final results carousel.
     %1$d is the current page number, and %2$d is the total number of pages.
   -->
-  <string name="sports_widget_final_results_page_content_description" tools:ignore="UnusedResources">世界盃足球賽最終結果，第 %1$d 頁，共 %2$d 頁</string>
+  <string name="sports_widget_final_results_page_content_description" tools:ignore="UnusedResources">世界盃足球賽最終成績，第 %1$d 頁，共 %2$d 頁</string>
   <!-- Content description (for accessibility, not displayed) for the World Cup final results page. -->
   <string name="sports_widget_final_results_content_description">世界盃足球賽最終成績</string>
   <!-- Content description (for accessibility, not displayed) for the remove button that removes the sports widget from the homepage. -->

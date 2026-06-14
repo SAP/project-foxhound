@@ -134,12 +134,6 @@
   <!--
     Browser Toolbar
 
-    Content description for the Home screen button on the browser toolbar
-  -->
-  <string name="browser_toolbar_home">ပင်မ စာမျက်နှာ</string>
-  <!--
-    Browser Toolbar
-
     Content description for the translate page toolbar button that opens the translations dialog when no translation has occurred.
   -->
   <string name="browser_toolbar_translate">စာမျက်နှာကို ဘာသာပြန်မည်</string>
@@ -402,8 +396,6 @@
   <string name="library_desktop_bookmarks_unfiled">အခြား စာမှတ်များ</string>
   <!-- Option in Library to open History page -->
   <string name="library_history">မှတ်တမ်း</string>
-  <!-- Option in Library to open a new tab -->
-  <string name="library_new_tab">တပ်ဗ် အသစ်</string>
   <!-- Settings Page Title -->
   <string name="settings_title">အပြင်အဆင်များ</string>
   <!-- Content description (not visible, for screen readers etc.): "Close button for library settings" -->
@@ -573,10 +565,6 @@
   <string name="edit_bookmark_folder_fragment_title">ဖိုင်ပြင်ဆင်ပါ</string>
   <!-- Bookmark URL editing field label -->
   <string name="bookmark_url_label">URL</string>
-  <!-- Bookmark FOLDER editing field label -->
-  <string name="bookmark_folder_label">ဖိုင်</string>
-  <!-- Bookmark NAME editing field label -->
-  <string name="bookmark_name_label">နာမည်</string>
   <!-- Bookmark select folder screen title -->
   <string name="bookmark_select_folder_fragment_label">ဖိုင်တွဲကိုရွေးပါ</string>
   <!-- Bookmark editing error missing or improper URL -->
@@ -664,8 +652,6 @@
   <string name="collections_header">စုဆည်းမှုများ</string>
   <!-- Content description (not visible, for screen readers etc.): Opens the collection menu when pressed -->
   <string name="collection_menu_button_content_description">စုဆောင်းခြင်းမီနူး</string>
-  <!-- Label to describe what collections are to a new user without any collections -->
-  <string name="no_collections_description2">သင့် အတွက် အရေးပါသည့် အရာများကို စုဆောင်းပါ။ နောက်ပိုင်းတွင် အမြန် ရှာဖွေနိုင်ဖို့ အလားတူ ရှာဖွေမှုများ၊ ဆိုက်များ နှင့် တပ်ဗ်များကို စုစည်းပါ။</string>
   <!-- Title for the "select tabs" step of the collection creator -->
   <string name="create_collection_select_tabs">တက်ပ်များကိုရွေးပါ</string>
   <!-- Title for the "select collection" step of the collection creator -->
@@ -1146,8 +1132,6 @@
   <string name="inactive_tabs_title">လှုပ်ရှားမှုမရှိသော တပ်ဗ်များ</string>
   <!-- Default browser card text -->
   <string name="default_browser_experiment_card_text" tools:ignore="BrandUsage">Firefox တွင် ဝက်ဘ်ဆိုက်များ၊ အီးမေးလ်များ နှင့် မက်ဆေ့ခ်ျများမှ လင့်ခ်များ အလိုအလျောက် ပွင့်ရန် သတ်မှတ်ပါ။</string>
-  <!-- Content description for close button in collection placeholder. -->
-  <string name="remove_home_collection_placeholder_content_description">ဖယ်ရှားပါ</string>
   <!-- Content description radio buttons with a link to more information -->
   <string name="radio_preference_info_content_description">အသေးစိတ် သိရန် နှိပ်</string>
   <!-- Content description for the action bar "up" button -->

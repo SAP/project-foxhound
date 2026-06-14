@@ -332,21 +332,9 @@
   <!--
     Browser Toolbar
 
-    Content description for the Home screen button on the browser toolbar
-  -->
-  <string name="browser_toolbar_home">Startskjerm</string>
-  <!--
-    Browser Toolbar
-
     Content description for the translate page toolbar button that opens the translations dialog when no translation has occurred.
   -->
   <string name="browser_toolbar_translate">Oversett siden</string>
-  <!--
-    Content description (not visible, for screen readers etc.) for the translate page toolbar button that opens the translations dialog when the page is translated successfully.
-    %1$s is the name of the language that is displayed in the original page. (For example: English)
-    %2$s is the name of the language which the page was translated to. (For example: French)
-  -->
-  <string name="browser_toolbar_translated_successfully">Siden er oversatt fra %1$s til %2$s.</string>
   <!-- CFR description for the browser toolbar describing the "Shake to summarize feature" -->
   <string name="browser_toolbar_summarize_cfr_description">Rist enheten din for å oppsummere denne siden på sekunder. ⚡️</string>
   <!--
@@ -377,8 +365,6 @@
   <string name="ai_controls_banner_headline">Du har alltid et valg i %s</string>
   <!-- Supporting text for the AI controls banner. %s is a learn more link using ai_controls_learn_more as text. -->
   <string name="ai_controls_banner_supporting_text_2">Det inkluderer om du vil bruke funksjoner som er forbedret med AI. %s</string>
-  <!-- Supporting text for the AI controls banner -->
-  <string name="ai_controls_banner_supporting_text">Det inkluderer om du vil bruke funksjoner som er forbedret med AI.</string>
   <!-- Link text for learning more about AI controls -->
   <string name="ai_controls_learn_more">Les mer</string>
   <!-- Title for the block AI enhancements toggle -->
@@ -423,12 +409,6 @@
   <string name="default_locale_text">Følg språket til enheten</string>
   <!-- Placeholder text shown in the search bar before a user enters text -->
   <string name="locale_search_hint">Søk etter språk</string>
-  <!--
-    Search Fragment
-
-    Button in the search view that lets a user search by scanning a QR code
-  -->
-  <string name="search_scan_button_2">Skann QR-kode</string>
   <!--
     Search Fragment
 
@@ -1141,10 +1121,12 @@
   <string name="customize_toggle_pocket_sponsored">Sponsede historier</string>
   <!-- Title for the opening wallpaper settings screen -->
   <string name="customize_wallpapers">Bakgrunnsbilder</string>
+  <!-- Label for the menu item that opens the wallpaper settings screen. -->
+  <string name="browser_menu_change_wallpaper">Endre bakgrunnsbilde</string>
   <!-- Title for the customize home screen section with sponsored shortcuts. -->
   <string name="customize_toggle_contile">Sponsede snarveier</string>
   <!-- Title for the customize home screen section that toggles the Homepage sports widget. -->
-  <string name="customize_toggle_world_cup" tools:ignore="UnusedResources">VM</string>
+  <string name="customize_toggle_world_cup">VM</string>
   <!--
     Wallpapers
 
@@ -1484,8 +1466,6 @@
   <string name="library_desktop_bookmarks_unfiled">Andre bokmerker</string>
   <!-- Option in Library to open History page -->
   <string name="library_history">Historikk</string>
-  <!-- Option in Library to open a new tab -->
-  <string name="library_new_tab">Ny fane</string>
   <!-- Settings Page Title -->
   <string name="settings_title">Innstillinger</string>
   <!-- Content description (not visible, for screen readers etc.): "Close button for library settings" -->
@@ -2105,6 +2085,12 @@
   <string name="webcompat_reporter_preview_bottom_sheet_header">Forhåndsvisning av rapport</string>
   <!-- Label for the “Send” button shown in the WebCompat Report preview panel, which the user taps to submit the report. -->
   <string name="webcompat_reporter_preview_bottom_sheet_send">Send</string>
+  <!-- Title for the Edit URL confirmation dialog in the WebCompatReporter -->
+  <string name="webcompat_reporter_edit_url_dialog_title">Rediger nettadressen til nettstedet</string>
+  <!-- Text shown on the save button for the Edit URL confirmation dialog in the WebCompatReporter. -->
+  <string name="webcompat_reporter_edit_url_dialog_save">Lagre</string>
+  <!-- Text shown on the dismiss button for the Edit URL confirmation dialog in the WebCompatReporter. -->
+  <string name="webcompat_reporter_edit_url_dialog_dismiss">Ignorer</string>
   <!--
     These reason strings are dropdown options on a WebCompat reporter form, indicating what is broken on the site.
 
@@ -2233,12 +2219,8 @@
   <string name="edit_bookmark_folder_fragment_title">Rediger mappe</string>
   <!-- Bookmark URL editing field label -->
   <string name="bookmark_url_label">URL</string>
-  <!-- Bookmark FOLDER editing field label -->
-  <string name="bookmark_folder_label">MAPPE</string>
   <!-- Text indicating which folder a bookmark or folder will be saved in -->
   <string name="bookmark_save_in_label">Lagre i</string>
-  <!-- Bookmark NAME editing field label -->
-  <string name="bookmark_name_label">NAVN</string>
   <!-- Label for a text input field for a bookmark or folder name -->
   <string name="bookmark_name_label_normal_case">Navn</string>
   <!-- Bookmark select folder screen title -->
@@ -2282,12 +2264,8 @@
   <string name="bookmark_empty_list_root_title">Hold alle favorittbokmerkene dine samlet</string>
   <!-- Bookmark screen folder description. %s is the count of bookmark folder children -->
   <string name="bookmarks_folder_description">Bokmerker i mappen: %s</string>
-  <!-- Description for the bookmark list empty state when you're not signed into sync. -->
-  <string name="bookmark_empty_list_guest_description">Lagre nettsteder mens du surfer. Logg inn for å hente bokmerker fra andre synkroniserte enheter.</string>
   <!-- Text for the button to navigate to sync authentication -->
   <string name="bookmark_empty_list_guest_cta">Logg inn for å synkronisere</string>
-  <!-- Description for the bookmark list empty state when you're signed into sync. -->
-  <string name="bookmark_empty_list_authenticated_description">Lagre nettsteder mens du surfer. Vi henter også bokmerker fra andre synkroniserte enheter.</string>
   <!-- Description for the bookmark list empty state when you're in an empty folder. -->
   <string name="bookmark_empty_list_folder_description">Legg til bokmerker mens du surfer så du kan finne favorittsidene dine senere.</string>
   <!-- Description for the add new folder button when selecting a folder. -->
@@ -2402,8 +2380,6 @@
   <string name="collections_header">Samlinger</string>
   <!-- Content description (not visible, for screen readers etc.): Opens the collection menu when pressed -->
   <string name="collection_menu_button_content_description">Samlingsmeny</string>
-  <!-- Label to describe what collections are to a new user without any collections -->
-  <string name="no_collections_description2">Samle tingene som betyr noe for deg.\nGrupper lignende søk, nettsteder og faner for rask tilgang senere.</string>
   <!-- Title for the "select tabs" step of the collection creator -->
   <string name="create_collection_select_tabs">Velg faner</string>
   <!-- Title for the "select collection" step of the collection creator -->
@@ -2855,8 +2831,6 @@
   <string name="etp_suspected_fingerprinters_description">Aktiverer beskytelse mot fingeravtrykksporing for å stoppe mistenkte fingeravtrykksporere.</string>
   <!-- Category of trackers (fingerprinters) that can be blocked by Enhanced Tracking Protection -->
   <string name="etp_known_fingerprinters_title">Kjente nettleseravtrykksporere</string>
-  <!-- Label for the fingerprinters category shown in the tracking protections dashboard breakdown -->
-  <string name="tracking_dashboard_fingerprinters_category_name">Nettleseravtrykksporere</string>
   <!--
     Description of the SmartBlock Enhanced Tracking Protection feature. The * symbol is intentionally hardcoded here,
     as we use it on the UI to indicate which trackers have been partially unblocked.
@@ -3149,8 +3123,6 @@
   <string name="ip_protection_promo_headline">Den innebygde VPN-en i %s</string>
   <!-- Body text for the browser VPN promo card . %s is a learn more link using ip_protection_learn_more as text. -->
   <string name="ip_protection_promo_body_2">Surf med ekstra beskyttelse ved å skjule plasseringen din, også på offentlig Wi-Fi. %s</string>
-  <!-- Body text for the browser VPN promo card -->
-  <string name="ip_protection_promo_body">Surf med ekstra beskyttelse ved å skjule plasseringen din, også på offentlig Wi-Fi.</string>
   <!-- Link text that opens additional information about the browser VPN -->
   <string name="ip_protection_learn_more">Les mer</string>
   <!-- Label for the monthly data allowance section on the browser VPN settings screen -->
@@ -3214,6 +3186,14 @@
   <string name="ip_protection_onboarding_body">%1$s ved å skjule plasseringen din, selv på offentlig Wi-Fi. Få %2$d GB gratis hver måned.</string>
   <!-- Used as text for a link in ip_protection_onboarding_body. Make sure to adapt capitalization if the link is in the middle of the sentence. -->
   <string name="ip_protection_onboarding_body_link">Surf med ekstra beskyttelse</string>
+  <!--
+    The body of the VPN onboarding card for a promotion that provides unlimited data bandwidth for a certain time.
+    %1$s is a localized date (for example "Jun 9") indicating the end of the promotional period.
+    %2$s is a link using ip_protection_onboarding_body_link_promo (“Learn more”) as text. It links to a support article about VPN on Firefox.
+  -->
+  <string name="ip_protection_onboarding_body_promo">Slå det på for å gjøre surfingen din mer privat og vanskeligere å spore. Prøv det nå for å få ubegrenset båndbredde gjennom %1$s. %2$s</string>
+  <!-- Used as text for a link in ip_protection_onboarding_body. Make sure to adapt capitalization if the link is in the middle of the sentence. -->
+  <string name="ip_protection_onboarding_body_link_promo">Les mer</string>
   <!-- Label for the dismiss button on the onboarding bottom sheet. -->
   <string name="ip_protection_onboarding_not_now_button">Ikke nå</string>
   <!-- Snackbar (in-app pop-up notification) text to signal the browser VPN connection error -->
@@ -3223,6 +3203,8 @@
     %1$d is the total monthly allowance in GB (for example "50").
   -->
   <string name="ip_protection_data_limit_reached_snackbar">%1$d GB med VPN-data brukt. Tilgangen tilbakestilles neste måned.</string>
+  <!-- Snackbar (in-app pop-up notification) action button text that takes the user to the VPN settings screen. -->
+  <string name="ip_protection_data_limit_reached_snackbar_action">Innstillinger</string>
   <!--
     Autofill
 
@@ -3529,6 +3511,8 @@
   <string name="homepage_shortcuts_add_website">Legg til nettsted</string>
   <!-- Title text for the "Enter a Website URL" dialog for adding a shortcut. -->
   <string name="homepage_shortcuts_add_website_title">Skriv inn en nettstedsadresse</string>
+  <!-- Title for the "Popular sites" section in the "Add to homepage" bottom sheet. -->
+  <string name="homepage_shortcuts_popular_sites">Populære nettsteder</string>
   <!-- Title text displayed in the dialog when shortcuts limit is reached. -->
   <string name="shortcut_max_limit_title">Grensen for antall snarveier nådd</string>
   <!-- Content description text displayed in the dialog when shortcut limit is reached. -->
@@ -3615,8 +3599,6 @@
   <string name="default_browser_experiment_card_title">Endre standard nettleser</string>
   <!-- Default browser card text -->
   <string name="default_browser_experiment_card_text" tools:ignore="BrandUsage">Angi at lenker fra nettsteder, e-postmeldinger og meldinger skal åpnes automatisk i Firefox.</string>
-  <!-- Content description for close button in collection placeholder. -->
-  <string name="remove_home_collection_placeholder_content_description">Fjern</string>
   <!-- Content description radio buttons with a link to more information -->
   <string name="radio_preference_info_content_description">Trykk her for mer informasjon</string>
   <!-- Content description for the action bar "up" button -->
@@ -3648,20 +3630,10 @@
     Action label for elements that can be collapsed if interacting with them. Talkback will append this to say "Double tap to collapse".
   -->
   <string name="a11y_action_label_collapse">slå sammen</string>
-  <!-- Current state for elements that can be collapsed if interacting with them. Talkback will dictate this after a state change. -->
-  <string name="a11y_state_label_collapsed">sammenslått</string>
   <!-- Action label for elements that can be expanded if interacting with them. Talkback will append this to say "Double tap to expand". -->
   <string name="a11y_action_label_expand">utvid</string>
-  <!-- Current state for elements that can be expanded if interacting with them. Talkback will dictate this after a state change. -->
-  <string name="a11y_state_label_expanded">utvidet</string>
   <!-- Action label for links to a website containing documentation about a wallpaper collection. Talkback will append this to say "Double tap to open link to learn more about this collection". -->
   <string name="a11y_action_label_wallpaper_collection_learn_more">åpne lenken for å lære mer om denne samlingen</string>
-  <!-- Content description for headings announced by accessibility service. %s is the text of the heading. Talkback will announce the text and then speak the word "Heading" indicating to the user that this text is a heading for a section. -->
-  <string name="a11y_heading">%s, Overskrift</string>
-  <!-- Title for dialog displayed when trying to access links present in a text. -->
-  <string name="a11y_links_title">Lenker</string>
-  <!-- Additional content description for text bodies that contain urls. -->
-  <string name="a11y_links_available">Lenker tilgjengelig</string>
   <!-- Translations feature -->
 
   <!--
@@ -3966,6 +3938,62 @@
   <string name="protection_panel_privacy_and_security_settings_2">Personverninnstillinger</string>
   <!-- Title text for the protection panel permissions section. -->
   <string name="protection_panel_permissions_title">Tillatelser</string>
+  <plurals name="trackers_blocked_panel_total_num_trackers_blocked_2">
+    <!--
+      Text for displaying the total number of trackers blocked in the trackers blocked panel.
+      %1$d is a placeholder for the number of trackers blocked.
+    -->
+    <item quantity="one">%1$d sporer blokkert på dette nettstedet</item>
+    <item quantity="other">%1$d sporere blokkert på dette nettstedet</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_social_media_trackers">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked social media trackers.
+      %1$d is a placeholder for the number of social media trackers blocked.
+    -->
+    <item quantity="one">%1$d sporer via sosiale medier</item>
+    <item quantity="other">%1$d sporere via sosiale medier</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_cross_site_cookies">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked cross-site tracking cookies.
+      %1$d is a placeholder for the number of cross-site tracking cookies blocked.
+    -->
+    <item quantity="one">%1$d sporingsinfokapsel på tvers av nettsteder</item>
+    <item quantity="other">%1$d sporingsinfokapsler på tvers av nettsteder</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_cryptominers">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked cryptomining scripts.
+      %1$d is a placeholder for the number of cryptominers blocked.
+    -->
+    <item quantity="one">%1$d kryptoutvinner</item>
+    <item quantity="other">%1$d kryptoutvinnere</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_fingerprinters">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked fingerprinter scripts.
+      %1$d is a placeholder for the number of fingerprinters blocked.
+    -->
+    <item quantity="one">%1$d nettleseravtrykksporer</item>
+    <item quantity="other">%1$d nettleseravtrykksporere</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_trackers_2">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked generic tracking scripts.
+      %1$d is a placeholder for the number of trackers blocked.
+    -->
+    <item quantity="one">%1$d sporings-innhold</item>
+    <item quantity="other">%1$d sporings-innhold</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_trackers_blocked_this_week_2">
+    <!--
+      Text for displaying the number of trackers blocked this week in the trackers blocked panel.
+      %1$d is a placeholder for the number of trackers blocked this week.
+    -->
+    <item quantity="one">%1$d sporer blokkert denne uken</item>
+    <item quantity="other">%1$d sporere blokkert denne uken</item>
+  </plurals>
   <!--
     Text for displaying the total number of trackers blocked in the trackers blocked panel.
     %d is a placeholder for the number of trackers blocked.
@@ -3977,11 +4005,6 @@
     %d is a placeholder for the number of trackers blocked.
   -->
   <string name="trackers_blocked_panel_categorical_num_trackers_blocked">%s: %d</string>
-  <!--
-    Text for displaying the number of trackers blocked this week in the trackers blocked panel.
-    %d is a placeholder for the number of trackers blocked this week.
-  -->
-  <string name="trackers_blocked_panel_num_trackers_blocked_this_week">Sporere blokkerte denne uken: %d</string>
   <!--
     Description text for a dialog confirming whether the user wants to delete all data for current site.
     %s is a placeholder for the base domain of website.
@@ -4592,7 +4615,7 @@
   <!-- Sports widget match status label shown during halftime of a match. -->
   <string name="sports_widget_halftime" tools:ignore="UnusedResources">Pause</string>
   <!-- Sports widget match status label shown during extra time of a match. -->
-  <string name="sports_widget_extra_time" tools:ignore="UnusedResources">Ekstra tid</string>
+  <string name="sports_widget_extra_time">Ekstra tid</string>
   <!-- Sports widget match status label shown during penalties of a match. -->
   <string name="sports_widget_penalties">Straffer</string>
   <!--

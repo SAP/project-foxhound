@@ -340,8 +340,6 @@
   <string name="library_desktop_bookmarks_unfiled">نیشانکراوەکانی تر</string>
   <!-- Option in Library to open History page -->
   <string name="library_history">مێژوو</string>
-  <!-- Option in Library to open a new tab -->
-  <string name="library_new_tab">بازدەری نوێ</string>
   <!-- Settings Page Title -->
   <string name="settings_title">ڕێکخستنەکان</string>
   <!-- Content description (not visible, for screen readers etc.): "Close button for library settings" -->
@@ -499,10 +497,6 @@
   <string name="edit_bookmark_folder_fragment_title">بوخچە دەستکاریبکە</string>
   <!-- Bookmark URL editing field label -->
   <string name="bookmark_url_label">بەستەر</string>
-  <!-- Bookmark FOLDER editing field label -->
-  <string name="bookmark_folder_label">بوخچە</string>
-  <!-- Bookmark NAME editing field label -->
-  <string name="bookmark_name_label">ناو</string>
   <!-- Bookmark select folder screen title -->
   <string name="bookmark_select_folder_fragment_label">بوخچە هەڵبژێرە</string>
   <!-- Bookmark editing error missing or improper URL -->
@@ -996,8 +990,6 @@
   <string name="top_sites_rename_dialog_title">ناو</string>
   <!-- Dialog button text for canceling the rename top site prompt. -->
   <string name="top_sites_rename_dialog_cancel">پاشگەزبوونەوە</string>
-  <!-- Content description for close button in collection placeholder. -->
-  <string name="remove_home_collection_placeholder_content_description">سڕینەوە</string>
   <!-- Content description radio buttons with a link to more information -->
   <string name="radio_preference_info_content_description">کرتە بکە بۆ زانیاری زیاتر</string>
   <!-- Content description for the action bar "up" button -->

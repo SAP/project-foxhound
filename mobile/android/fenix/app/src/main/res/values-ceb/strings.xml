@@ -128,12 +128,6 @@
   <!-- Browser menu button to open the current page in an external app -->
   <string name="browser_menu_open_app_link">i-Open sa app</string>
   <!--
-    Browser Toolbar
-
-    Content description for the Home screen button on the browser toolbar
-  -->
-  <string name="browser_toolbar_home">Home screen</string>
-  <!--
     Locale Settings Fragment
 
     Content description for tick mark on selected language

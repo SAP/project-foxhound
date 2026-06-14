@@ -42,21 +42,4 @@
   <string name="mozac_protections_dashboard_empty_title">تور زىيارىتى جەريانىدا %1$s ئىزلىغۇچنى توسىدۇ.</string>
   <!-- Subtitle shown when no trackers have been blocked yet -->
   <string name="mozac_protections_dashboard_empty_subtitle">ئۇلارنى بۇ يەردە كۆرىسىز.</string>
-  <plurals name="mozac_protections_dashboard_trackers_count">
-    <!--
-      Label used for the number of trackers blocked.
-      %1$d is the number of trackers.
-    -->
-    <item quantity="one">%1$d ئىزلىغۇچى</item>
-    <item quantity="other">%1$d ئىزلىغۇچى</item>
-  </plurals>
-  <plurals name="mozac_protections_dashboard_total_blocked_since">
-    <!--
-      Footer line shown in the dashboard summarizing total trackers blocked
-      since a specific date. %1$s is the trackers count phrase (e.g.
-      "5,305 trackers"). %2$s is the formatted date (e.g. "February 23, 2026").
-    -->
-    <item quantity="one">%2$s دىن بۇيان %1$s توسۇلدى</item>
-    <item quantity="other">%2$s دىن بۇيان %1$s توسۇلدى</item>
-  </plurals>
 </resources>

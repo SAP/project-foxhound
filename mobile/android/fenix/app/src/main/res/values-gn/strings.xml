@@ -332,21 +332,9 @@
   <!--
     Browser Toolbar
 
-    Content description for the Home screen button on the browser toolbar
-  -->
-  <string name="browser_toolbar_home">Mba’erechaha ñepyrũgua</string>
-  <!--
-    Browser Toolbar
-
     Content description for the translate page toolbar button that opens the translations dialog when no translation has occurred.
   -->
   <string name="browser_toolbar_translate">Emoñe’ẽasa kuatiarogue</string>
-  <!--
-    Content description (not visible, for screen readers etc.) for the translate page toolbar button that opens the translations dialog when the page is translated successfully.
-    %1$s is the name of the language that is displayed in the original page. (For example: English)
-    %2$s is the name of the language which the page was translated to. (For example: French)
-  -->
-  <string name="browser_toolbar_translated_successfully">Kuatiarogue moñe’ẽasapyre %1$s-gui %2$s-pe.</string>
   <!-- CFR description for the browser toolbar describing the "Shake to summarize feature" -->
   <string name="browser_toolbar_summarize_cfr_description">Emongu’e ne mba’e’oka emombyky hag̃ua ko kuatiarogue sapy’aitépe. ⚡️</string>
   <!--
@@ -377,8 +365,6 @@
   <string name="ai_controls_banner_headline">Eguereko meme jeporavorã %s-pe</string>
   <!-- Supporting text for the AI controls banner. %s is a learn more link using ai_controls_learn_more as text. -->
   <string name="ai_controls_banner_supporting_text_2">Upéva ogueroike eiporútarõ tembiapoite iporãva IA ndive. %s</string>
-  <!-- Supporting text for the AI controls banner -->
-  <string name="ai_controls_banner_supporting_text">Upéva ogueroike eiporútarõ tembiapoite iporãva IA ndive.</string>
   <!-- Link text for learning more about AI controls -->
   <string name="ai_controls_learn_more">Eikuaave</string>
   <!-- Title for the block AI enhancements toggle -->
@@ -423,12 +409,6 @@
   <string name="default_locale_text">Eiporu mba’e’oka ñe’ẽ</string>
   <!-- Placeholder text shown in the search bar before a user enters text -->
   <string name="locale_search_hint">Eheka ñe’ẽ</string>
-  <!--
-    Search Fragment
-
-    Button in the search view that lets a user search by scanning a QR code
-  -->
-  <string name="search_scan_button_2">Emoha’ãnga QR ayvu</string>
   <!--
     Search Fragment
 
@@ -1142,7 +1122,7 @@
   <!-- Title for the customize home screen section with sponsored shortcuts. -->
   <string name="customize_toggle_contile">Jeike pya’eha jehepyme’ẽpyre</string>
   <!-- Title for the customize home screen section that toggles the Homepage sports widget. -->
-  <string name="customize_toggle_world_cup" tools:ignore="UnusedResources">Copa del Mundo</string>
+  <string name="customize_toggle_world_cup">Copa del Mundo</string>
   <!--
     Wallpapers
 
@@ -1482,8 +1462,6 @@
   <string name="library_desktop_bookmarks_unfiled">Ambue techaukahakuéra</string>
   <!-- Option in Library to open History page -->
   <string name="library_history">Tembiasakue</string>
-  <!-- Option in Library to open a new tab -->
-  <string name="library_new_tab">Tendayke pyahu</string>
   <!-- Settings Page Title -->
   <string name="settings_title">Jeporavorã</string>
   <!-- Content description (not visible, for screen readers etc.): "Close button for library settings" -->
@@ -2227,12 +2205,8 @@
   <string name="edit_bookmark_folder_fragment_title">Embosako’i ñongatuha</string>
   <!-- Bookmark URL editing field label -->
   <string name="bookmark_url_label">URL</string>
-  <!-- Bookmark FOLDER editing field label -->
-  <string name="bookmark_folder_label">ÑONGATUHA</string>
   <!-- Text indicating which folder a bookmark or folder will be saved in -->
   <string name="bookmark_save_in_label">Eñongatu amo</string>
-  <!-- Bookmark NAME editing field label -->
-  <string name="bookmark_name_label">TÉRA</string>
   <!-- Label for a text input field for a bookmark or folder name -->
   <string name="bookmark_name_label_normal_case">Téra</string>
   <!-- Bookmark select folder screen title -->
@@ -2276,12 +2250,8 @@
   <string name="bookmark_empty_list_root_title">Erekopaite techaukahaita erohoryvéva oñondive</string>
   <!-- Bookmark screen folder description. %s is the count of bookmark folder children -->
   <string name="bookmarks_folder_description">Marandurendápe techaukaha: %s</string>
-  <!-- Description for the bookmark list empty state when you're not signed into sync. -->
-  <string name="bookmark_empty_list_guest_description">Eñongatu tenda eikundakuévo. Eñepyrũ tembiapo ereko hag̃ua techaukaha umi ambue mba’e’oka ojuehepyrévagui.</string>
   <!-- Text for the button to navigate to sync authentication -->
   <string name="bookmark_empty_list_guest_cta">Eike embojuehe hag̃ua</string>
-  <!-- Description for the bookmark list empty state when you're signed into sync. -->
-  <string name="bookmark_empty_list_authenticated_description">Eñongatu tenda eikundakuévo. Rorekóta avei techaukahakuéra umi ambue mba’e’oka ojuehepyrévagui.</string>
   <!-- Description for the bookmark list empty state when you're in an empty folder. -->
   <string name="bookmark_empty_list_folder_description">Embojuaju techaukaha eikundaha aja ejuju hag̃ua erohoryvéva tenda ag̃ave.</string>
   <!-- Description for the add new folder button when selecting a folder. -->
@@ -2396,8 +2366,6 @@
   <string name="collections_header">Ñembyatyha</string>
   <!-- Content description (not visible, for screen readers etc.): Opens the collection menu when pressed -->
   <string name="collection_menu_button_content_description">Ñembyatyha poravorã</string>
-  <!-- Label to describe what collections are to a new user without any collections -->
-  <string name="no_collections_description2">Embyaty umi mba’e ehayhuvéva.\nEmboaty umi jeheka, tenda ha tendayke ojueheguáva eike hag̃ua pype pya’e.</string>
   <!-- Title for the "select tabs" step of the collection creator -->
   <string name="create_collection_select_tabs">Eiporavo tendayke</string>
   <!-- Title for the "select collection" step of the collection creator -->
@@ -2849,8 +2817,6 @@
   <string name="etp_suspected_fingerprinters_description">Emyandy kuãhũngue mo’ãha emboyke hag̃ua tapykuehoha ombyaikuaáva.</string>
   <!-- Category of trackers (fingerprinters) that can be blocked by Enhanced Tracking Protection -->
   <string name="etp_known_fingerprinters_title">Kuãhũ juhuha ojekuaáva</string>
-  <!-- Label for the fingerprinters category shown in the tracking protections dashboard breakdown -->
-  <string name="tracking_dashboard_fingerprinters_category_name">Kuãhũ rapykuere</string>
   <!--
     Description of the SmartBlock Enhanced Tracking Protection feature. The * symbol is intentionally hardcoded here,
     as we use it on the UI to indicate which trackers have been partially unblocked.
@@ -3141,8 +3107,6 @@
   <string name="ip_protection_promo_headline">VPN juajupyre %s rehegua</string>
   <!-- Body text for the browser VPN promo card . %s is a learn more link using ip_protection_learn_more as text. -->
   <string name="ip_protection_promo_body_2">Eikundaha ñemo’ãve ndive eñomívo ne rendaite, taha’e Wi-Fi ojeporukuaávape. %s</string>
-  <!-- Body text for the browser VPN promo card -->
-  <string name="ip_protection_promo_body">Ñeikundaha ñemo’ãve ndive oñomívo hendaite, taha’e Wi-Fi ojeporukuaávape.</string>
   <!-- Link text that opens additional information about the browser VPN -->
   <string name="ip_protection_learn_more">Eikuaave</string>
   <!-- Label for the monthly data allowance section on the browser VPN settings screen -->
@@ -3605,8 +3569,6 @@
   <string name="default_browser_experiment_card_title">Emoambue ne kundahára ypyguáva</string>
   <!-- Default browser card text -->
   <string name="default_browser_experiment_card_text" tools:ignore="BrandUsage">Emboheko ñanduti renda juajuha, ñanduti veve ha ñe’ẽmondo ijuruja hag̃ua ijehegui Firefox-pe.</string>
-  <!-- Content description for close button in collection placeholder. -->
-  <string name="remove_home_collection_placeholder_content_description">Mboguete</string>
   <!-- Content description radio buttons with a link to more information -->
   <string name="radio_preference_info_content_description">Eikutu ápe eikuaave hag̃ua</string>
   <!-- Content description for the action bar "up" button -->
@@ -3638,20 +3600,10 @@
     Action label for elements that can be collapsed if interacting with them. Talkback will append this to say "Double tap to collapse".
   -->
   <string name="a11y_action_label_collapse">pa’ãmba</string>
-  <!-- Current state for elements that can be collapsed if interacting with them. Talkback will dictate this after a state change. -->
-  <string name="a11y_state_label_collapsed">momichĩmbyre</string>
   <!-- Action label for elements that can be expanded if interacting with them. Talkback will append this to say "Double tap to expand". -->
   <string name="a11y_action_label_expand">moasãi</string>
-  <!-- Current state for elements that can be expanded if interacting with them. Talkback will dictate this after a state change. -->
-  <string name="a11y_state_label_expanded">moasãimbyre</string>
   <!-- Action label for links to a website containing documentation about a wallpaper collection. Talkback will append this to say "Double tap to open link to learn more about this collection". -->
   <string name="a11y_action_label_wallpaper_collection_learn_more">embojuruja juajuha eikuaave hag̃ua ko ñembyaty</string>
-  <!-- Content description for headings announced by accessibility service. %s is the text of the heading. Talkback will announce the text and then speak the word "Heading" indicating to the user that this text is a heading for a section. -->
-  <string name="a11y_heading">%s, Moakãha</string>
-  <!-- Title for dialog displayed when trying to access links present in a text. -->
-  <string name="a11y_links_title">Joajuhakuéra</string>
-  <!-- Additional content description for text bodies that contain urls. -->
-  <string name="a11y_links_available">Juajuhakuéra eiporukuaáva</string>
   <!-- Translations feature -->
 
   <!--
@@ -4577,7 +4529,7 @@
   <!-- Sports widget match status label shown during halftime of a match. -->
   <string name="sports_widget_halftime" tools:ignore="UnusedResources">Jepytu’u</string>
   <!-- Sports widget match status label shown during extra time of a match. -->
-  <string name="sports_widget_extra_time" tools:ignore="UnusedResources">Aravo’i juapyvegua</string>
+  <string name="sports_widget_extra_time">Aravo’i juapyvegua</string>
   <!-- Sports widget match status label shown during penalties of a match. -->
   <string name="sports_widget_penalties">Penal-kuéra</string>
   <!--

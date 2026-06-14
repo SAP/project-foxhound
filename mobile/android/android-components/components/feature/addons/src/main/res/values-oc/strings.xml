@@ -137,6 +137,8 @@
   <string name="mozac_feature_addons_permissions_top_sites_description_for_update">Accedir a l’istoric de navegacion.</string>
   <!-- Description for the "trialML" WebExtensions API permission for the update notification. Multiple permissions may be simply appended one after the other, and separated with a space, which is why the period is important. -->
   <string name="mozac_feature_addons_permissions_trial_ml_description_for_update">Telecargar e executar de modèls d’IA sus l’aparelh.</string>
+  <!-- Description for giving an add-on access to users's data on one site. %1$s  will be replaced by the DNS host name for which a web extension is requesting access (e.g., www.mozilla.org). -->
+  <string name="mozac_feature_addons_permissions_one_site_description_for_update">Accedir a las donadas per %1$s.</string>
   <!-- The text shown when an extension requests the userScripts permission, near the usual description of the userScripts permission -->
   <string name="mozac_feature_addons_permissions_user_scripts_extra_warning">Los escripts non verificats pòdon comportar de risques de seguretat e de vida privada. Executatz solament los escripts que possedisson d’extensions o de fonts de fisança.</string>
   <!-- The sentence used when the extension has data collection permissions. %1$s is a formatted list of permissions. -->
