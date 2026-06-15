@@ -11432,7 +11432,7 @@ static void TransformChars(nsTextFrame* aFrame, const nsStyleText* aStyle,
   }
 
   // Foxhound: copy taint
-  aOut.AssignTaint(aFrag->Taint());
+  aOut.AssignTaint(aBuffer.Taint());
 
   if (!aStyle->mTextTransform.IsNone() || needsToMaskPassword ||
       aStyle->mWebkitTextSecurity != StyleTextSecurity::None) {

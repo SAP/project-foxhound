@@ -30,8 +30,8 @@
 #include <type_traits>
 #include <utility>
 
-#include "builtin/Number.h"
 #include "Taint.h"
+#include "builtin/Number.h"
 
 #include "frontend/FrontendContext.h"
 #include "frontend/Parser.h"
