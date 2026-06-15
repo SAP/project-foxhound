@@ -18,7 +18,6 @@
 #include "mozilla/dom/UnbindContext.h"
 #include "mozilla/dom/WebVTTListener.h"
 #include "nsAttrValueInlines.h"
-#include "nsAttrValueOrString.h"
 #include "nsCOMPtr.h"
 #include "nsContentUtils.h"
 #include "nsCycleCollectionParticipant.h"

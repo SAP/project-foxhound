@@ -1096,6 +1096,7 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
  private:
   TaintLocation fallbackTaintLocation;
 
+ public:
   JS::PersistentRooted<js::UniquePtr<js::MicroTaskQueueSet>> microTaskQueues;
 }; /* struct JSContext */
 

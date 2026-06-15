@@ -129,14 +129,15 @@ nsresult HTMLScriptElement::Clone(dom::NodeInfo* aNodeInfo,
   return NS_OK;
 }
 
-void HTMLScriptElement::SetTextContentInternal(const nsAString& aTextContent,
-  nsIPrincipal* aSubjectPrincipal,
-  ErrorResult& aError) {
-    if(aTextContent.isTainted()) {
-      ReportTaintSink(aTextContent, "script.textContent", this);
-    }
-    FragmentOrElement::SetTextContentInternal(aTextContent, aSubjectPrincipal, aError);
+void HTMLScriptElement::SetTextContentInternal(
+    const nsAString& aTextContent, nsIPrincipal* aSubjectPrincipal,
+    ErrorResult& aError, MutationEffectOnScript aMutationEffectOnScript) {
+  if (aTextContent.isTainted()) {
+    ReportTaintSink(aTextContent, "script.textContent", this);
   }
+  FragmentOrElement::SetTextContentInternal(aTextContent, aSubjectPrincipal,
+                                            aError, aMutationEffectOnScript);
+}
 
 nsresult HTMLScriptElement::CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aName,
                                                   const nsAString& aValue) {

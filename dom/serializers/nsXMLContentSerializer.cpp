@@ -157,7 +157,7 @@ nsresult nsXMLContentSerializer::AppendTextData(Text* aText,
     const char16_t* strStart = characterDataBuffer->Get2b() + aStartOffset;
     if (aTranslateEntities) {
       // Foxhound: propagate taint
-      aStr.Taint().concat(frag->Taint().safeSubTaint(aStartOffset, endoffset), aStr.Length());
+      aStr.Taint().concat(characterDataBuffer->Taint().safeSubTaint(aStartOffset, endoffset), aStr.Length());
       NS_ENSURE_TRUE(AppendAndTranslateEntities(
                          Substring(strStart, strStart + length), aStr),
                      NS_ERROR_OUT_OF_MEMORY);
@@ -178,7 +178,7 @@ nsresult nsXMLContentSerializer::AppendTextData(Text* aText,
                      NS_ERROR_OUT_OF_MEMORY);
     } else {
       // Foxhound: propagate taint
-      aStr.Taint().concat(frag->Taint().safeSubTaint(aStartOffset, endoffset), aStr.Length());
+      aStr.Taint().concat(characterDataBuffer->Taint().safeSubTaint(aStartOffset, endoffset), aStr.Length());
       NS_ENSURE_TRUE(aStr.Append(utf16, mozilla::fallible),
                      NS_ERROR_OUT_OF_MEMORY);
     }

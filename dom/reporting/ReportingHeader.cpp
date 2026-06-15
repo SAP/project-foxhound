@@ -689,7 +689,6 @@ void ReportingHeader::GetEndpointForReportIncludeSubdomains(
     oldPrincipal->GetNextSubDomainPrincipal(getter_AddRefs(principal));
     mustHaveIncludeSubdomains = true;
   } while (principal && aIncludeSubdomains);
->>>>>>> c7fa3c91990bac266ee99a9e31863c202469f369
 
   // XXX More explicitly report an error if not found?
 }

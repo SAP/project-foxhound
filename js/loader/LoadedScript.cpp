@@ -65,7 +65,6 @@ LoadedScript::LoadedScript(ScriptKind aKind,
       mTookLongInPreviousRuns(false),
       mFetchOptions(aFetchOptions),
       mURI(aURI),
-      mDataType(DataType::eUnknown),
       mReceivedScriptTextLength(0),
       mScriptTextTaint(EmptyTaint) {
   MOZ_ASSERT(mFetchOptions);

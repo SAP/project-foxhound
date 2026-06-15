@@ -285,6 +285,7 @@ allowlist-types = [
     "AnchorPosOffsetResolutionParams",
 ]
 opaque-types = [
+    "TaintLocation", "TaintOperation", "TaintNode", "TaintFlow", "TaintFlow_Iterator", "TaintRange", "StringTaint", "SafeStringTaint", "TaintList", "TaintableString",
     "mozilla::StyleThinArc", # https://github.com/rust-lang/rust-bindgen/issues/1557
     "mozilla::gfx::.*Point",
     "mozilla::gfx::.*Rect",
