@@ -2359,11 +2359,3 @@ function setupSinkChecks(sink_names, contents, operation_index=2, flow_index=0) 
     }
   }, false);
 }
-
-/* import-globals-from ../../../modules/Mochia.js */
-SpecialPowers.Services.scriptloader.loadSubScript(
-  "resource://testing-common/Mochia.js",
-  this
-);
-
-Mochia(this);
