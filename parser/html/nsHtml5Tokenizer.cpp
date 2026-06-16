@@ -225,9 +225,10 @@ void nsHtml5Tokenizer::setLineNumber(int32_t line) {
   this->line = line;
 }
 
-void nsHtml5Tokenizer::appendCharRefBuf(char16_t c) {
+void nsHtml5Tokenizer::appendCharRefBuf(char16_t c, const TaintFlow& flow) {
   MOZ_RELEASE_ASSERT(charRefBufLen < charRefBuf.length,
                      "Attempted to overrun charRefBuf!");
+  charRefTaint.concat(flow, charRefBufLen);
   charRefBuf[charRefBufLen++] = c;
 }
 
@@ -245,7 +246,7 @@ void nsHtml5Tokenizer::emitOrAppendCharRefBuf(int32_t returnState) {
 
 void nsHtml5Tokenizer::appendStrBuf(char16_t* buffer, int32_t offset,
                                     int32_t length, const StringTaint& taint) {
-  int32_t newLen = nsHtml5Portability::checkedAdd(strBufLen, length);
+  int32_t newLen = strBufLen + length;
   MOZ_ASSERT(newLen <= strBuf.length, "Previous buffer length insufficient.");
   if (MOZ_UNLIKELY(strBuf.length < newLen)) {
     if (MOZ_UNLIKELY(!EnsureBufferSpace(length))) {

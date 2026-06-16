@@ -363,14 +363,16 @@ class nsHtml5Tokenizer {
     strBufTaint.clear();
   }
 
-  inline void appendStrBuf(char16_t c, const TaintFlow& flow) {
-    MOZ_ASSERT(strBufLen < strBuf.length,
-               "Previous buffer length insufficient.");
+  inline void appendStrBuf(char16_t c) {
     if (MOZ_UNLIKELY(strBufLen == strBuf.length)) {
       EnsureBufferSpaceShouldNeverHappen(1);
     }
-    strBufTaint.concat(flow, strBufLen);
     strBuf[strBufLen++] = c;
+  }
+
+  inline void appendStrBuf(char16_t c, const TaintFlow& flow) {
+    strBufTaint.concat(flow, strBufLen);
+    appendStrBuf(c);
   }
 
  protected:
