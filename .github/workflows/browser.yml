@@ -188,12 +188,12 @@ jobs:
       - name: Bootstrap
         run: |
           cp "taintfox_mozconfig_ubuntu" ".mozconfig"
-          python3.11 ./mach --no-interactive bootstrap --application-choice=browser --enable-bootstrap=no-update
+          python3.11 ./mach --no-interactive bootstrap --application-choice=browser
           source .PLAYWRIGHT_VERSION
           echo "Installing ${RUST_VERSION} from .PLAYWRIGHT_VERSION"
           rustup install ${RUST_VERSION}
           rustup default ${RUST_VERSION}
-      
+
       - name: Build
         run: |
           python3.11 ./mach build
