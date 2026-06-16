@@ -3617,7 +3617,7 @@ nsresult Element::SetAttrInternal(int32_t aNamespaceID, nsAtom* aName,
 
   // Foxhound: the script blocker below will prevent us from executing taint notifications!
   // So add our own callback to check the taint, even if value is not changing
-  CheckTaintSinkSetAttr(aNamespaceID, aName, aValue);
+  CheckTaintSinkSetAttr(aNamespaceID, aName, aValue.String());
 
   if (OnlyNotifySameValueSet(aNamespaceID, aName, aPrefix, aValue, aNotify,
                              oldValue, &modType, &oldValueSet)) {

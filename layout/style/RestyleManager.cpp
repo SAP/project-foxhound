@@ -1251,8 +1251,6 @@ static void InvalidateDescendants(nsIFrame* aFrame, nsChangeHint aChange) {
                                nsChangeHint_SchedulePaint)),
                "Invalid change flag");
 
-  aFrame->SyncFrameViewProperties();
-
   for (const auto& [list, listID] : aFrame->ChildLists()) {
     for (nsIFrame* child : list) {
       if (!child->HasAnyStateBits(NS_FRAME_OUT_OF_FLOW)) {

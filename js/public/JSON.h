@@ -15,6 +15,7 @@
 #include "jstypes.h"  // JS_PUBLIC_API
 
 #include "js/TypeDecls.h"
+#include "Taint.h"  // StringTaint
 
 using JSONWriteCallback = bool (*)(const char16_t* buf, uint32_t len,
                                    void* data);
