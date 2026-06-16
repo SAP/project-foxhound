@@ -36,9 +36,7 @@ macosx64-sdk-26.2:
         symbol: TM(sdk26.2)
     run:
         arguments:
-            # Foxhound: the Apple CDN URL returns 403; use web.archive.org mirror instead.
-            # This can be dropped when foxhound is updated to a Firefox version that uses SDK 26.4+.
-            - https://web.archive.org/web/20260128202559if_/https://swcdn.apple.com/content/downloads/60/22/089-71960-A_W8BL1RUJJ6/5zkyplomhk1cm7z6xja2ktgapnhhti6wwd/CLTools_macOSNMOS_SDK.pkg
+            - https://swcdn.apple.com/content/downloads/60/22/089-71960-A_W8BL1RUJJ6/5zkyplomhk1cm7z6xja2ktgapnhhti6wwd/CLTools_macOSNMOS_SDK.pkg
             - f3785f1bbc3b8323121b66fc28ef59083b4f508c7bdabb9d8d916f142ee89b01cb8030eba469eb9107b416d1c9d523a1d2e009cddb83536a819a3704a5d3ce17
             - Library/Developer/CommandLineTools/SDKs/MacOSX26.2.sdk
         toolchain-artifact: project/gecko/mac-sdk/MacOSX26.2.sdk.tar.zst
