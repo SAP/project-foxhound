@@ -7,27 +7,31 @@
 
 int32_t nsHtml5Tokenizer::StateLoopFastestSIMD(int32_t state, char16_t c,
                                                int32_t pos, char16_t* buf,
+                                               const StringTaint& taint,
                                                bool reconsume,
                                                int32_t returnState,
                                                int32_t endPos) {
-  return stateLoop<nsHtml5FastestPolicySIMD>(state, c, pos, buf, reconsume,
-                                             returnState, endPos);
+  return stateLoop<nsHtml5FastestPolicySIMD>(state, c, pos, buf, taint,
+                                             reconsume, returnState, endPos);
 }
 
 int32_t nsHtml5Tokenizer::StateLoopLineColSIMD(int32_t state, char16_t c,
                                                int32_t pos, char16_t* buf,
+                                               const StringTaint& taint,
                                                bool reconsume,
                                                int32_t returnState,
                                                int32_t endPos) {
-  return stateLoop<nsHtml5LineColPolicySIMD>(state, c, pos, buf, reconsume,
-                                             returnState, endPos);
+  return stateLoop<nsHtml5LineColPolicySIMD>(state, c, pos, buf, taint,
+                                             reconsume, returnState, endPos);
 }
 
 int32_t nsHtml5Tokenizer::StateLoopViewSourceSIMD(int32_t state, char16_t c,
                                                   int32_t pos, char16_t* buf,
+                                                  const StringTaint& taint,
                                                   bool reconsume,
                                                   int32_t returnState,
                                                   int32_t endPos) {
-  return stateLoop<nsHtml5ViewSourcePolicySIMD>(state, c, pos, buf, reconsume,
-                                                returnState, endPos);
+  return stateLoop<nsHtml5ViewSourcePolicySIMD>(state, c, pos, buf, taint,
+                                                reconsume, returnState,
+                                                endPos);
 }

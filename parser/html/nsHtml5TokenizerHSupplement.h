@@ -21,28 +21,34 @@ bool nextCharOnNewLine;
 // opportunities.
 
 int32_t StateLoopFastestSIMD(int32_t state, char16_t c, int32_t pos,
-                             char16_t* buf, bool reconsume, int32_t returnState,
+                             char16_t* buf, const StringTaint& taint,
+                             bool reconsume, int32_t returnState,
                              int32_t endPos);
 
 int32_t StateLoopFastestALU(int32_t state, char16_t c, int32_t pos,
-                            char16_t* buf, bool reconsume, int32_t returnState,
+                            char16_t* buf, const StringTaint& taint,
+                            bool reconsume, int32_t returnState,
                             int32_t endPos);
 
 int32_t StateLoopLineColSIMD(int32_t state, char16_t c, int32_t pos,
-                             char16_t* buf, bool reconsume, int32_t returnState,
+                             char16_t* buf, const StringTaint& taint,
+                             bool reconsume, int32_t returnState,
                              int32_t endPos);
 
 int32_t StateLoopLineColALU(int32_t state, char16_t c, int32_t pos,
-                            char16_t* buf, bool reconsume, int32_t returnState,
+                            char16_t* buf, const StringTaint& taint,
+                            bool reconsume, int32_t returnState,
                             int32_t endPos);
 
 int32_t StateLoopViewSourceSIMD(int32_t state, char16_t c, int32_t pos,
-                                char16_t* buf, bool reconsume,
-                                int32_t returnState, int32_t endPos);
+                                char16_t* buf, const StringTaint& taint,
+                                bool reconsume, int32_t returnState,
+                                int32_t endPos);
 
 int32_t StateLoopViewSourceALU(int32_t state, char16_t c, int32_t pos,
-                               char16_t* buf, bool reconsume,
-                               int32_t returnState, int32_t endPos);
+                               char16_t* buf, const StringTaint& taint,
+                               bool reconsume, int32_t returnState,
+                               int32_t endPos);
 
 public:
 inline int32_t getColumnNumber() { return col; }

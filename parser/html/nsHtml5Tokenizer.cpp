@@ -436,15 +436,34 @@ bool nsHtml5Tokenizer::tokenizeBuffer(nsHtml5UTF16Buffer* buffer) {
   }
   if (mViewSource) {
     mViewSource->SetBuffer(buffer);
-    pos = stateLoop<nsHtml5ViewSourcePolicy>(state, c, pos, buffer->getBuffer(), buffer->getTaint(),
-                                             false, returnState, buffer->getEnd());
+    if (mozilla::htmlaccel::htmlaccelEnabled()) {
+      pos = StateLoopViewSourceSIMD(state, c, pos, buffer->getBuffer(),
+                                    buffer->getTaint(), false, returnState,
+                                    buffer->getEnd());
+    } else {
+      pos = StateLoopViewSourceALU(state, c, pos, buffer->getBuffer(),
+                                   buffer->getTaint(), false, returnState,
+                                   buffer->getEnd());
+    }
     mViewSource->DropBuffer((pos == buffer->getEnd()) ? pos : pos + 1);
   } else if (tokenHandler->WantsLineAndColumn()) {
-    pos = stateLoop<nsHtml5LineColPolicy>(state, c, pos, buffer->getBuffer(), buffer->getTaint(),
-                                          false, returnState, buffer->getEnd());
+    if (mozilla::htmlaccel::htmlaccelEnabled()) {
+      pos = StateLoopLineColSIMD(state, c, pos, buffer->getBuffer(),
+                                 buffer->getTaint(), false, returnState,
+                                 buffer->getEnd());
+    } else {
+      pos = StateLoopLineColALU(state, c, pos, buffer->getBuffer(),
+                                buffer->getTaint(), false, returnState,
+                                buffer->getEnd());
+    }
+  } else if (mozilla::htmlaccel::htmlaccelEnabled()) {
+    pos = StateLoopFastestSIMD(state, c, pos, buffer->getBuffer(),
+                               buffer->getTaint(), false, returnState,
+                               buffer->getEnd());
   } else {
-    pos = stateLoop<nsHtml5FastestPolicy>(state, c, pos, buffer->getBuffer(), buffer->getTaint(),
-                                          false, returnState, buffer->getEnd());
+    pos = StateLoopFastestALU(state, c, pos, buffer->getBuffer(),
+                              buffer->getTaint(), false, returnState,
+                              buffer->getEnd());
   }
   if (pos == end) {
     buffer->setStart(pos);

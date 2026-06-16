@@ -55,7 +55,8 @@ using namespace mozilla::dom;
 // please consider reordering the fields to avoid excess padding or,
 // if that doesn't help, splitting a rare operation into multiple
 // tree ops before allowing the size of all operations to get larger.
-static_assert(sizeof(nsHtml5TreeOperation) <= 56);
+// The SafeStringTaint term accounts for the taint field added by Foxhound.
+static_assert(sizeof(nsHtml5TreeOperation) <= 56 + sizeof(SafeStringTaint));
 
 /**
  * Helper class that opens a notification batch if the current doc

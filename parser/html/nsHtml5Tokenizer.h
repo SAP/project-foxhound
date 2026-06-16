@@ -403,7 +403,7 @@ class nsHtml5Tokenizer {
 
   inline void emitStrBuf() {
     if (strBufLen > 0) {
-      tokenHandler->characters(strBuf, 0, strBufLen);
+      tokenHandler->characters(strBuf, strBufTaint, 0, strBufLen);
       clearStrBufAfterUse();
     }
   }
