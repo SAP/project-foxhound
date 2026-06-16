@@ -171,10 +171,24 @@ jobs:
         with:
           fetch-depth: 1
 
+      # Foxhound: the macOS 26.2 SDK Apple CDN URL returns 403, so we pre-fetch it
+      # from web.archive.org and place it where mach bootstrap expects it.
+      # macos-sdk.yml must remain unchanged to keep toolchain digests in sync with
+      # Firefox CI; this step is the workaround instead.
+      - name: Pre-fetch macOS SDK
+        run: |
+          mkdir -p ~/.mozbuild/MacOSX26.2.sdk
+          PYTHONPATH=python/mozbuild \
+            python3.11 taskcluster/scripts/misc/unpack-sdk.py \
+            "https://web.archive.org/web/20260128202559if_/https://swcdn.apple.com/content/downloads/60/22/089-71960-A_W8BL1RUJJ6/5zkyplomhk1cm7z6xja2ktgapnhhti6wwd/CLTools_macOSNMOS_SDK.pkg" \
+            "f3785f1bbc3b8323121b66fc28ef59083b4f508c7bdabb9d8d916f142ee89b01cb8030eba469eb9107b416d1c9d523a1d2e009cddb83536a819a3704a5d3ce17" \
+            "Library/Developer/CommandLineTools/SDKs/MacOSX26.2.sdk" \
+            ~/.mozbuild/MacOSX26.2.sdk
+
       - name: Bootstrap
         run: |
-          cp "taintfox_mozconfig_ubuntu" ".mozconfig"    
-          python3.11 ./mach --no-interactive bootstrap --application-choice=browser
+          cp "taintfox_mozconfig_ubuntu" ".mozconfig"
+          python3.11 ./mach --no-interactive bootstrap --application-choice=browser --enable-bootstrap=no-update
           source .PLAYWRIGHT_VERSION
           echo "Installing ${RUST_VERSION} from .PLAYWRIGHT_VERSION"
           rustup install ${RUST_VERSION}
