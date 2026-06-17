@@ -1169,8 +1169,11 @@ static bool CanAttachDOMCall(JSContext* cx, JSJitInfo::OpType type,
   }
 
   // Ion codegen expects DOM_OBJECT_SLOT to be a fixed slot in LoadDOMPrivate.
-  if (obj->is<NativeObject>()) {
-    MOZ_RELEASE_ASSERT(obj->as<NativeObject>().numFixedSlots() > 0);
+  // This check could be a release assertion but unfortunately that causes
+  // crashes on buggy Raptor Lake CPUs. See bug 2039575.
+  if (obj->is<NativeObject>() && obj->as<NativeObject>().numFixedSlots() == 0) {
+    MOZ_ASSERT_UNREACHABLE("DOM NativeObject without fixed slots");
+    return false;
   }
 
   // Tell the analysis the |DOMInstanceClassHasProtoAtDepth| hook can't GC.
