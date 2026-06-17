@@ -212,10 +212,11 @@ nsPrintDialogServiceX::ShowPrintDialog(mozIDOMWindowProxy* aParent,
   MozPrintPanelDidEndAdapter* adapter =
       [[MozPrintPanelDidEndAdapter alloc] initWithHandler:^(NSInteger button) {
         NS_OBJC_BEGIN_TRY_IGNORE_BLOCK;
-        // Retrieve a printInfo with the updated settings. (The
-        // NSPrintOperation operates on a copy, so the object we passed in
-        // will not have been modified.)
-        NSPrintInfo* result = [[NSPrintOperation currentOperation] printInfo];
+        // The sheet writes the user's choices (including the print
+        // destination) back into the printInfo we passed to
+        // beginSheetWithPrintInfo:, so read the updated settings from
+        // printInfo.
+        NSPrintInfo* result = printInfo;
         [NSPrintOperation setCurrentOperation:nil];
         [tmpView release];
 
