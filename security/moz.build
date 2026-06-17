@@ -22,6 +22,10 @@ with Files("nss.symbols"):
 if CONFIG["MOZ_SYSTEM_NSS"]:
     Library("nss")
     OS_LIBS += CONFIG["NSS_LIBS"]
+    if CONFIG["OS_TARGET"] == "Linux":
+        OS_LIBS += ["-lfreeblpriv3"]
+    else:
+        OS_LIBS += ["-lfreebl3"]
 
 include("/build/gyp_base.mozbuild")
 if CONFIG["MOZ_FOLD_LIBS"]:
