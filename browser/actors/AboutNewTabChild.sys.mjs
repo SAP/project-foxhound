@@ -158,4 +158,20 @@ export class AboutNewTabChild extends RemotePageChild {
       }
     }
   }
+
+  observe(subject, topic) {
+    if (topic !== "intl:l10n-sources-changed") {
+      return;
+    }
+    // Bug 2046945 - this is a bit of a targeted, low-risk kludge fix which lets
+    // us notice when L10nRegistry sources have changed, and perform a
+    // retranslation of newtab when that occurs. This lets us avoid issues where
+    // the newtab XPI may have registered new sources, but the page has already
+    // finished being translated with the built-in version of newtab.ftl.
+    const doc = this.document;
+    if (!doc?.l10n) {
+      return;
+    }
+    doc.l10n.translateRoots();
+  }
 }
