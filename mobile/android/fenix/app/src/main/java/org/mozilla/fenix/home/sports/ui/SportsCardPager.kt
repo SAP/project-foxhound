@@ -29,6 +29,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -169,9 +170,18 @@ fun SportsCardPager(
     // tab-switch-and-return (the card is still present) restores it.
     val initialTargetPage = pages.indexOfFirst { it.key == sessionSportsPagerCardKey }
         .takeIf { it >= 0 } ?: initialPage
-    val pagerState = rememberPagerState(
-        initialPage = initialTargetPage.coerceIn(0, (pages.size - 1).coerceAtLeast(0)),
-    ) { pages.size }
+    // Re-seed the pager state whenever the set of cards changes (matched by identity, so score
+    // refreshes that keep the same fixtures don't recreate it). Without this, a page-set change -
+    // e.g. the leading promo being replaced by match cards once data loads - leaves the pager on
+    // its old index, which now points at a different card; it draws that card for a frame before
+    // SportsPagerLandingEffect scrolls to the real target, producing a visible flash (e.g. keep
+    // tabs -> champions -> finals). Opening the fresh state directly on the target skips that frame.
+    val pageIdentityKey = remember(pages) { pages.joinToString(separator = "|") { it.key } }
+    val pagerState = key(pageIdentityKey) {
+        rememberPagerState(
+            initialPage = initialTargetPage.coerceIn(0, (pages.size - 1).coerceAtLeast(0)),
+        ) { pages.size }
+    }
     SportsPagerStateEffects(
         pagerState = pagerState,
         pages = pages,
