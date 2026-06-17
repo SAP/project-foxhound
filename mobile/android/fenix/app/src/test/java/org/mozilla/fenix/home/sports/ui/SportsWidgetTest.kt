@@ -7,7 +7,9 @@ package org.mozilla.fenix.home.sports.ui
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.mozilla.fenix.home.sports.Match
 import org.mozilla.fenix.home.sports.MatchCard
+import org.mozilla.fenix.home.sports.MatchStatus
 import org.mozilla.fenix.home.sports.SportCardErrorState
 import org.mozilla.fenix.home.sports.SportsCardType
 import org.mozilla.fenix.home.sports.Team
@@ -145,6 +147,150 @@ class SportsWidgetTest {
         assertTrue(result.pages.any { it.type == SportsCardType.FOLLOW_TEAM_PROMO })
         assertEquals(scheduled.size + 1, result.pages.size)
     }
+
+    // --- initialPage: the page the pager opens on (live -> next upcoming -> last) ---
+
+    @Test
+    fun `GIVEN a live card THEN initialPage is the live card`() {
+        val cards = listOf(
+            card(1L, MatchStatus.Final),
+            card(2L, MatchStatus.Live(period = "2", clock = "60")),
+            card(3L, MatchStatus.Scheduled),
+        )
+
+        val result = invokeSportsCardPages(
+            isOneWeekToWorldCup = false,
+            isFollowTeamsCardShown = false,
+            matchCardStates = cards,
+            errorState = null,
+        )
+
+        assertEquals(1, result.initialPage)
+    }
+
+    @Test
+    fun `GIVEN no live card THEN initialPage is the first upcoming card`() {
+        val cards = listOf(
+            card(1L, MatchStatus.Final),
+            card(2L, MatchStatus.Scheduled),
+            card(3L, MatchStatus.Scheduled),
+        )
+
+        val result = invokeSportsCardPages(
+            isOneWeekToWorldCup = false,
+            isFollowTeamsCardShown = false,
+            matchCardStates = cards,
+            errorState = null,
+        )
+
+        assertEquals(1, result.initialPage)
+    }
+
+    @Test
+    fun `GIVEN only past cards THEN initialPage is the last card`() {
+        val cards = listOf(
+            card(1L, MatchStatus.Final),
+            card(2L, MatchStatus.Final),
+        )
+
+        val result = invokeSportsCardPages(
+            isOneWeekToWorldCup = false,
+            isFollowTeamsCardShown = false,
+            matchCardStates = cards,
+            errorState = null,
+        )
+
+        assertEquals(1, result.initialPage)
+    }
+
+    @Test
+    fun `GIVEN a leading promo page THEN initialPage accounts for the promo offset`() {
+        val cards = listOf(
+            card(1L, MatchStatus.Final),
+            card(2L, MatchStatus.Live(period = "2", clock = "60")),
+            card(3L, MatchStatus.Scheduled),
+        )
+
+        val result = invokeSportsCardPages(
+            isOneWeekToWorldCup = false,
+            isFollowTeamsCardShown = true, // prepends a FOLLOW_TEAM_PROMO page
+            matchCardStates = cards,
+            errorState = null,
+        )
+
+        assertEquals(SportsCardType.FOLLOW_TEAM_PROMO, result.pages.first().type)
+        // The live card sits at match index 1, shifted to page 2 by the leading promo page.
+        assertEquals(2, result.initialPage)
+    }
+
+    // --- page keys: card identity the pager uses to restore position across rebuilds ---
+
+    @Test
+    fun `GIVEN match cards THEN each page key is derived from its match ids`() {
+        val result = invokeSportsCardPages(
+            isOneWeekToWorldCup = false,
+            isFollowTeamsCardShown = false,
+            matchCardStates = listOf(
+                card(10L, MatchStatus.Live(period = "1", clock = "5")),
+                card(20L, MatchStatus.Scheduled),
+            ),
+            errorState = null,
+        )
+
+        assertEquals(listOf("match:10", "match:20"), result.pages.map { it.key })
+    }
+
+    @Test
+    fun `GIVEN a promo page precedes match cards THEN the promo key is type-based`() {
+        val result = invokeSportsCardPages(
+            isOneWeekToWorldCup = false,
+            isFollowTeamsCardShown = true, // prepends a FOLLOW_TEAM_PROMO page
+            matchCardStates = listOf(card(10L, MatchStatus.Scheduled)),
+            errorState = null,
+        )
+
+        assertEquals("type:FOLLOW_TEAM_PROMO", result.pages.first().key)
+        assertEquals("match:10", result.pages.last().key)
+    }
+
+    @Test
+    fun `GIVEN the featured and related matches swap THEN the card key stays stable`() {
+        // A group/day card's featured match changes as live status changes across refreshes, but
+        // its membership does not. The key must stay stable so the user is not re-landed.
+        val live = matchOf(1L, MatchStatus.Live(period = "1", clock = "5"))
+        val scheduled = matchOf(2L, MatchStatus.Scheduled)
+
+        val featuredLive = MatchCard(matches = listOf(live), relatedMatches = listOf(scheduled))
+        val featuredScheduled = MatchCard(matches = listOf(scheduled), relatedMatches = listOf(live))
+
+        val keyBefore = invokeSportsCardPages(
+            isOneWeekToWorldCup = false,
+            isFollowTeamsCardShown = false,
+            matchCardStates = listOf(featuredLive),
+            errorState = null,
+        ).pages.single().key
+        val keyAfter = invokeSportsCardPages(
+            isOneWeekToWorldCup = false,
+            isFollowTeamsCardShown = false,
+            matchCardStates = listOf(featuredScheduled),
+            errorState = null,
+        ).pages.single().key
+
+        assertEquals(keyBefore, keyAfter)
+        assertEquals("match:1,2", keyBefore)
+    }
+
+    private fun matchOf(id: Long, status: MatchStatus): Match = Match(
+        globalEventId = id,
+        date = "Jun 13",
+        time = "5:00 PM",
+        home = Team(key = "MEX", flagResId = 0),
+        away = Team(key = "RSA", flagResId = 0),
+        matchStatus = status,
+    )
+
+    private fun card(id: Long, status: MatchStatus): MatchCard =
+        MatchCard(matches = listOf(matchOf(id, status)), relatedMatches = emptyList())
 
     private fun invokeSportsCardPages(
         isOneWeekToWorldCup: Boolean,

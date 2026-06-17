@@ -8,6 +8,7 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -30,6 +31,7 @@ import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -46,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.lerp
 import kotlinx.coroutines.flow.collectIndexed
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
 import mozilla.components.compose.base.button.IconButton
 import org.mozilla.fenix.R
 import org.mozilla.fenix.home.sports.CountrySelectorSource
@@ -64,6 +67,17 @@ import org.mozilla.fenix.home.sports.MatchCard as MatchCardState
 private const val PAGER_SIZE_ANIMATION_DURATION_MS = 180
 private val PAGER_SIZE_ANIMATION_EASING = CubicBezierEasing(0.2f, 0.0f, 0.0f, 1.0f)
 
+// Process-scoped memory of the card (by identity, not index) the user last *swiped* to, so a
+// freshly-built widget (e.g. the homepage of a newly opened tab, or after a config change) opens
+// on that same card rather than snapping back to the live card. Keying on identity means a round
+// transition - where the remembered card no longer exists - re-focuses the live / next-upcoming
+// card instead of reusing a stale index. Only a deliberate swipe writes this: automatic landings
+// (initial open, the re-focus after match data loads, programmatic re-lands) must not, otherwise a
+// transient loading-state card (e.g. the promo shown before matches arrive) would be pinned here.
+// Null until the first swipe; reset when the process is killed, so a cold start falls back to the
+// live / next-upcoming card.
+private var sessionSportsPagerCardKey: String? = null
+
 /**
  * Exposes the active [PagerState] to descendants so that the [ChampionsCard]
  * can render its own [PagerIndicator] in place of the shared one. `null` when no pager is active.
@@ -72,10 +86,14 @@ internal val LocalSportsPagerState = compositionLocalOf<PagerState?> { null }
 
 /**
  * Pairs a [SportsCardType] with its rendering composable so the pager can identify which card is
- * settled on each page without a parallel list that could drift from [pages].
+ * settled on each page without a parallel list that could drift from [pages]. [key] is a stable
+ * identity for the card, used to restore the user's position across widget rebuilds and to detect
+ * when the remembered card no longer exists (e.g. a round transition); match-backed cards key on
+ * their set of match ids, promo/error cards on their [type].
  */
 data class SportsPage(
     val type: SportsCardType,
+    val key: String,
     val content: @Composable (pageNumber: Int, pageCount: Int) -> Unit,
 )
 
@@ -127,6 +145,8 @@ internal fun pagerHeadingContentDescription(
  * @param errorPageIndices 0-based indices of pages that render an error card alone. When the
  * pager settles on one of these, the overflow menu is suppressed since "Change team" /
  * "Get custom wallpaper" aren't actionable while the widget is in a failure state.
+ * @param initialPage Page the pager opens on for a fresh composition — typically the live (or
+ * next upcoming) card, so the user lands on the most relevant match regardless of its position.
  */
 @Composable
 fun SportsCardPager(
@@ -140,26 +160,27 @@ fun SportsCardPager(
     onCardShown: (SportsCardType, SportsCardImpressionSource) -> Unit = { _, _ -> },
     championsPageIndices: Set<Int> = emptySet(),
     errorPageIndices: Set<Int> = emptySet(),
+    initialPage: Int = 0,
 ) {
-    val pagerState = rememberPagerState { pages.size }
+    // Open on the card the user last settled on if it still exists in the current pages, otherwise
+    // fall back to the live / next-upcoming / last card ([initialPage]). Keyed on card identity
+    // rather than a raw index, so a round transition (the remembered card is gone) re-focuses the
+    // relevant card instead of stranding the user on an unrelated card at the same index, while a
+    // tab-switch-and-return (the card is still present) restores it.
+    val initialTargetPage = pages.indexOfFirst { it.key == sessionSportsPagerCardKey }
+        .takeIf { it >= 0 } ?: initialPage
+    val pagerState = rememberPagerState(
+        initialPage = initialTargetPage.coerceIn(0, (pages.size - 1).coerceAtLeast(0)),
+    ) { pages.size }
+    SportsPagerStateEffects(
+        pagerState = pagerState,
+        pages = pages,
+        initialPage = initialPage,
+        onCardShown = onCardShown,
+    )
     val isChampionsPage = pagerState.currentPage in championsPageIndices
     val isErrorPage = pagerState.currentPage in errorPageIndices
     val showIndicator = pages.size > 1 && !isChampionsPage
-
-    LaunchedEffect(pages) {
-        snapshotFlow { pagerState.settledPage }
-            .distinctUntilChanged()
-            .collectIndexed { emissionIndex, settledPage ->
-                val source = if (emissionIndex == 0) {
-                    SportsCardImpressionSource.IMPRESSION
-                } else {
-                    SportsCardImpressionSource.SWIPE
-                }
-                pages.getOrNull(settledPage)?.let { page ->
-                    onCardShown(page.type, source)
-                }
-            }
-    }
 
     Column(
         modifier = modifier.sportsCardPagerContainer(
@@ -206,6 +227,102 @@ fun SportsCardPager(
                     .clearAndSetSemantics {},
             )
         }
+    }
+}
+
+/**
+ * Hosts the side effects that drive [pagerState]: re-landing on the user's remembered card (or the
+ * live / next-upcoming / last card), emitting impression/swipe telemetry, and recording the
+ * settled card's identity into the process-scoped record when the user swipes.
+ */
+@Composable
+private fun SportsPagerStateEffects(
+    pagerState: PagerState,
+    pages: List<SportsPage>,
+    initialPage: Int,
+    onCardShown: (SportsCardType, SportsCardImpressionSource) -> Unit,
+) {
+    SportsPagerLandingEffect(pagerState, pages, initialPage)
+    SportsPagerImpressionEffect(pagerState, pages, onCardShown)
+    SportsPagerPositionRecorder(pagerState, pages)
+}
+
+/**
+ * Re-evaluates the landing whenever the pages change: keeps the user on their card if it is still
+ * present (matched by identity, even if its index shifted on a data refresh), otherwise re-focuses
+ * the live / next-upcoming / last card ([initialPage]). This is what moves the pager off a stale
+ * position when the tournament advances to a new round.
+ */
+@Composable
+private fun SportsPagerLandingEffect(
+    pagerState: PagerState,
+    pages: List<SportsPage>,
+    initialPage: Int,
+) {
+    LaunchedEffect(pages) {
+        if (pages.isNotEmpty()) {
+            val rememberedIndex = pages.indexOfFirst { it.key == sessionSportsPagerCardKey }
+                .takeIf { it >= 0 }
+            val target = (rememberedIndex ?: initialPage).coerceIn(0, pages.lastIndex)
+            if (target != pagerState.currentPage) {
+                pagerState.scrollToPage(target)
+            }
+        }
+    }
+}
+
+/**
+ * Emits card-typed telemetry: one IMPRESSION per pages mount, SWIPE on later settles.
+ */
+@Composable
+private fun SportsPagerImpressionEffect(
+    pagerState: PagerState,
+    pages: List<SportsPage>,
+    onCardShown: (SportsCardType, SportsCardImpressionSource) -> Unit,
+) {
+    LaunchedEffect(pages) {
+        snapshotFlow { pagerState.settledPage }
+            .distinctUntilChanged()
+            .collectIndexed { emissionIndex, settledPage ->
+                val source = if (emissionIndex == 0) {
+                    SportsCardImpressionSource.IMPRESSION
+                } else {
+                    SportsCardImpressionSource.SWIPE
+                }
+                pages.getOrNull(settledPage)?.let { page -> onCardShown(page.type, source) }
+            }
+    }
+}
+
+/**
+ * Records the user's card by identity so a later home instance opens on it - but only when THEY
+ * moved the pager (a drag). Automatic settles (the initial open, the re-focus after match data
+ * loads, or a programmatic re-land) are ignored, so a transient loading-state card such as the
+ * promo shown before matches arrive is never pinned as the remembered card. A drag can only occur
+ * on a visible, interactive widget, so this also covers the off-screen startup case.
+ */
+@Composable
+private fun SportsPagerPositionRecorder(
+    pagerState: PagerState,
+    pages: List<SportsPage>,
+) {
+    // Latest pages, readable from this long-lived effect without restarting it.
+    val currentPages by rememberUpdatedState(pages)
+    LaunchedEffect(pagerState) {
+        var pendingUserDrag = false
+        launch {
+            pagerState.interactionSource.interactions.collect { interaction ->
+                if (interaction is DragInteraction.Start) pendingUserDrag = true
+            }
+        }
+        snapshotFlow { pagerState.settledPage }
+            .distinctUntilChanged()
+            .collect { settledPage ->
+                if (pendingUserDrag) {
+                    pendingUserDrag = false
+                    sessionSportsPagerCardKey = currentPages.getOrNull(settledPage)?.key
+                }
+            }
     }
 }
 
@@ -376,7 +493,10 @@ private fun SportsCardPagerPreview() {
             SportsCardPager(
                 isTeamSelected = true,
                 pages = listOf(
-                    SportsPage(type = SportsCardType.COUNTDOWN_PROMO) { pageNumber, pageCount ->
+                    SportsPage(
+                        type = SportsCardType.COUNTDOWN_PROMO,
+                        key = "preview-countdown",
+                    ) { pageNumber, pageCount ->
                         CountdownPromoCard(
                             dateInUtc = "2026-06-11T00:00:00Z",
                             actionButtonLabelResId = R.string.sports_widget_country_selector_title,
@@ -386,7 +506,10 @@ private fun SportsCardPagerPreview() {
                             pageCount = pageCount,
                         )
                     },
-                    SportsPage(type = SportsCardType.MATCH_GROUP_STAGE) { pageNumber, pageCount ->
+                    SportsPage(
+                        type = SportsCardType.MATCH_GROUP_STAGE,
+                        key = "preview-match",
+                    ) { pageNumber, pageCount ->
                         MatchCard(
                             state = MatchCardState(
                                 matches = listOf(

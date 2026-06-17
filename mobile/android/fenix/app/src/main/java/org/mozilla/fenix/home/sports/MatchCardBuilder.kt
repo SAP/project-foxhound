@@ -22,9 +22,10 @@ private val flagResIdByKey: Map<String, Int> = regionGrouping
  *   - team path → one card per match;
  *   - no team path → one card per date within the active round.
  *
- * Cards are ordered for the pager as: live cards first, then past cards, then
- * upcoming cards. Within each bucket the original chronological order is preserved.
- * The pager always lands on index 0, which is the live card when one exists.
+ * Cards are returned in chronological order: oldest past first, through live, to the
+ * latest upcoming. The pager scrolls the user to the live (or, failing that, the next
+ * upcoming) card on first load — see SportsCardPager's initial page — rather than reordering
+ * the list to surface it.
  */
 object MatchCardBuilder {
 
@@ -43,7 +44,7 @@ object MatchCardBuilder {
             }
             knockoutMatches.forEach { add(buildSingleMatchCard(it)) }
         }
-        return cards.orderedForPager()
+        return cards
     }
 
     /**
@@ -53,7 +54,7 @@ object MatchCardBuilder {
      */
     fun buildForNoTeam(matches: List<SportsMatch>): List<MatchCard> {
         if (matches.isEmpty()) return emptyList()
-        return buildNoTeamPerDayCards(matches.sortedBy { it.date }).orderedForPager()
+        return buildNoTeamPerDayCards(matches.sortedBy { it.date })
     }
 
     private fun buildGroupStageCard(
@@ -130,67 +131,6 @@ object MatchCardBuilder {
         )
     }
 }
-
-private enum class CardBucket { LIVE, PAST, UPCOMING }
-
-private fun MatchCard.bucket(): CardBucket {
-    val all = matches + relatedMatches
-    return when {
-        all.any { it.matchStatus.isLive() } -> CardBucket.LIVE
-        all.isNotEmpty() && all.all { it.matchStatus.isPast() } -> CardBucket.PAST
-        else -> CardBucket.UPCOMING
-    }
-}
-
-// Pager ordering, applied to both followed-team and no-team card lists:
-//   1. Live matches (chronological)
-//   2. Champion card — Final with TournamentWinner outcome
-//   3. Third Place card — TPP with ThirdPlace outcome (independent of #2)
-//   4. Upcoming Final / Third Place, but only when they are the next matches up (see below)
-//   5. Other past matches reverse-chronologically (so the team's most-recent KO round
-//      sits next to the celebrations rather than buried under group-stage history)
-//   6. Other upcoming matches chronologically, with any not-yet-imminent Final / Third Place
-//      sorted in by date at the tail
-// Within each segment the input order is preserved (callers feed chronological input);
-// the past segment is reversed at the end.
-private fun List<MatchCard>.orderedForPager(): List<MatchCard> {
-    val live = mutableListOf<MatchCard>()
-    var champion: MatchCard? = null
-    var thirdPlace: MatchCard? = null
-    val upcomingBracket = mutableListOf<MatchCard>()
-    val past = mutableListOf<MatchCard>()
-    val upcomingOther = mutableListOf<MatchCard>()
-
-    forEach { card ->
-        val bucket = card.bucket()
-        val outcome = card.viewerOutcome
-        when {
-            bucket == CardBucket.LIVE -> live += card
-            outcome is FollowedTeamOutcome.TournamentWinner && champion == null -> champion = card
-            outcome is FollowedTeamOutcome.ThirdPlace && thirdPlace == null -> thirdPlace = card
-            bucket == CardBucket.UPCOMING && card.round.isBracketFinishing() -> upcomingBracket += card
-            bucket == CardBucket.PAST -> past += card
-            else -> upcomingOther += card
-        }
-    }
-
-    // Pin the upcoming Final / Third Place to the front only when nothing earlier is still to
-    // be played — i.e. there are no other upcoming matches. While earlier rounds (e.g. the
-    // group stage) still have games to come, the finals are weeks away and belong in their
-    // natural chronological place at the tail, not ahead of the matches being played now.
-    val leadingBracket = if (upcomingOther.isEmpty()) upcomingBracket else emptyList()
-    val trailingBracket = if (upcomingOther.isEmpty()) emptyList() else upcomingBracket
-
-    return live +
-        listOfNotNull(champion, thirdPlace) +
-        leadingBracket +
-        past.reversed() +
-        upcomingOther +
-        trailingBracket
-}
-
-private fun TournamentRound.isBracketFinishing(): Boolean =
-    this == TournamentRound.FINAL || this == TournamentRound.THIRD_PLACE_PLAYOFF
 
 // A decided final or third-place playoff always carries the celebration outcome,
 // regardless of which team (if any) the viewer follows — the champion card is shown
