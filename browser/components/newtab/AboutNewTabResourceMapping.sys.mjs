@@ -23,10 +23,13 @@ export const TRAINHOP_SCHEDULED_UPDATE_STATE_TIMEOUT_PREF =
 const FLUENT_SOURCE_NAME = "newtab";
 const TOPIC_LOCALES_CHANGED = "intl:app-locales-changed";
 const TOPIC_SHUTDOWN = "profile-before-change";
+const TOPIC_LANGPACK_STARTUP = "webextension-langpack-startup";
+const TOPIC_LANGPACK_SHUTDOWN = "webextension-langpack-shutdown";
 
 const lazy = XPCOMUtils.declareLazy({
   AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
   AddonSettings: "resource://gre/modules/addons/AddonSettings.sys.mjs",
+  Langpack: "resource://gre/modules/Extension.sys.mjs",
   AboutHomeStartupCache: "resource:///modules/AboutHomeStartupCache.sys.mjs",
   AsyncShutdown: "resource://gre/modules/AsyncShutdown.sys.mjs",
   DeferredTask: "resource://gre/modules/DeferredTask.sys.mjs",
@@ -90,6 +93,7 @@ export var AboutNewTabResourceMapping = {
   _builtinVersion: null,
   _updateAddonStateDeferredTask: null,
   _supportedLocales: null,
+  _langpackShadowSources: null,
 
   /**
    * Returns the version string for whichever version of New Tab is currently
@@ -369,12 +373,32 @@ export var AboutNewTabResourceMapping = {
         )
       );
 
+      this._langpackShadowSources = new Set();
+
       // Set up observers so that if the user changes the list of available
       // locales, we'll re-register.
       Services.obs.addObserver(this, TOPIC_LOCALES_CHANGED);
       Services.obs.addObserver(this, TOPIC_SHUTDOWN);
-      // Now actually do the registration.
+      Services.obs.addObserver(this, TOPIC_LANGPACK_STARTUP);
+      Services.obs.addObserver(this, TOPIC_LANGPACK_SHUTDOWN);
+      // Register the primary newtab source in the "app" metasource so that
+      // its strings are available wherever app strings are resolved (notably
+      // the en-US fallback chain when no langpack is active).
       this._updateFluentSourcesRegistration();
+
+      // For each already-active langpack, also register a shadow newtab
+      // source inside that langpack's metasource. This lets the L10nRegistry
+      // solver produce a bundle where the langpack provides every other
+      // resource in the active locale while the newtab XPI provides its own
+      // (possibly newer) newtab.ftl entries. Without this, train-hop-only
+      // strings (added in the XPI but not yet in any langpack) would never
+      // appear in a non-English locale: the (locale, app) bundle can't be
+      // built because the rest of the app sources are en-US only, and the
+      // (locale, langpack) bundle would only contain the langpack's older
+      // newtab.ftl. See Bug 2046945.
+      for (const langpackId of lazy.Langpack.activeLangpackIds) {
+        this._registerLangpackShadow(langpackId);
+      }
     } catch (e) {
       // TODO: consider if we should collect this in telemetry.
       this.logger.error(
@@ -415,11 +439,9 @@ export var AboutNewTabResourceMapping = {
     let availableSupportedLocales =
       this._supportedLocales.intersection(availableLocales);
 
-    const newtabFileSource = new L10nFileSource(
+    const newtabFileSource = this._buildNewtabFileSource(
       FLUENT_SOURCE_NAME,
-      "app",
-      [...availableSupportedLocales],
-      `resource://newtab/locales/{locale}/`
+      "app"
     );
 
     let registry = L10nRegistry.getInstance();
@@ -438,15 +460,123 @@ export var AboutNewTabResourceMapping = {
     }
   },
 
-  observe(_subject, topic, _data) {
+  /**
+   * Builds an L10nFileSource for the newtab Fluent files with a given name
+   * and metasource, using the current intersection of the XPI's supported
+   * locales and the locales known to the L10nRegistry.
+   *
+   * @param {string} name
+   *   The source name. Must be unique per metasource.
+   * @param {string} metasource
+   *   The metasource the source belongs to. "app" for the primary source,
+   *   a langpack id for shadow sources.
+   * @returns {L10nFileSource}
+   */
+  _buildNewtabFileSource(name, metasource) {
+    let availableLocales = new Set(Services.locale.availableLocales);
+    let availableSupportedLocales =
+      this._supportedLocales.intersection(availableLocales);
+    return new L10nFileSource(
+      name,
+      metasource,
+      [...availableSupportedLocales],
+      `resource://newtab/locales/{locale}/`
+    );
+  },
+
+  /**
+   * Registers a shadow L10nFileSource for the newtab XPI inside a langpack's
+   * metasource. This lets the L10nRegistry solver produce a bundle where the
+   * langpack provides every required resource in the active locale except
+   * browser/newtab/newtab.ftl, which is satisfied by the train-hopped XPI's
+   * (possibly newer) copy. Without this, train-hop-only strings — those
+   * present in the XPI but not yet in any langpack — are unreachable in any
+   * non-English locale and fall through to en-US. No-op if a shadow is
+   * already registered for this langpack. See Bug 2046945.
+   *
+   * @param {string} langpackId
+   *   The langpack's L10nRegistry metasource string, as stored on
+   *   `Langpack.langpackId`. This is NOT the langpack add-on's `id` —
+   *   its shape is `langpack-${manifest.langpack_id}-${productCodeName}`,
+   *   e.g. "langpack-es-ES-browser" on desktop Firefox.
+   */
+  _registerLangpackShadow(langpackId) {
+    if (this._langpackShadowSources.has(langpackId)) {
+      return;
+    }
+    const sourceName = `${FLUENT_SOURCE_NAME}-${langpackId}`;
+    const shadowSource = this._buildNewtabFileSource(sourceName, langpackId);
+    L10nRegistry.getInstance().registerSources([shadowSource]);
+    this._langpackShadowSources.add(langpackId);
+    this.logger.debug(
+      `Registered newtab shadow source in metasource ${langpackId}`
+    );
+  },
+
+  /**
+   * Removes a previously-registered shadow source for the given langpack.
+   * Called when a langpack shuts down (is uninstalled or disabled) so we
+   * don't leave an orphan source keeping the langpack's now-empty metasource
+   * alive. No-op if no shadow was registered for this langpack.
+   *
+   * @param {string} langpackId
+   *   The langpack metasource string whose shadow source should be removed.
+   *   Same shape as the argument to `_registerLangpackShadow`.
+   */
+  _unregisterLangpackShadow(langpackId) {
+    if (!this._langpackShadowSources.has(langpackId)) {
+      return;
+    }
+    const sourceName = `${FLUENT_SOURCE_NAME}-${langpackId}`;
+    L10nRegistry.getInstance().removeSources([sourceName]);
+    this._langpackShadowSources.delete(langpackId);
+    this.logger.debug(
+      `Removed newtab shadow source from metasource ${langpackId}`
+    );
+  },
+
+  /**
+   * Re-issues every currently-registered shadow source against the current
+   * intersection of the XPI's supported locales and the L10nRegistry's known
+   * available locales. Called on `intl:app-locales-changed` so shadow sources
+   * track locale-set changes the same way the primary "app" source does.
+   */
+  _updateLangpackShadows() {
+    let registry = L10nRegistry.getInstance();
+    for (const langpackId of this._langpackShadowSources) {
+      const sourceName = `${FLUENT_SOURCE_NAME}-${langpackId}`;
+      registry.updateSources([
+        this._buildNewtabFileSource(sourceName, langpackId),
+      ]);
+    }
+  },
+
+  observe(subject, topic, _data) {
     switch (topic) {
       case TOPIC_LOCALES_CHANGED: {
         this._updateFluentSourcesRegistration();
+        this._updateLangpackShadows();
+        break;
+      }
+      case TOPIC_LANGPACK_STARTUP: {
+        const langpackId = subject?.wrappedJSObject?.langpack?.langpackId;
+        if (langpackId) {
+          this._registerLangpackShadow(langpackId);
+        }
+        break;
+      }
+      case TOPIC_LANGPACK_SHUTDOWN: {
+        const langpackId = subject?.wrappedJSObject?.langpack?.langpackId;
+        if (langpackId) {
+          this._unregisterLangpackShadow(langpackId);
+        }
         break;
       }
       case TOPIC_SHUTDOWN: {
         Services.obs.removeObserver(this, TOPIC_LOCALES_CHANGED);
         Services.obs.removeObserver(this, TOPIC_SHUTDOWN);
+        Services.obs.removeObserver(this, TOPIC_LANGPACK_STARTUP);
+        Services.obs.removeObserver(this, TOPIC_LANGPACK_SHUTDOWN);
         break;
       }
     }
