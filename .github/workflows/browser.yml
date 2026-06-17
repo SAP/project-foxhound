@@ -188,6 +188,7 @@ jobs:
       - name: Bootstrap
         run: |
           cp "taintfox_mozconfig_ubuntu" ".mozconfig"
+          echo "ac_add_options --enable-bootstrap=no-update" >> .mozconfig
           python3.11 ./mach --no-interactive bootstrap --application-choice=browser
           source .PLAYWRIGHT_VERSION
           echo "Installing ${RUST_VERSION} from .PLAYWRIGHT_VERSION"
