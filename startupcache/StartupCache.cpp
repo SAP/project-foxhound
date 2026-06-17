@@ -787,9 +787,6 @@ void StartupCache::MaybeWriteOffMainThread(WriteType aWriteType) {
   RefPtr<StartupCache> self = this;
   nsCOMPtr<nsIRunnable> runnable = NS_NewRunnableFunction(
       "StartupCache::Write", [self, aWriteType]() mutable {
-        // Writing the cache is non-critical; use idle I/O priority so it
-        // doesn't compete with foreground reads during startup.
-        nsAutoLowPriorityIO lowPriority;
         MutexAutoLock lock(self->mTableLock);
         auto result = self->WriteToDisk(aWriteType);
         (void)NS_WARN_IF(result.isErr());
