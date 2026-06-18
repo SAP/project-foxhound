@@ -5,7 +5,9 @@
 package org.mozilla.fenix.tabgroups.storage.database
 
 import androidx.room.Dao
+import androidx.room.Query
 import androidx.room.Transaction
+import kotlinx.coroutines.flow.Flow
 
 /**
  * The [Dao] operations for modifying the Tab Groups database.
@@ -14,45 +16,49 @@ import androidx.room.Transaction
  * the two.
  */
 @Dao
-interface TabGroupOperationsDao : StoredTabGroupDao, TabGroupAssignmentDao {
+internal interface TabGroupOperationsDao : StoredTabGroupDao, TabGroupAssignmentDao {
+
+    @Transaction
+    @Query("SELECT * FROM $TAB_GROUP_TABLE_NAME")
+    fun getAllTabGroupsWithAssignments(): Flow<List<StoredTabGroupWithAssignments>>
 
     /**
      * Creates a new [tabGroup] instance in the database with a list of [assignments].
      */
     @Transaction
-    suspend fun createTabGroup(tabGroup: StoredTabGroup, assignments: List<TapGroupAssignment>) {
+    suspend fun createTabGroup(tabGroup: StoredTabGroup, assignments: List<TabGroupAssignment>) {
         upsertTabGroup(tabGroup = tabGroup)
         upsertTabGroupAssignments(assignments = assignments)
     }
 
     /**
-     * Updates or inserts the provided [TapGroupAssignment] and updates the group's timestamp..
+     * Updates or inserts the provided [TabGroupAssignment] and updates the group's timestamp..
      */
     @Transaction
-    suspend fun upsertTabGroupAssignment(assignment: TapGroupAssignment, currentTime: Long) {
+    suspend fun upsertTabGroupAssignment(assignment: TabGroupAssignment, currentTime: Long) {
         upsertTabGroupAssignment(assignment = assignment)
         touchGroupsForTabs(tabIds = listOf(assignment.id), currentTime = currentTime)
     }
 
     /**
-     * Updates or inserts the provided [TapGroupAssignment]s and updates the group's timestamp.
+     * Updates or inserts the provided [TabGroupAssignment]s and updates the group's timestamp.
      */
     @Transaction
-    suspend fun upsertTabGroupAssignments(assignments: List<TapGroupAssignment>, currentTime: Long) {
+    suspend fun upsertTabGroupAssignments(assignments: List<TabGroupAssignment>, currentTime: Long) {
         upsertTabGroupAssignments(assignments = assignments)
         touchGroupsForTabs(tabIds = assignments.map { it.id }, currentTime = currentTime)
     }
 
     /**
-     * Deletes the specified [TapGroupAssignment] and updates the group's timestamp.
+     * Deletes the specified [TabGroupAssignment] and updates the group's timestamp.
      */
     @Transaction
-    suspend fun deleteTabGroupAssignment(assignment: TapGroupAssignment, currentTime: Long) {
+    suspend fun deleteTabGroupAssignment(assignment: TabGroupAssignment, currentTime: Long) {
         deleteTabGroupAssignmentById(tabId = assignment.id, currentTime = currentTime)
     }
 
     /**
-     * Deletes all of the [TapGroupAssignment]s who are tied to [tabGroupId].
+     * Deletes all of the [TabGroupAssignment]s who are tied to [tabGroupId].
      */
     @Transaction
     suspend fun deleteTabGroupAssignmentsByTabGroupId(tabGroupId: String, currentTime: Long) {
@@ -61,7 +67,7 @@ interface TabGroupOperationsDao : StoredTabGroupDao, TabGroupAssignmentDao {
     }
 
     /**
-     * Deletes the [TapGroupAssignment] corresponding to [tabId] and updates the group's timestamp.
+     * Deletes the [TabGroupAssignment] corresponding to [tabId] and updates the group's timestamp.
      */
     @Transaction
     suspend fun deleteTabGroupAssignmentById(tabId: String, currentTime: Long) {
@@ -70,7 +76,7 @@ interface TabGroupOperationsDao : StoredTabGroupDao, TabGroupAssignmentDao {
     }
 
     /**
-     * Deletes all of the [TapGroupAssignment]s whose ID is contained in [tabIds] and update their group's timestamp.
+     * Deletes all of the [TabGroupAssignment]s whose ID is contained in [tabIds] and update their group's timestamp.
      */
     @Transaction
     suspend fun deleteAllAssignmentsById(tabIds: List<String>, currentTime: Long) {

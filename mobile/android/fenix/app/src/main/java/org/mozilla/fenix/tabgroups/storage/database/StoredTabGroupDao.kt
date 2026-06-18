@@ -5,7 +5,6 @@
 package org.mozilla.fenix.tabgroups.storage.database
 
 import androidx.room.Dao
-import androidx.room.Delete
 import androidx.room.Query
 import androidx.room.Upsert
 import kotlinx.coroutines.flow.Flow
@@ -14,7 +13,7 @@ import kotlinx.coroutines.flow.Flow
  * [Dao] to interact with the table containing [StoredTabGroup].
  */
 @Dao
-interface StoredTabGroupDao {
+internal interface StoredTabGroupDao {
 
     /**
      * Updates, or inserts, the provided [StoredTabGroup].
@@ -39,12 +38,6 @@ interface StoredTabGroupDao {
      */
     @Query("SELECT * FROM $TAB_GROUP_TABLE_NAME")
     fun getAllTabGroups(): Flow<List<StoredTabGroup>>
-
-    /**
-     * Deletes the specified [StoredTabGroup].
-     */
-    @Delete
-    suspend fun deleteTabGroup(tabGroup: StoredTabGroup)
 
     /**
      * Updates the closure state of the entity with the corresponding [id].

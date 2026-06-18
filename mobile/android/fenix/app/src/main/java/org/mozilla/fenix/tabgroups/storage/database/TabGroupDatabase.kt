@@ -11,7 +11,7 @@ import androidx.room.RoomDatabase
  * Internal database for storing data for the Tab Group feature.
  **/
 @Database(
-    entities = [StoredTabGroup::class, TapGroupAssignment::class],
+    entities = [StoredTabGroup::class, TabGroupAssignment::class],
     version = 1,
 )
 internal abstract class TabGroupDatabase : RoomDatabase() {

@@ -2,16 +2,23 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-package org.mozilla.fenix.tabgroups.storage.database
+package org.mozilla.fenix.tabgroups.storage.data
 
-import androidx.room.Entity
-import androidx.room.PrimaryKey
 import java.util.UUID
 
-internal const val TAB_GROUP_TABLE_NAME = "stored_tab_groups"
+/**
+ * The complete tab group data model emitted from the storage abstraction layer.
+ *
+ * @property tabGroups The list of [TabGroup]s emitted from the storage abstraction layer.
+ * @property tabGroupAssignments The mapping of tab IDs to tab group IDs emitted from the storage abstraction layer.
+ */
+data class TabGroupData(
+    val tabGroups: List<TabGroup> = emptyList(),
+    val tabGroupAssignments: Map<String, String> = emptyMap(), // tab ID -> tab group ID
+)
 
 /**
- * The data model of a Tab Group saved to disk.
+ * The base data model of a Tab Group.
  *
  * @property id The ID of the tab group.
  * @property title The display title of the tab group.
@@ -19,9 +26,8 @@ internal const val TAB_GROUP_TABLE_NAME = "stored_tab_groups"
  * @property closed Whether the group has been closed by the user.
  * @property lastModified Timestamp indicating the last time this entry was updated.
  */
-@Entity(tableName = TAB_GROUP_TABLE_NAME)
-internal data class StoredTabGroup(
-    @PrimaryKey val id: String = UUID.randomUUID().toString(),
+data class TabGroup(
+    val id: String = UUID.randomUUID().toString(),
     val title: String,
     val theme: String,
     val closed: Boolean = false,

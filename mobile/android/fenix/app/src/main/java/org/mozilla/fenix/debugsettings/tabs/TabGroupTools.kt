@@ -38,7 +38,6 @@ import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
 import androidx.core.text.isDigitsOnly
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import mozilla.components.browser.state.action.TabListAction
 import mozilla.components.browser.state.state.BrowserState
@@ -50,7 +49,8 @@ import mozilla.components.compose.base.utils.toLocaleString
 import org.mozilla.fenix.R
 import org.mozilla.fenix.debugsettings.ui.DebugDrawer
 import org.mozilla.fenix.tabgroups.fakes.FakeTabGroupRepository
-import org.mozilla.fenix.tabgroups.storage.database.StoredTabGroup
+import org.mozilla.fenix.tabgroups.storage.data.TabGroup
+import org.mozilla.fenix.tabgroups.storage.data.TabGroupData
 import org.mozilla.fenix.tabgroups.storage.repository.TabGroupRepository
 import org.mozilla.fenix.tabstray.data.TabGroupTheme
 import org.mozilla.fenix.theme.FirefoxTheme
@@ -73,10 +73,10 @@ fun TabGroupTools(
     tabGroupRepository: TabGroupRepository,
     browserStore: BrowserStore,
 ) {
-    val tabGroups by tabGroupRepository.observeTabGroups().collectAsState(initial = emptyList())
+    val tabGroupData by tabGroupRepository.tabGroupDataFlow.collectAsState(initial = TabGroupData())
 
-    val totalGroupCount = tabGroups.size
-    val closedGroupCount = remember(tabGroups) { tabGroups.count { it.closed } }
+    val totalGroupCount = tabGroupData.tabGroups.size
+    val closedGroupCount = remember(tabGroupData) { tabGroupData.tabGroups.count { it.closed } }
     val openGroupCount = totalGroupCount - closedGroupCount
 
     val coroutineScope = rememberCoroutineScope()
@@ -114,9 +114,9 @@ fun TabGroupTools(
     }
 }
 
-private fun generateTabGroup(counter: Int, isClosed: Boolean = false): StoredTabGroup {
+private fun generateTabGroup(counter: Int, isClosed: Boolean = false): TabGroup {
     val timestamp = System.currentTimeMillis()
-    return StoredTabGroup(
+    return TabGroup(
         title = "Tab Group $counter",
         theme = TabGroupTheme.entries.random().name,
         closed = isClosed,
@@ -154,7 +154,7 @@ private suspend fun autoPopulateTabGroupsUseCase(
 
         browserStore.dispatch(TabListAction.AddMultipleTabsAction(tabs = groupTabs))
 
-        val newGroup = StoredTabGroup(
+        val newGroup = TabGroup(
             title = title,
             theme = theme,
             closed = false,
@@ -455,26 +455,7 @@ private fun validateTabGroupInput(text: String): Int? {
 private fun TabGroupToolsPreview(
     @PreviewParameter(PreviewThemeProvider::class) theme: Theme,
 ) {
-    val mockTabGroupRepository = FakeTabGroupRepository(
-        tabGroupFlow = MutableStateFlow(
-            listOf(
-                StoredTabGroup(
-                    id = "1",
-                    title = "Mock Open",
-                    theme = "Blue",
-                    closed = false,
-                    lastModified = 0L,
-                ),
-                StoredTabGroup(
-                    id = "2",
-                    title = "Mock Closed",
-                    theme = "Orange",
-                    closed = true,
-                    lastModified = 0L,
-                ),
-            ),
-        ),
-    )
+    val mockTabGroupRepository = FakeTabGroupRepository()
 
     FirefoxTheme(theme) {
         TabGroupTools(

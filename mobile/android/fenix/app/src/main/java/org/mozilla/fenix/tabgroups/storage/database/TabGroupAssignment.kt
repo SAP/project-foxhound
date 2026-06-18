@@ -16,7 +16,7 @@ internal const val TAB_GROUP_ASSIGNMENT_TABLE_NAME = "stored_tab_group_assignmen
  * @property tabGroupId The ID of the group this tab belongs to.
  */
 @Entity(tableName = TAB_GROUP_ASSIGNMENT_TABLE_NAME)
-data class TapGroupAssignment(
+internal data class TabGroupAssignment(
     @PrimaryKey val id: String, // tabId
     val tabGroupId: String,
 )

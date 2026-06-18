@@ -23,7 +23,8 @@ import mozilla.components.lib.state.Store
 import mozilla.components.support.base.log.logger.Logger
 import mozilla.components.support.utils.DateTimeProvider
 import mozilla.components.support.utils.DefaultDateTimeProvider
-import org.mozilla.fenix.tabgroups.storage.database.StoredTabGroup
+import org.mozilla.fenix.tabgroups.storage.data.TabGroup
+import org.mozilla.fenix.tabgroups.storage.data.TabGroupData
 import org.mozilla.fenix.tabgroups.storage.repository.TabGroupRepository
 import org.mozilla.fenix.tabstray.data.TabData
 import org.mozilla.fenix.tabstray.data.TabGroupTheme
@@ -45,7 +46,7 @@ private typealias TabGroupMap = HashMap<TabItemId, TabsTrayItem.TabGroup>
  **/
 @JvmInline
 private value class CombinedTabData(
-    private val combinedData: Triple<TabData, List<StoredTabGroup>, Map<String, String>>,
+    private val combinedData: Pair<TabData, TabGroupData>,
 ) {
     val tabs: List<TabSessionState>
         get() = combinedData.first.tabs
@@ -53,11 +54,11 @@ private value class CombinedTabData(
     val selectedTabId: String?
         get() = combinedData.first.selectedTabId
 
-    val tabGroups: List<StoredTabGroup>
-        get() = combinedData.second
+    val tabGroups: List<TabGroup>
+        get() = combinedData.second.tabGroups
 
-    val tabGroupAssignments: Map<String, String>
-        get() = combinedData.third
+    val tabGroupAssignments: Map<String, String> // tab ID -> tab group ID
+        get() = combinedData.second.tabGroupAssignments
 }
 
 /**
@@ -72,7 +73,7 @@ private value class CombinedTabData(
  * @param dateTimeProvider The [DateTimeProvider] that will be used to get the current date.
  * @param scope The [CoroutineScope] for running the tab data transformation off of the main thread.
  * @param mainScope The [CoroutineScope] used for returning to the main thread.
- **/
+ */
 class TabStorageMiddleware(
     private val inactiveTabsEnabled: Boolean,
     private val tabGroupsEnabled: Boolean,
@@ -89,14 +90,13 @@ class TabStorageMiddleware(
         if (tabGroupsEnabled) {
             combine(
                 flow = tabDataFlow.distinctUntilChanged(),
-                flow2 = tabGroupRepository.observeTabGroups().distinctUntilChanged(),
-                flow3 = tabGroupRepository.observeTabGroupAssignments().distinctUntilChanged(),
-            ) { tabData, tabGroups, tabGroupAssignments ->
-                CombinedTabData(combinedData = Triple(tabData, tabGroups, tabGroupAssignments))
+                flow2 = tabGroupRepository.tabGroupDataFlow.distinctUntilChanged(),
+            ) { tabData, tabGroupData ->
+                CombinedTabData(combinedData = Pair(tabData, tabGroupData))
             }.toCombinedDataStateFlow()
         } else {
             tabDataFlow
-                .map { CombinedTabData(combinedData = Triple(it, listOf(), mapOf())) }
+                .map { CombinedTabData(combinedData = Pair(it, TabGroupData())) }
                 .distinctUntilChanged()
                 .toCombinedDataStateFlow()
         }
@@ -480,8 +480,8 @@ class TabStorageMiddleware(
     private fun transformTabData(
         tabs: List<TabSessionState>,
         selectedTabId: String?,
-        tabGroups: List<StoredTabGroup>,
-        tabGroupAssignments: Map<TabItemId, String>,
+        tabGroups: List<TabGroup>,
+        tabGroupAssignments: Map<TabItemId, String>, // tab ID -> tab group ID
     ): TabStorageUpdate {
         val normalItems: MutableList<TabsTrayItem> = mutableListOf()
         val inactiveTabs: MutableList<TabsTrayItem.Tab> = mutableListOf()
@@ -497,11 +497,8 @@ class TabStorageMiddleware(
                 tab = tab,
                 isFocused = tab.id == selectedTabId,
             )
-            val assignedGroup = getAssignedGroup(
-                tabItemId = displayTab.id,
-                tabGroupAssignments = tabGroupAssignments,
-                tabGroups = transformedTabGroups,
-            )
+            val assignedGroupId = tabGroupAssignments[displayTab.id]
+            val assignedGroup = transformedTabGroups[assignedGroupId]
 
             when {
                 assignedGroup != null -> {
@@ -597,18 +594,8 @@ class TabStorageMiddleware(
         }
     }
 
-    private fun getAssignedGroup(
-        tabItemId: TabItemId,
-        tabGroupAssignments: Map<TabItemId, String>,
-        tabGroups: TabGroupMap,
-    ): TabsTrayItem.TabGroup? {
-        if (!tabGroupsEnabled) return null
-        val groupId = tabGroupAssignments[tabItemId]
-        return tabGroups[groupId]
-    }
-
     private fun constructTabGroupMaps(
-        tabGroups: List<StoredTabGroup>,
+        tabGroups: List<TabGroup>,
     ): TabGroupMap {
         val transformedTabGroups: TabGroupMap = hashMapOf()
 
@@ -648,18 +635,17 @@ class TabStorageMiddleware(
         scope.launch {
             val sourceId = mode.sourceId
             val destinationId = mode.destinationId ?: return@launch
-            val storedTabGroup = StoredTabGroup(
-                title = formState.name,
-                theme = formState.theme.toStorageValue(),
-                lastModified = dateTimeProvider.currentTimeMillis(),
-            )
             // Sequence from the destination
             sequenceGroupedTabsTogether(
                 tabIds = listOf(sourceId),
                 targetTabId = destinationId,
             )
             tabGroupRepository.createTabGroupWithTabs(
-                tabGroup = storedTabGroup,
+                tabGroup = TabGroup(
+                    title = formState.name,
+                    theme = formState.theme.toStorageValue(),
+                    lastModified = dateTimeProvider.currentTimeMillis(),
+                ),
                 tabIds = listOf(sourceId, destinationId),
             )
         }
@@ -668,7 +654,7 @@ class TabStorageMiddleware(
     private fun handleSaveFromMultiSelection(formState: TabGroupFormState, selectedTabIds: List<String>) {
         scope.launch {
             if (formState.tabGroupId == null) {
-                val storedTabGroup = StoredTabGroup(
+                val newTabGroup = TabGroup(
                     title = formState.name,
                     theme = formState.theme.toStorageValue(),
                     lastModified = dateTimeProvider.currentTimeMillis(),
@@ -690,15 +676,15 @@ class TabStorageMiddleware(
                     )
 
                     tabGroupRepository.createTabGroupWithTabs(
-                        tabGroup = storedTabGroup,
+                        tabGroup = newTabGroup,
                         tabIds = selectedTabIds,
                     )
                 } else {
-                    tabGroupRepository.addNewTabGroup(storedTabGroup)
+                    tabGroupRepository.addNewTabGroup(newTabGroup)
                 }
             } else {
                 tabGroupRepository.updateTabGroup(
-                    StoredTabGroup(
+                    tabGroup = TabGroup(
                         id = formState.tabGroupId,
                         title = formState.name,
                         theme = formState.theme.toStorageValue(),
