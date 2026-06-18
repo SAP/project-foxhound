@@ -18,8 +18,6 @@
 #include "mozilla/dom/PContent.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/Services.h"
-#include "nsIObserverService.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -315,11 +313,6 @@ void L10nRegistry::RegisterFileSourcesFromParentProcess(
     source->index.AppendElements(desc.index());
   }
   ffi::l10nregistry_register_parent_process_sources(&sources);
-
-  if (nsCOMPtr<nsIObserverService> obs =
-          mozilla::services::GetObserverService()) {
-    obs->NotifyObservers(nullptr, "intl:l10n-sources-changed", nullptr);
-  }
 }
 
 /* static */
@@ -432,11 +425,6 @@ void L10nRegistrySendUpdateL10nFileSources() {
   ContentParent::GetAll(parents);
   for (ContentParent* parent : parents) {
     (void)parent->SendUpdateL10nFileSources(sources);
-  }
-
-  if (nsCOMPtr<nsIObserverService> obs =
-          mozilla::services::GetObserverService()) {
-    obs->NotifyObservers(nullptr, "intl:l10n-sources-changed", nullptr);
   }
 }
 
