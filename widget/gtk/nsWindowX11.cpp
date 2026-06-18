@@ -164,12 +164,17 @@ void nsWindowX11::CreateNative() {
 #pragma GCC diagnostic pop
 
   mSurfaceProvider.Initialize(GetX11Window());
+}
 
+void nsWindowX11::ConfigureToplevelWindowNative() {
   // Set window manager hint to keep fullscreen windows composited.
   //
   // If the window were to get unredirected, there could be visible
   // tearing because Gecko does not align its framebuffer updates with
   // vblank.
+  //
+  // This must be (re-)applied whenever the shell's X window is created,
+  // including after CSD-triggered re-realize in SetCustomTitlebar().
   SetCompositorHint(GTK_WIDGET_COMPOSITED_ENABLED);
 }
 

@@ -16,6 +16,7 @@ class nsWindowX11 final : public nsWindow {
 
   void CreateNative() override;
   void DestroyNative() override;
+  void ConfigureToplevelWindowNative() override;
 
   bool ConfigureX11GLVisual();
 
