@@ -56,7 +56,6 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.mozilla.fenix.GleanMetrics.Collections
 import org.mozilla.fenix.GleanMetrics.Events
 import org.mozilla.fenix.GleanMetrics.TabsTray
 import org.mozilla.fenix.R
@@ -1116,59 +1115,6 @@ class DefaultTabManagerControllerTest {
 
         assertTrue(showUndoSnackbarForTabInvoked)
         assertFalse(navigateToHomeAndDeleteSessionInvoked)
-    }
-
-    @Test
-    fun `GIVEN no tabs are currently selected WHEN a normal tab is long clicked THEN the tab is selected and the metric is reported`() {
-        val currentTabData = createTab(
-            id = "normalTab",
-            url = "https://simulate.com",
-        )
-        val currentTab = TabsTrayItem.Tab(tab = currentTabData)
-        every { trayStore.state.mode.selectedTabs } returns emptySet()
-
-        assertNull(Collections.longPress.testGetValue())
-
-        createController().handleTabLongClick(currentTab)
-
-        assertNotNull(Collections.longPress.testGetValue())
-        verify { trayStore.dispatch(TabsTrayAction.AddSelectTab(currentTab)) }
-    }
-
-    @Test
-    fun `GIVEN at least one tab is selected WHEN a normal tab is long clicked THEN the long click is ignored`() {
-        val normalTabClickedData = createTab(
-            id = "normalTab",
-            url = "https://simulate.com",
-        )
-        val normalTabClicked = TabsTrayItem.Tab(tab = normalTabClickedData)
-        val alreadySelectedTabData = createTab(
-            id = "selectedTab",
-            url = "https://simulate.com",
-        )
-        val alreadySelectedTab = TabsTrayItem.Tab(tab = alreadySelectedTabData)
-        every { trayStore.state.mode.selectedTabs } returns setOf(alreadySelectedTab)
-
-        createController().handleTabLongClick(normalTabClicked)
-
-        assertNull(Collections.longPress.testGetValue())
-        verify(exactly = 0) { trayStore.dispatch(any()) }
-    }
-
-    @Test
-    fun `WHEN a private tab is long clicked THEN the long click is ignored`() {
-        val privateTab = TabsTrayItem.Tab(
-            tab = createTab(
-                id = "selectedTab",
-                url = "https://simulate.com",
-                private = true,
-            ),
-        )
-
-        createController().handleTabLongClick(privateTab)
-
-        assertNull(Collections.longPress.testGetValue())
-        verify(exactly = 0) { trayStore.dispatch(any()) }
     }
 
     @Test

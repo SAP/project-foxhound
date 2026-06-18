@@ -28,10 +28,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListItemInfo
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyGridItemInfo
 import androidx.compose.foundation.lazy.grid.LazyGridItemScope
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -49,6 +51,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.toMutableStateList
@@ -430,7 +433,7 @@ private fun ReorderableTabGrid(
         isHeaderPresent = header != null,
     )
 
-    var isInMultiSelectMode by remember(selectionMode) { mutableStateOf(selectionMode is TabsTrayState.Mode.Select) }
+    var isInMultiSelectMode by remember { mutableStateOf(selectionMode is TabsTrayState.Mode.Select) }
     val reorderState = createGridReorderState(
         gridState = gridState,
         onMove = { initialTab, newTab ->
@@ -448,6 +451,12 @@ private fun ReorderableTabGrid(
         ignoredItems = ignoredItems.toList(),
         tabInteractionHandler = tabInteractionHandler,
     )
+    // Prevent a race between multi-select and drag by updating the select mode only if the dragging key is null
+    LaunchedEffect(selectionMode, reorderState.draggingItemKey) {
+        if (reorderState.draggingItemKey == null) {
+            isInMultiSelectMode = selectionMode is TabsTrayState.Mode.Select
+        }
+    }
 
     BoxWithConstraints {
         LazyVerticalGrid(
@@ -549,13 +558,10 @@ private fun InteractableTabGrid(
     val gridInteractionState = createGridInteractionState(
         gridState = gridState,
         tabInteractionHandler = tabInteractionHandler,
-        onLongPress = { itemInfo ->
-            tabs.firstOrNull { tabItem -> tabItem.id == itemInfo.key }?.let { tab ->
-                onItemLongClick(tab)
-            }
-        },
+        onLongPress = rememberReactiveLongPressGrid(tabs = tabs, onItemLongClick = onItemLongClick),
         ignoredItems = ignoredItems,
     )
+    // Prevent a race between multi-select and drag by updating the select mode only if the dragging key is null
     LaunchedEffect(selectionMode, gridInteractionState.draggedItem.key) {
         if (gridInteractionState.draggedItem.key == null) {
             isInMultiSelectMode = selectionMode is TabsTrayState.Mode.Select
@@ -564,7 +570,7 @@ private fun InteractableTabGrid(
     BoxWithConstraints(
         modifier = Modifier
             .onGloballyPositioned {
-                gridInteractionState.gridLayoutCoordinates = it
+                gridInteractionState.updateGridLayoutCoordinates(it)
             }
             .detectGridPressAndDragGestures(
                 reorderState = gridInteractionState,
@@ -676,6 +682,7 @@ private fun LazyGridItemScope.ReorderableTabGridItemContent(
     val swipingActive by remember(swipeState.swipingActive) {
         mutableStateOf(swipeState.swipingActive)
     }
+    val shouldClickListen = reorderState.draggingItemKey != tabsTrayItem.id
 
     ReorderableDragItemContainer(
         state = reorderState,
@@ -694,7 +701,7 @@ private fun LazyGridItemScope.ReorderableTabGridItemContent(
                     tab = tabsTrayItem,
                     thumbnailSizePx = thumbnailSizePx,
                     selectionState = selectionState,
-                    shouldClickListen = reorderState.draggingItemKey != tabsTrayItem.id,
+                    shouldClickListen = shouldClickListen,
                     swipeState = swipeState,
                     onCloseClick = onTabClose,
                     onClick = onItemClick,
@@ -706,7 +713,10 @@ private fun LazyGridItemScope.ReorderableTabGridItemContent(
                 TabGroupCard(
                     group = tabsTrayItem,
                     selectionState = selectionState,
-                    clickHandler = TabsTrayItemClickHandler(onClick = onItemClick),
+                    clickHandler = TabsTrayItemClickHandler(
+                        enabled = shouldClickListen,
+                        onClick = onItemClick,
+                    ),
                     interactionState = interactionState,
                     onDeleteTabGroupClick = onDeleteTabGroupClick,
                     onEditTabGroupClick = { onEditTabGroupClick(tabsTrayItem) },
@@ -749,7 +759,7 @@ private fun LazyGridItemScope.InteractableTabGridItemContent(
     val swipingActive by remember(swipeState.swipingActive) {
         mutableStateOf(swipeState.swipingActive)
     }
-
+    val shouldClickListen = reorderState.draggedItem.key != tabsTrayItem.id
     InteractableDragItemContainer(
         state = reorderState,
         position = index + if (hasHeader) 1 else 0,
@@ -768,7 +778,7 @@ private fun LazyGridItemScope.InteractableTabGridItemContent(
                     tab = tabsTrayItem,
                     thumbnailSizePx = thumbnailSizePx,
                     selectionState = selectionState,
-                    shouldClickListen = reorderState.draggedItem.key != tabsTrayItem.id,
+                    shouldClickListen = shouldClickListen,
                     swipeState = swipeState,
                     onCloseClick = onTabClose,
                     onClick = onItemClick,
@@ -780,7 +790,10 @@ private fun LazyGridItemScope.InteractableTabGridItemContent(
                 TabGroupCard(
                     group = tabsTrayItem,
                     selectionState = selectionState,
-                    clickHandler = TabsTrayItemClickHandler(onClick = onItemClick),
+                    clickHandler = TabsTrayItemClickHandler(
+                        enabled = shouldClickListen,
+                        onClick = onItemClick,
+                    ),
                     interactionState = interactionState,
                     onDeleteTabGroupClick = onDeleteTabGroupClick,
                     onEditTabGroupClick = { onEditTabGroupClick(tabsTrayItem) },
@@ -823,6 +836,7 @@ private fun TabListItemContent(
     onEditTabGroupClick: (TabsTrayItem.TabGroup) -> Unit,
     onCloseTabGroupClick: (TabsTrayItem.TabGroup) -> Unit,
 ) {
+    val shouldClickListen = listInteractionState.draggedItem.key != tab.id
     when (tab) {
         is TabsTrayItem.Tab -> {
             TabListTabItem(
@@ -834,7 +848,7 @@ private fun TabListItemContent(
                     ),
                 selectionState = selectionState,
                 interactionState = tabInteractionState,
-                shouldClickListen = listInteractionState.draggedItem.key != tab.id,
+                shouldClickListen = shouldClickListen,
                 swipingEnabled = !lazyListState.isScrollInProgress,
                 onCloseClick = onTabClose,
                 onClick = onItemClick,
@@ -876,12 +890,13 @@ private fun TabListItemContent(
                     }
                 },
                 trailingContentColor = MaterialTheme.colorScheme.secondary,
+                shouldClickListen = shouldClickListen,
             )
         }
     }
 }
 
-@Suppress("LongParameterList")
+@Suppress("LongParameterList", "LongMethod")
 @Composable
 private fun InteractableTabList(
     tabs: List<TabsTrayItem>,
@@ -911,11 +926,7 @@ private fun InteractableTabList(
     val listInteractionState = createListInteractionState(
         listState = state,
         ignoredItems = ignoredItems,
-        onLongPress = { itemInfo ->
-            tabs.firstOrNull { tabItem -> tabItem.id == itemInfo.key }?.let { tab ->
-                onItemLongClick(tab)
-            }
-        },
+        onLongPress = rememberReactiveLongPressList(tabs = tabs, onItemLongClick = onItemLongClick),
         tabInteractionHandler = tabInteractionHandler,
         dragAndDropEnabled = dragAndDropEnabled,
     )
@@ -924,7 +935,7 @@ private fun InteractableTabList(
             selectionMode is TabsTrayState.Mode.Select,
         )
     }
-    // This LaunchedEffect seems to be necessary for drag events to not terminate in selection mode
+    // Prevent a race between multi-select and drag by updating the select mode only if the dragging key is null
     LaunchedEffect(selectionMode, listInteractionState.draggedItem.key) {
         if (listInteractionState.draggedItem.key == null) {
             isInMultiSelectMode = selectionMode is TabsTrayState.Mode.Select
@@ -1096,6 +1107,7 @@ private fun ReorderableTabList(
     )
 
     var isInMultiSelectMode by remember { mutableStateOf(selectionMode is TabsTrayState.Mode.Select) }
+
     val reorderState = createListReorderState(
         listState = state,
         onMove = { initialTab, newTab ->
@@ -1118,6 +1130,7 @@ private fun ReorderableTabList(
             )
         },
     )
+    // Prevent a race between multi-select and drag by updating the select mode only if the dragging key is null
     LaunchedEffect(selectionMode, reorderState.draggingItemKey) {
         if (reorderState.draggingItemKey == null) {
             isInMultiSelectMode = selectionMode is TabsTrayState.Mode.Select
@@ -1170,6 +1183,7 @@ private fun ReorderableTabList(
                     isSelected = selectionMode.contains(tab),
                     focusEnabled = focusEnabled,
                 )
+                val shouldClickListen = reorderState.draggingItemKey != tab.id
                 when (tab) {
                     is TabsTrayItem.Tab -> {
                         ReorderableDragItemContainer(
@@ -1185,7 +1199,7 @@ private fun ReorderableTabList(
                                         selectionState = selectionState,
                                     ),
                                 selectionState = selectionState,
-                                shouldClickListen = reorderState.draggingItemKey != tab.id,
+                                shouldClickListen = shouldClickListen,
                                 swipingEnabled = !state.isScrollInProgress,
                                 onCloseClick = onTabClose,
                                 onClick = onItemClick,
@@ -1230,6 +1244,7 @@ private fun ReorderableTabList(
                                     }
                                 },
                                 trailingContentColor = MaterialTheme.colorScheme.secondary,
+                                shouldClickListen = shouldClickListen,
                             )
                         }
                     }
@@ -1606,4 +1621,44 @@ private fun Modifier.drawHorizontalReorderIndicator(
             )
         },
     )
+}
+
+/**
+ * After a drag and drop creates a new group, the list of tabs updates, so the long-lived onLongPress lambda
+ * needs to update its captured argument.  Otherwise, the new group will not respond properly to multi-select
+ * until recomposition updates the state.
+ */
+@Composable
+private fun rememberReactiveLongPressList(
+    tabs: List<TabsTrayItem>,
+    onItemLongClick: (TabsTrayItem) -> Unit,
+): (LazyListItemInfo) -> Unit {
+    val currentTabs by rememberUpdatedState(tabs)
+    val currentLongClick by rememberUpdatedState(onItemLongClick)
+    val onLongPress: (LazyListItemInfo) -> Unit = remember {
+        { itemInfo ->
+            currentTabs.firstOrNull { tabItem -> tabItem.id == itemInfo.key }?.let(currentLongClick)
+        }
+    }
+    return onLongPress
+}
+
+/**
+ * After a drag and drop creates a new group, the grid of tabs updates, so the long-lived onLongPress lambda
+ * needs to update its captured argument.  Otherwise, the new group will not respond properly to multi-select
+ * until recomposition updates the state.
+ */
+@Composable
+private fun rememberReactiveLongPressGrid(
+    tabs: List<TabsTrayItem>,
+    onItemLongClick: (TabsTrayItem) -> Unit,
+): (LazyGridItemInfo) -> Unit {
+    val currentTabs by rememberUpdatedState(tabs)
+    val currentLongClick by rememberUpdatedState(onItemLongClick)
+    val onLongPress: (LazyGridItemInfo) -> Unit = remember {
+        { itemInfo ->
+            currentTabs.firstOrNull { tabItem -> tabItem.id == itemInfo.key }?.let(currentLongClick)
+        }
+    }
+    return onLongPress
 }

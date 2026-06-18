@@ -7,7 +7,6 @@ package org.mozilla.fenix.tabstray
 import io.mockk.mockk
 import junit.framework.TestCase
 import mozilla.components.support.test.robolectric.testContext
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Rule
@@ -22,6 +21,7 @@ import org.mozilla.fenix.tabstray.data.TabGroupTheme
 import org.mozilla.fenix.tabstray.data.TabStorageUpdate
 import org.mozilla.fenix.tabstray.data.TabsTrayItem
 import org.mozilla.fenix.tabstray.data.createTab
+import org.mozilla.fenix.tabstray.data.createTabGroup
 import org.mozilla.fenix.tabstray.navigation.TabManagerNavDestination
 import org.mozilla.fenix.tabstray.redux.action.TabGroupAction
 import org.mozilla.fenix.tabstray.redux.action.TabSearchAction
@@ -31,6 +31,7 @@ import org.mozilla.fenix.tabstray.redux.state.TabGroupFormState
 import org.mozilla.fenix.tabstray.redux.state.TabsTrayState
 import org.mozilla.fenix.tabstray.redux.store.TabsTrayStore
 import org.robolectric.RobolectricTestRunner
+import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 
 @RunWith(RobolectricTestRunner::class) // for gleanTestRule
@@ -610,5 +611,152 @@ class TabsTrayTelemetryMiddlewareTest {
         )
 
         assertNull(TabsTray.tabLongPressDragRearrangedPosition.testGetValue())
+    }
+
+    //region TabItemLongClicked
+
+    @Test
+    fun `GIVEN normal mode, WHEN TabItemLongClicked invoked with TabGroup, THEN long press recorded`() {
+        val tabGroup = createTabGroup(title = "TestGroup", tabs = mutableListOf(createTab(url = "example.com")))
+
+        val store = setupStore(items = listOf(tabGroup), mode = TabsTrayState.Mode.Normal)
+
+        store.dispatch(TabsTrayAction.TabItemLongClicked(tabGroup))
+
+        assertEquals(expected = 1, actual = TabsTray.tabLongPress.testGetValue()?.size)
+    }
+
+    @Test
+    fun `GIVEN normal mode, WHEN TabItemLongClicked invoked with TabGroup, THEN enter select mode telemetry is recorded`() {
+        val tabGroup = createTabGroup(title = "TestGroup", tabs = mutableListOf(createTab(url = "example.com")))
+
+        val store = setupStore(items = listOf(tabGroup), mode = TabsTrayState.Mode.Normal)
+
+        store.dispatch(TabsTrayAction.TabItemLongClicked(tabGroup))
+
+        assertNotNull(TabsTray.enterMultiselectMode.testGetValue())
+    }
+
+    @Test
+    fun `GIVEN normal mode, WHEN TabItemLongClicked invoked with normal tab, THEN long press recorded`() {
+        val tab = createTab(url = "mozilla.org", title = "TestTab", private = false)
+
+        val store = setupStore(items = listOf(tab), mode = TabsTrayState.Mode.Normal)
+
+        store.dispatch(TabsTrayAction.TabItemLongClicked(tab))
+
+        assertEquals(expected = 1, actual = TabsTray.tabLongPress.testGetValue()?.size)
+    }
+
+    @Test
+    fun `GIVEN normal mode, WHEN TabItemLongClicked invoked with normal tab, THEN enter select mode telemetry is recorded`() {
+        val tab = createTab(url = "mozilla.org", title = "TestTab", private = false)
+
+        val store = setupStore(items = listOf(tab), mode = TabsTrayState.Mode.Normal)
+
+        store.dispatch(TabsTrayAction.TabItemLongClicked(tab))
+
+        assertNotNull(TabsTray.enterMultiselectMode.testGetValue())
+    }
+
+    @Test
+    fun `GIVEN normal mode, WHEN TabItemLongClicked invoked with private tab, THEN long press is recorded`() {
+        val tab = createTab(url = "mozilla.org", title = "TestTab", private = true)
+
+        val store = setupStore(items = listOf(tab), mode = TabsTrayState.Mode.Normal)
+
+        store.dispatch(TabsTrayAction.TabItemLongClicked(tab))
+
+        assertNotNull(TabsTray.tabLongPress.testGetValue())
+    }
+
+    @Test
+    fun `GIVEN normal mode, WHEN TabItemLongClicked invoked with private tab, THEN enter select mode telemetry is not recorded`() {
+        val tab = createTab(url = "mozilla.org", title = "TestTab", private = true)
+
+        val store = setupStore(items = listOf(tab), mode = TabsTrayState.Mode.Normal)
+
+        store.dispatch(TabsTrayAction.TabItemLongClicked(tab))
+
+        assertNull(TabsTray.enterMultiselectMode.testGetValue())
+    }
+
+    @Test
+    fun `GIVEN select mode with selected tabs, WHEN TabItemLongClicked invoked with TabGroup, THEN long press is recorded`() {
+        val tabGroup = createTabGroup(title = "TestGroup", tabs = mutableListOf(createTab(url = "example.com")))
+        val tab = createTab(title = "Test Tab", url = "mozilla.org")
+
+        val store = setupStore(
+            items = listOf(tabGroup, tab),
+            mode = TabsTrayState.Mode.Select(selectedTabs = setOf(tab)),
+        )
+
+        store.dispatch(TabsTrayAction.TabItemLongClicked(tabGroup))
+
+        assertNotNull(TabsTray.tabLongPress.testGetValue())
+    }
+
+    @Test
+    fun `GIVEN select mode with selected tabs, WHEN TabItemLongClicked invoked with TabGroup, THEN enter select mode telemetry is not recorded`() {
+        val tabGroup = createTabGroup(title = "TestGroup", tabs = mutableListOf(createTab(url = "example.com")))
+        val tab = createTab(title = "Test Tab", url = "mozilla.org")
+
+        val store = setupStore(
+            items = listOf(tabGroup),
+            mode = TabsTrayState.Mode.Select(selectedTabs = setOf(tab)),
+        )
+
+        store.dispatch(TabsTrayAction.TabItemLongClicked(tabGroup))
+
+        assertNull(TabsTray.enterMultiselectMode.testGetValue())
+    }
+
+    @Test
+    fun `GIVEN select mode with selected tabs, WHEN TabItemLongClicked invoked with tab, THEN long press is recorded`() {
+        val tabGroup = createTabGroup(title = "TestGroup", tabs = mutableListOf(createTab(url = "example.com")))
+        val tab = createTab(title = "Test Tab", url = "mozilla.org")
+
+        val store = setupStore(
+            items = listOf(tabGroup, tab),
+            mode = TabsTrayState.Mode.Select(selectedTabs = setOf(tab)),
+        )
+
+        store.dispatch(TabsTrayAction.TabItemLongClicked(tab))
+
+        assertNotNull(TabsTray.tabLongPress.testGetValue())
+    }
+
+    @Test
+    fun `GIVEN select mode with selected tabs, WHEN TabItemLongClicked invoked with tab, THEN enter select mode telemetry is not recorded`() {
+        val tabGroup = createTabGroup(title = "TestGroup", tabs = mutableListOf(createTab(url = "example.com")))
+        val tab = createTab(title = "Test Tab", url = "mozilla.org")
+
+        val store = setupStore(
+            items = listOf(tabGroup),
+            mode = TabsTrayState.Mode.Select(selectedTabs = setOf(tab)),
+        )
+
+        store.dispatch(TabsTrayAction.TabItemLongClicked(tab))
+
+        assertNull(TabsTray.enterMultiselectMode.testGetValue())
+    }
+    //endregion
+
+    private fun setupStore(
+        items: List<TabsTrayItem>,
+        mode: TabsTrayState.Mode = TabsTrayState.Mode.Normal,
+    ): TabsTrayStore {
+        return TabsTrayStore(
+            middlewares = listOf(
+                TabsTrayTelemetryMiddleware(nimbusEventStore = FakeNimbusEventStore()),
+            ),
+            initialState = TabsTrayState(
+                mode = mode,
+                selectedPage = Page.NormalTabs,
+                normalTabsState = TabsTrayState.NormalTabsState(
+                    items = items,
+                ),
+            ),
+        )
     }
 }

@@ -150,13 +150,6 @@ interface TabManagerController :
     /**
      * Adds the provided tab to the current selection of tabs.
      *
-     * @param tab [TabsTrayItem] that was long clicked.
-     */
-    fun handleTabLongClick(tab: TabsTrayItem): Boolean
-
-    /**
-     * Adds the provided tab to the current selection of tabs.
-     *
      * @param tab [TabsTrayItem.Tab] to be selected.
      * @param source App feature from which the tab was selected.
      */
@@ -553,19 +546,6 @@ class DefaultTabManagerController(
             withContext(mainDispatcher) {
                 showUndoSnackbarForSyncedTab(operation)
             }
-        }
-    }
-
-    override fun handleTabLongClick(tab: TabsTrayItem): Boolean {
-        return if (tab is TabsTrayItem.Tab &&
-            !tab.private && tabsTrayStore.state.mode.selectedTabs.isEmpty()
-        ) {
-            Collections.longPress.record(NoExtras())
-            TabsTray.tabLongPress.record(NoExtras())
-            tabsTrayStore.dispatch(TabsTrayAction.AddSelectTab(tab))
-            true
-        } else {
-            false
         }
     }
 
