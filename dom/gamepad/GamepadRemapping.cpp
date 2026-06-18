@@ -630,6 +630,210 @@ class Dualshock4Remapper final : public GamepadRemapper {
   unsigned long mTouchIdBase = 0;
 };
 
+class DualSenseRemapper final : public GamepadRemapper {
+ public:
+  DualSenseRemapper() {
+    mLastTouches.SetLength(TOUCH_EVENT_COUNT);
+    mLastTouchId.SetLength(TOUCH_EVENT_COUNT);
+  }
+
+  virtual uint32_t GetAxisCount() const override { return AXIS_INDEX_COUNT; }
+
+  virtual uint32_t GetButtonCount() const override {
+    return DUALSENSE_BUTTON_COUNT;
+  }
+
+  virtual uint32_t GetLightIndicatorCount() const override {
+    return LIGHT_INDICATOR_COUNT;
+  }
+
+  virtual void GetLightIndicators(
+      nsTArray<GamepadLightIndicatorType>& aTypes) const override {
+    const uint32_t len = GetLightIndicatorCount();
+    aTypes.SetLength(len);
+    for (uint32_t i = 0; i < len; ++i) {
+      aTypes[i] = GamepadLightIndicatorType::Rgb;
+    }
+  }
+
+  virtual uint32_t GetTouchEventCount() const override {
+    return TOUCH_EVENT_COUNT;
+  }
+
+  virtual void GetLightColorReport(
+      uint8_t aRed, uint8_t aGreen, uint8_t aBlue,
+      std::vector<uint8_t>& aReport) const override {
+    const size_t report_length = 48;
+    aReport.resize(report_length);
+    aReport.assign(report_length, 0);
+
+    aReport[0] = 0x02;  // Report ID (set controller state)
+    aReport[2] = 0x04;  // Enable RGB LED section
+    aReport[45] = aRed;
+    aReport[46] = aGreen;
+    aReport[47] = aBlue;
+  }
+
+  virtual uint32_t GetMaxInputReportLength() const override {
+    return MAX_INPUT_LEN;
+  }
+
+  static constexpr size_t kMinTouchReportLen = 41;
+
+  virtual void ProcessTouchData(GamepadHandle aHandle, const uint8_t* aInput,
+                                size_t aInputLen) override {
+    if (aInputLen < kMinTouchReportLen) {
+      return;
+    }
+
+    nsTArray<GamepadTouchState> touches(TOUCH_EVENT_COUNT);
+    touches.SetLength(TOUCH_EVENT_COUNT);
+    const uint8_t* rawData = aInput;
+
+    const uint32_t kTouchDimensionX = 1920;
+    const uint32_t kTouchDimensionY = 1080;
+    bool touch0Pressed = (rawData[33] & 0x80) == 0;
+    bool touch1Pressed = (rawData[37] & 0x80) == 0;
+    uint8_t touch0RawId = rawData[33] & 0x7f;
+    uint8_t touch1RawId = rawData[37] & 0x7f;
+
+    if ((touch0Pressed && touch0RawId < mLastTouchId[0]) ||
+        (touch1Pressed && touch1RawId < mLastTouchId[1])) {
+      mTouchIdBase += 128;
+    }
+
+    if (touch0Pressed) {
+      touches[0].touchId = mTouchIdBase + touch0RawId;
+      touches[0].surfaceId = 0;
+      touches[0].position[0] = ((rawData[35] & 0x0f) << 8) | rawData[34];
+      touches[0].position[1] = (rawData[36] << 4) | ((rawData[35] & 0xf0) >> 4);
+      touches[0].surfaceDimensions[0] = kTouchDimensionX;
+      touches[0].surfaceDimensions[1] = kTouchDimensionY;
+      touches[0].isSurfaceDimensionsValid = true;
+      mLastTouchId[0] = touch0RawId;
+    }
+    if (touch1Pressed) {
+      touches[1].touchId = mTouchIdBase + touch1RawId;
+      touches[1].surfaceId = 0;
+      touches[1].position[0] = ((rawData[39] & 0x0f) << 8) | rawData[38];
+      touches[1].position[1] = (rawData[40] << 4) | ((rawData[39] & 0xf0) >> 4);
+      touches[1].surfaceDimensions[0] = kTouchDimensionX;
+      touches[1].surfaceDimensions[1] = kTouchDimensionY;
+      touches[1].isSurfaceDimensionsValid = true;
+      mLastTouchId[1] = touch1RawId;
+    }
+
+    RefPtr<GamepadPlatformService> service =
+        GamepadPlatformService::GetParentService();
+    if (!service) {
+      return;
+    }
+
+    // Avoid to send duplicate untouched events to the gamepad service.
+    if ((mLastTouches[0] != touch0Pressed) || touch0Pressed) {
+      service->NewMultiTouchEvent(aHandle, 0, touches[0]);
+    }
+    if ((mLastTouches[1] != touch1Pressed) || touch1Pressed) {
+      service->NewMultiTouchEvent(aHandle, 1, touches[1]);
+    }
+    mLastTouches[0] = touch0Pressed;
+    mLastTouches[1] = touch1Pressed;
+  }
+
+  virtual void RemapAxisMoveEvent(GamepadHandle aHandle, uint32_t aAxis,
+                                  double aValue) const override {
+    RefPtr<GamepadPlatformService> service =
+        GamepadPlatformService::GetParentService();
+    if (!service) {
+      return;
+    }
+
+    switch (aAxis) {
+      case 0:
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_LEFT_STICK_X, aValue);
+        break;
+      case 1:
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_LEFT_STICK_Y, aValue);
+        break;
+      case 2:
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_RIGHT_STICK_X, aValue);
+        break;
+      case 3: {
+        const double value = AxisToButtonValue(aValue);
+        service->NewButtonEvent(aHandle, BUTTON_INDEX_LEFT_TRIGGER,
+                                value > BUTTON_THRESHOLD_VALUE, value);
+        break;
+      }
+      case 4: {
+        const double value = AxisToButtonValue(aValue);
+        service->NewButtonEvent(aHandle, BUTTON_INDEX_RIGHT_TRIGGER,
+                                value > BUTTON_THRESHOLD_VALUE, value);
+        break;
+      }
+      case 5:
+        service->NewAxisMoveEvent(aHandle, AXIS_INDEX_RIGHT_STICK_Y, aValue);
+        break;
+      case 9:
+        FetchDpadFromAxis(aHandle, aValue);
+        break;
+      default:
+        NS_WARNING(
+            nsPrintfCString(
+                "Axis idx '%d' doesn't support in DualSenseRemapper().", aAxis)
+                .get());
+        break;
+    }
+  }
+
+  virtual void RemapButtonEvent(GamepadHandle aHandle, uint32_t aButton,
+                                bool aPressed) const override {
+    RefPtr<GamepadPlatformService> service =
+        GamepadPlatformService::GetParentService();
+    if (!service) {
+      return;
+    }
+
+    const std::vector<uint32_t> buttonMapping = {BUTTON_INDEX_TERTIARY,
+                                                 BUTTON_INDEX_PRIMARY,
+                                                 BUTTON_INDEX_SECONDARY,
+                                                 BUTTON_INDEX_QUATERNARY,
+                                                 BUTTON_INDEX_LEFT_SHOULDER,
+                                                 BUTTON_INDEX_RIGHT_SHOULDER,
+                                                 BUTTON_INDEX_LEFT_TRIGGER,
+                                                 BUTTON_INDEX_RIGHT_TRIGGER,
+                                                 BUTTON_INDEX_BACK_SELECT,
+                                                 BUTTON_INDEX_START,
+                                                 BUTTON_INDEX_LEFT_THUMBSTICK,
+                                                 BUTTON_INDEX_RIGHT_THUMBSTICK,
+                                                 BUTTON_INDEX_META,
+                                                 DUALSENSE_BUTTON_TOUCHPAD};
+
+    if (buttonMapping.size() <= aButton) {
+      NS_WARNING(nsPrintfCString(
+                     "Button idx '%d' doesn't support in DualSenseRemapper().",
+                     aButton)
+                     .get());
+      return;
+    }
+
+    service->NewButtonEvent(aHandle, buttonMapping[aButton], aPressed);
+  }
+
+ private:
+  enum DualSenseButtons {
+    DUALSENSE_BUTTON_TOUCHPAD = BUTTON_INDEX_COUNT,
+    DUALSENSE_BUTTON_COUNT
+  };
+
+  static const uint32_t LIGHT_INDICATOR_COUNT = 1;
+  static const uint32_t TOUCH_EVENT_COUNT = 2;
+  static const uint32_t MAX_INPUT_LEN = 64;
+
+  nsTArray<unsigned long> mLastTouchId;
+  nsTArray<bool> mLastTouches;
+  unsigned long mTouchIdBase = 0;
+};
+
 class Xbox360Remapper final : public GamepadRemapper {
  public:
   virtual uint32_t GetAxisCount() const override { return AXIS_INDEX_COUNT; }
@@ -2155,6 +2359,8 @@ already_AddRefed<GamepadRemapper> GetGamepadRemapper(const uint16_t aVendorId,
       {GamepadId::kSonyProduct05c4, new Dualshock4Remapper()},
       {GamepadId::kSonyProduct09cc, new Dualshock4Remapper()},
       {GamepadId::kSonyProduct0ba0, new Dualshock4Remapper()},
+      {GamepadId::kSonyProduct0ce6, new DualSenseRemapper()},
+      {GamepadId::kSonyProduct0df2, new DualSenseRemapper()},
       {GamepadId::kVendor20d6Product6271, new MogaProRemapper()},
       {GamepadId::kVendor2378Product1008, new OnLiveWirelessRemapper()},
       {GamepadId::kVendor2378Product100a, new OnLiveWirelessRemapper()},

@@ -86,6 +86,10 @@ enum class GamepadId : uint32_t {
   kSonyProduct09cc = 0x054c09cc,
   // Dualshock 4 USB receiver
   kSonyProduct0ba0 = 0x054c0ba0,
+  // DualSense
+  kSonyProduct0ce6 = 0x054c0ce6,
+  // DualSense Edge
+  kSonyProduct0df2 = 0x054c0df2,
   // Moga Pro Controller (HID mode)
   kVendor20d6Product6271 = 0x20d66271,
   // OnLive Controller (Bluetooth)
