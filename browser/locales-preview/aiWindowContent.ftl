@@ -58,6 +58,11 @@ aiwindow-jump-to-bottom =
 
 ## Natural Language Action
 
+smartwindow-nl-retry-tool-button =
+    .label = Retry
+
+smartwindow-nl-retry-message = If you still want to close tabs, choose <strong>Retry</strong> and make your selection in the card that opens.
+
 smartwindow-nl-thinking = Looking for matching tabs…
 smartwindow-nl-undo-button =
     .label = Undo

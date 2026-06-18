@@ -24,6 +24,7 @@ const UI_TYPES = {
   AI_ACTION_RESULT: "ai-action-result",
   CANCELLED_COMPONENT: "cancelled-component",
   ACTION_LOG: "action-log",
+  RETRY_COMPONENT: "retry-component",
 };
 /**
  * UI update types for communicating user interactions with tool UIs back to the actor.
@@ -32,6 +33,7 @@ const UI_UPDATE_TYPES = {
   CONFIRMATION_TAB_SELECTION: "confirmation-tab-selection",
   CANCEL_TAB_SELECTION: "cancel-tab-selection",
   UNDO_TAB_CLOSE: "undo-tab-close",
+  RETRY_PROMPT: "retry-prompt",
 };
 
 /**
@@ -857,62 +859,13 @@ export class AIChatContent extends MozLitElement {
 
     switch (toolUIData.uiType) {
       case UI_TYPES.WEBSITE_CONFIRMATION:
-        return html`
-          <ai-website-confirmation
-            .tabs=${toolUIData.properties?.tabs || []}
-            @ai-website-confirmation:submit=${event =>
-              this.#handleConfirmationSubmit(
-                event,
-                messageId,
-                toolUIData.toolCallId
-              )}
-            @ai-website-confirmation:close=${event =>
-              this.#handleConfirmationClose(
-                event,
-                messageId,
-                toolUIData.toolCallId
-              )}
-          ></ai-website-confirmation>
-        `;
-      case UI_TYPES.AI_ACTION_RESULT: {
-        // Extract the confirmed selections and operation data
-        const confirmedData = toolUIData.properties?.confirmedData || {};
-        const wasRestored = confirmedData.wasRestored || false;
-
-        // Get the data object for the action result component
-        const actionResultData = wasRestored
-          ? this.#getRestoreTabsData(confirmedData.originalClosedTabs || [])
-          : this.#getCloseTabsData(confirmedData);
-
-        // Handle undo action if applicable
-        const onUndo = actionResultData.canUndo
-          ? () =>
-              this.#dispatchToolUIUpdate({
-                messageId,
-                toolCallId: toolUIData.toolCallId,
-                updateType: UI_UPDATE_TYPES.UNDO_TAB_CLOSE,
-                updateData: {
-                  operationId: confirmedData.operationId,
-                  selectedTabs: confirmedData.selectedTabs || [],
-                  actionTimestamp: confirmedData.actionTimestamp,
-                },
-              })
-          : undefined;
-
-        // Explicitly render the ai-action-result component
-        return html`
-          <ai-action-result
-            .label=${actionResultData.label}
-            .rows=${actionResultData.rows}
-            .summary=${actionResultData.summary}
-            .canUndo=${actionResultData.canUndo}
-            .isExpanded=${actionResultData.isExpanded}
-            @action-result-undo=${onUndo}
-          ></ai-action-result>
-        `;
-      }
+        return this.#renderWebsiteConfirmation(toolUIData, messageId);
+      case UI_TYPES.AI_ACTION_RESULT:
+        return this.#renderActionResult(toolUIData, messageId);
       case UI_TYPES.CANCELLED_COMPONENT:
-        return html`<div>cancelled placeholder</div>`;
+        return this.#renderCancelledComponent();
+      case UI_TYPES.RETRY_COMPONENT:
+        return this.#renderRetryComponent(toolUIData, messageId);
       default:
         return nothing;
     }
@@ -936,6 +889,104 @@ export class AIChatContent extends MozLitElement {
     });
   };
 
+  #renderWebsiteConfirmation(toolUIData, messageId) {
+    return html`
+      <ai-website-confirmation
+        .tabs=${toolUIData.properties?.tabs || []}
+        @ai-website-confirmation:submit=${event =>
+          this.#handleConfirmationSubmit(
+            event,
+            messageId,
+            toolUIData.toolCallId
+          )}
+        @ai-website-confirmation:close=${event =>
+          this.#handleConfirmationClose(
+            event,
+            messageId,
+            toolUIData.toolCallId
+          )}
+      ></ai-website-confirmation>
+    `;
+  }
+
+  #renderActionResult(toolUIData, messageId) {
+    // Extract the confirmed selections and operation data
+    const confirmedData = toolUIData.properties?.confirmedData || {};
+    const wasRestored = confirmedData.wasRestored || false;
+
+    // Get the data object for the action result component
+    const actionResultData = wasRestored
+      ? this.#getRestoreTabsData(confirmedData.originalClosedTabs || [])
+      : this.#getCloseTabsData(confirmedData);
+
+    let canUndo = !wasRestored && !!confirmedData.operationId;
+    // Override can undo if explicitly dismissed
+    if (toolUIData.properties?.undoDismissed) {
+      canUndo = false;
+    }
+
+    // Handle undo action if applicable
+    const onUndo = canUndo
+      ? () =>
+          this.#dispatchToolUIUpdate({
+            messageId,
+            toolCallId: toolUIData.toolCallId,
+            updateType: UI_UPDATE_TYPES.UNDO_TAB_CLOSE,
+            updateData: {
+              operationId: confirmedData.operationId,
+              selectedTabs: confirmedData.selectedTabs || [],
+              actionTimestamp: confirmedData.actionTimestamp,
+            },
+          })
+      : undefined;
+
+    // Explicitly render the ai-action-result component
+    return html`
+      <ai-action-result
+        .labelL10nId=${actionResultData.labelL10nId}
+        .labelL10nArgs=${actionResultData.labelL10nArgs}
+        .summaryL10nId=${actionResultData.summaryL10nId}
+        .summaryL10nArgs=${actionResultData.summaryL10nArgs}
+        .rows=${actionResultData.rows}
+        .canUndo=${canUndo}
+        .isExpanded=${actionResultData.isExpanded}
+        @action-result-undo=${onUndo}
+      ></ai-action-result>
+    `;
+  }
+
+  #renderCancelledComponent() {
+    return html`<div data-l10n-id="smart-window-cancelled-label"></div>`;
+  }
+
+  #renderRetryComponent(toolUIData, messageId) {
+    const originalPrompt = toolUIData.properties?.originalUserPrompt || "";
+    return html`
+      <div>
+        <p data-l10n-id="smartwindow-nl-retry-message"></p>
+        <moz-button
+          class="tool-retry-button"
+          @click=${() =>
+            this.#handleRetryClick(
+              messageId,
+              toolUIData.toolCallId,
+              originalPrompt
+            )}
+          data-l10n-id="smartwindow-nl-retry-tool-button"
+        ></moz-button>
+      </div>
+    `;
+  }
+
+  #handleRetryClick = (messageId, toolCallId, originalPrompt) => {
+    this.#dispatchToolUIUpdate({
+      messageId,
+      toolCallId,
+      updateType: UI_UPDATE_TYPES.RETRY_PROMPT,
+      updateData: { prompt: originalPrompt },
+    });
+  };
+
   #dispatchToolUIUpdate(data) {
     this.dispatchEvent(
       new CustomEvent("AIChatContent:ToolUIUpdate", {
@@ -950,8 +1001,16 @@ export class AIChatContent extends MozLitElement {
     if (!msg) {
       return nothing;
     }
+
+    // Check if this is a retry component that should be rendered at the top
+    const isRetryComponent =
+      msg.toolUIData?.uiType === UI_TYPES.RETRY_COMPONENT;
+
     return html`
       <div class=${`chat-bubble chat-bubble-${msg.role}`}>
+        ${msg.role === "assistant" && isRetryComponent
+          ? this.#renderToolUI(msg.toolUIData, msg.messageId)
+          : nothing}
         ${chips?.length
           ? html`<website-chip-container
               .websites=${chips}
@@ -965,7 +1024,7 @@ export class AIChatContent extends MozLitElement {
           .conversationId=${this.conversationId}
           .seenUrls=${this.seenUrls}
         ></ai-chat-message>
-        ${msg.role === "assistant" && msg.toolUIData
+        ${msg.role === "assistant" && msg.toolUIData && !isRetryComponent
           ? this.#renderToolUI(msg.toolUIData, msg.messageId)
           : nothing}
         ${msg.role === "assistant" && msg.isLastChunk

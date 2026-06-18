@@ -42,6 +42,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "moz-src:///browser/components/aiwindow/ui/modules/ChatStore.sys.mjs",
   MemoriesManager:
     "moz-src:///browser/components/aiwindow/models/memories/MemoriesManager.sys.mjs",
+  ToolUI: "moz-src:///browser/components/aiwindow/ui/modules/ToolUI.sys.mjs",
+  UI_TYPES: "moz-src:///browser/components/aiwindow/ui/modules/ToolUI.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(lazy, "console", function () {
@@ -181,6 +183,11 @@ export class ChatConversation extends EventEmitter {
     // conversation so a tab switch-back can restore without re-fetching.
     // Not persisted only meaningful while the conversation is empty.
     this.transientStarters = null;
+
+    // transient: stores information about a cancelled confirmation dialog
+    // that can be retried. Set when a website confirmation is auto-cancelled
+    // due to a new user prompt. Not persisted.
+    this.pendingRetry = null;
 
     // NOTE: Destructuring params.status causes a linter error
     this.status = params.status || CONVERSATION_STATUS.ACTIVE;
@@ -970,13 +977,30 @@ export class ChatConversation extends EventEmitter {
   }
 
   /**
+   * Clears the tool UI data for a message
+   *
+   * @param {ChatMessage} message - The message to clear tool UI data from
+   * @private
+   */
+  #clearToolUI(message) {
+    message.toolUIData = null;
+    this.emit("chat-conversation:message-update", message);
+  }
+
+  /**
    * Updates the tool UI data for a message with a new UI state
    *
    * @param {ChatMessage} message - The message to update
    * @param {object} data - The update data containing updateData
-   * @param {string} nextUI - The next UI state to transition to
+   * @param {string|null} nextUI - The next UI state to transition to, or null to clear
    */
   async updateToolUI(message, data, nextUI) {
+    // If nextUI is null, clear the toolUIData and return early
+    if (nextUI === null) {
+      this.#clearToolUI(message);
+      return;
+    }
+
     message.toolUIData = {
       ...message.toolUIData,
       uiType: nextUI,
@@ -1003,6 +1027,8 @@ export class ChatConversation extends EventEmitter {
    * @returns {object} Result object with success status and message
    */
   addUIToolToCurrentMessage(toolCallId, uiData) {
+    const enrichedUIData = { ...uiData };
+
     // Get the last assistant text message to attach UI to
     let currentMessage = this.messages
       .filter(
@@ -1024,6 +1050,21 @@ export class ChatConversation extends EventEmitter {
       }
     }
 
+    // For website confirmations, add the original user prompt
+    if (uiData.uiType === lazy.UI_TYPES.WEBSITE_CONFIRMATION) {
+      const originalUserPrompt = lazy.ToolUI.findOriginalUserPrompt(
+        this.messages,
+        currentMessage
+      );
+
+      if (originalUserPrompt) {
+        enrichedUIData.properties = {
+          ...enrichedUIData.properties,
+          originalUserPrompt,
+        };
+      }
+    }
+
     // Check if this is an update to existing toolUIData
     const isUpdate =
       currentMessage.toolUIData &&
@@ -1033,11 +1074,11 @@ export class ChatConversation extends EventEmitter {
       // Merge the new data with existing data for progressive updates
       currentMessage.toolUIData = {
         ...currentMessage.toolUIData,
-        ...uiData,
+        ...enrichedUIData,
         // Deep merge properties if they exist in both
         properties: {
           ...currentMessage.toolUIData.properties,
-          ...uiData.properties,
+          ...enrichedUIData.properties,
         },
         updateCount: (currentMessage.toolUIData.updateCount || 0) + 1,
         lastUpdated: new Date().toISOString(),
@@ -1048,7 +1089,7 @@ export class ChatConversation extends EventEmitter {
         toolCallId,
         timestamp: new Date().toISOString(),
         updateCount: 0,
-        ...uiData,
+        ...enrichedUIData,
       };
     }
 
@@ -1064,7 +1105,7 @@ export class ChatConversation extends EventEmitter {
       message: isUpdate
         ? "Tool UI data updated"
         : "Tool UI data added to existing assistant message",
-      dataAdded: uiData,
+      dataAdded: enrichedUIData,
       isUpdate,
     };
   }

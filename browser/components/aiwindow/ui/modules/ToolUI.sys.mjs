@@ -39,6 +39,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "moz-src:///browser/components/aiwindow/ui/modules/TabManagementService.sys.mjs",
   ToolUITelemetry:
     "moz-src:///browser/components/aiwindow/ui/modules/ToolUITelemetry.sys.mjs",
+  MESSAGE_ROLE:
+    "moz-src:///browser/components/aiwindow/ui/modules/ChatEnums.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(lazy, "console", function () {
@@ -46,6 +48,26 @@ ChromeUtils.defineLazyGetter(lazy, "console", function () {
     prefix: "ToolUI",
   });
 });
+
+/**
+ * UI labels for tool results and follow-ups.
+ */
+export const UI_TYPES = {
+  WEBSITE_CONFIRMATION: "website-confirmation",
+  AI_ACTION_RESULT: "ai-action-result",
+  CANCELLED_COMPONENT: "cancelled-component",
+  RETRY_COMPONENT: "retry-component",
+};
+
+/**
+ * UI update types for communicating user interactions with tool UIs back to the actor.
+ */
+export const UI_UPDATE_TYPES = {
+  CONFIRMATION_TAB_SELECTION: "confirmation-tab-selection",
+  CANCEL_TAB_SELECTION: "cancel-tab-selection",
+  UNDO_TAB_CLOSE: "undo-tab-close",
+  RETRY_PROMPT: "retry-prompt",
+};
 
 /**
  * Manages the Tool UI updates and orchestrates state changes for tool UI components
@@ -190,7 +212,7 @@ export class ToolUI {
       },
     };
 
-    conversation.updateToolUI(message, enhancedData, "ai-action-result");
+    conversation.updateToolUI(message, enhancedData, UI_TYPES.AI_ACTION_RESULT);
     return true;
   }
 
@@ -202,7 +224,10 @@ export class ToolUI {
    * @private
    */
   static #handleCancelTabSelection(context) {
-    const { message, conversation, originalData, mode } = context;
+    const { message, conversation, originalData, mode, updateData } = context;
+
+    // Use the provided reason or default to user_action for manual cancellations
+    const reason = updateData?.reason || "user_action";
 
     // Record telemetry for browser action prompt response (cancellation)
     lazy.ToolUITelemetry.recordBrowserActionPromptResponse({
@@ -213,10 +238,14 @@ export class ToolUI {
       prompt_type: "safety_confirmation",
       response: "cancel",
       selected: 0,
-      reason: "user_action",
+      reason,
     });
 
-    conversation.updateToolUI(message, originalData, "cancelled-component");
+    conversation.updateToolUI(
+      message,
+      originalData,
+      UI_TYPES.CANCELLED_COMPONENT
+    );
     return true;
   }
 
@@ -290,7 +319,11 @@ export class ToolUI {
         },
       };
 
-      conversation.updateToolUI(message, enhancedData, "ai-action-result");
+      conversation.updateToolUI(
+        message,
+        enhancedData,
+        UI_TYPES.AI_ACTION_RESULT
+      );
       return true;
     } catch (error) {
       // This will only catch catastrophic errors like invalid window
@@ -316,12 +349,80 @@ export class ToolUI {
     }
   }
 
+  /**
+   * Handle retry prompt from the UI (clears the current tool UI)
+   *
+   * @param {object} context - The handler context
+   * @returns {Promise<boolean>} True if successful
+   * @private
+   */
+  static async #handleRetryPrompt(context) {
+    const { message, conversation } = context;
+    await conversation.updateToolUI(message, null, null);
+    return true;
+  }
+
+  /**
+   * Finds the last assistant text message in a conversation
+   *
+   * @param {Array} messages - The conversation messages array
+   * @returns {object|null} The last assistant text message or null if not found
+   * @private
+   */
+  static #findLastAssistantTextMessage(messages) {
+    return (
+      messages.findLast(
+        message =>
+          message.role === lazy.MESSAGE_ROLE.ASSISTANT &&
+          message.content?.type === "text"
+      ) ?? null
+    );
+  }
+
   /* ========================================================================
    * Handler Mapping and Public API
    * ======================================================================== */
 
+  /**
+   * Finds the original user prompt that led to the given assistant message
+   * by traversing the message chain backwards using parentMessageId
+   *
+   * @param {Array} messages - All conversation messages
+   * @param {object} assistantMessage - The assistant message with tool UI data
+   * @returns {string|null} The original user prompt text, or null if not found
+   */
+  static findOriginalUserPrompt(messages, assistantMessage) {
+    // Use parentMessageId to trace back to the user message
+    let nextMessageId = assistantMessage.parentMessageId;
+    // To prevent potential infinite loops, we set a maximum depth for traversal
+    const maxDepth = 5;
+    let depth = 0;
+
+    // Follow the chain backwards to find the user message
+    while (nextMessageId && depth < maxDepth) {
+      const nextMessage = messages.find(m => m.id === nextMessageId);
+
+      if (!nextMessage) {
+        break;
+      }
+
+      if (
+        nextMessage.role === lazy.MESSAGE_ROLE.USER &&
+        nextMessage.content?.type === "text"
+      ) {
+        return nextMessage.content.body;
+      }
+
+      // Continue up the chain
+      nextMessageId = nextMessage.parentMessageId;
+      depth++;
+    }
+
+    return null;
+  }
+
   static handleUIDisplayTelemetry(toolUIData, telemetryData) {
-    if (toolUIData.uiType !== "website-confirmation") {
+    if (toolUIData.uiType !== UI_TYPES.WEBSITE_CONFIRMATION) {
       return;
     }
 
@@ -344,11 +445,125 @@ export class ToolUI {
    * @private
    */
   static #UPDATE_TYPE_HANDLERS = {
-    "confirmation-tab-selection":
+    [UI_UPDATE_TYPES.CONFIRMATION_TAB_SELECTION]:
       this.#handleConfirmationTabSelection.bind(this),
-    "cancel-tab-selection": this.#handleCancelTabSelection.bind(this),
-    "undo-tab-close": this.#handleUndoTabClose.bind(this),
+    [UI_UPDATE_TYPES.CANCEL_TAB_SELECTION]:
+      this.#handleCancelTabSelection.bind(this),
+    [UI_UPDATE_TYPES.UNDO_TAB_CLOSE]: this.#handleUndoTabClose.bind(this),
+    [UI_UPDATE_TYPES.RETRY_PROMPT]: this.#handleRetryPrompt.bind(this),
   };
+
+  /**
+   * Checks if the conversation has an active website confirmation and auto-cancels it.
+   * This should be called when starting a new prompt to clean up pending confirmations.
+   *
+   * @param {object} conversation - The conversation object containing messages
+   * @param {ChromeWindow} window - The browser window object
+   * @param {string} mode - The mode of the AI Window (e.g., "sidebar", "popup")
+   * @returns {Promise<boolean>} True if a confirmation was cancelled, false otherwise
+   */
+  static async autoCancelActiveConfirmation(conversation, window, mode) {
+    if (!conversation?.messages?.length) {
+      lazy.console.log("ToolUI: No conversation messages to check");
+      return false;
+    }
+
+    const lastAssistantTextMessage = this.#findLastAssistantTextMessage(
+      conversation.messages
+    );
+
+    // Early return if no website confirmation to cancel
+    if (
+      lastAssistantTextMessage?.toolUIData?.uiType !==
+      UI_TYPES.WEBSITE_CONFIRMATION
+    ) {
+      lazy.console.log("ToolUI: No active website confirmation to cancel");
+      return false;
+    }
+
+    lazy.console.log("ToolUI: Found active website confirmation to cancel");
+
+    // Get the original user prompt from the existing toolUIData
+    // This was already added when the website confirmation was created
+    const originalUserPrompt =
+      lastAssistantTextMessage.toolUIData.properties?.originalUserPrompt;
+
+    const cancelData = {
+      messageId: lastAssistantTextMessage.id,
+      toolCallId: lastAssistantTextMessage.toolUIData.toolCallId,
+      updateType: UI_UPDATE_TYPES.CANCEL_TAB_SELECTION,
+      updateData: {
+        reason: "auto_cancel",
+      },
+    };
+
+    // Set pending retry state BEFORE the await to avoid race condition
+    // We'll clear it if cancellation fails - avoiding setting upstream methods to async for now
+    if (originalUserPrompt) {
+      conversation.pendingRetry = {
+        originalUserPrompt,
+        cancelledMessageId: lastAssistantTextMessage.id,
+        cancelledToolCallId: lastAssistantTextMessage.toolUIData.toolCallId,
+        timestamp: Date.now(),
+      };
+    }
+
+    const cancelled = await this.handleUpdate(
+      cancelData,
+      conversation,
+      window,
+      mode
+    );
+
+    // Clear pendingRetry if cancellation failed
+    if (!cancelled && originalUserPrompt) {
+      conversation.pendingRetry = null;
+    }
+
+    return cancelled;
+  }
+
+  /**
+   * Inject retry toolUIData into a message if there's a pending retry state
+   *
+   * @param {object} msg - The message object to potentially modify
+   * @param {object} conversation - The conversation object that may have pendingRetry
+   * @returns {boolean} True if retry toolUIData was injected, false otherwise
+   */
+  static injectRetryToolUIDataIfNeeded(msg, conversation) {
+    lazy.console.log("ToolUI: Checking if retry injection needed", {
+      hasPendingRetry: !!conversation?.pendingRetry,
+      msgRole: msg?.role,
+      contentType: msg?.content?.type,
+    });
+
+    if (
+      !conversation?.pendingRetry ||
+      msg?.role !== lazy.MESSAGE_ROLE.ASSISTANT ||
+      msg?.content?.type !== "text"
+    ) {
+      return false;
+    }
+
+    lazy.console.log("ToolUI: Injecting retry component");
+
+    // Create the retry toolUIData with the original prompt
+    const retryToolUIData = {
+      uiType: UI_TYPES.RETRY_COMPONENT,
+      // Generate a unique synthetic ID for UI update handling (required by handleUpdate)
+      toolCallId: `retry-${crypto.randomUUID()}`,
+      properties: {
+        originalUserPrompt: conversation.pendingRetry.originalUserPrompt,
+      },
+    };
+
+    // Inject the retry toolUIData into the message itself
+    msg.toolUIData = retryToolUIData;
+
+    // Clear the pending retry state
+    conversation.pendingRetry = null;
+    return true;
+  }
 
   /**
    * Handle updates to tool UI components from user interactions

@@ -57,6 +57,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "moz-src:///browser/components/aiwindow/ui/modules/ToolActionLog.sys.mjs",
   buildActionLogRow:
     "moz-src:///browser/components/aiwindow/ui/modules/ToolActionLog.sys.mjs",
+  UI_UPDATE_TYPES:
+    "moz-src:///browser/components/aiwindow/ui/modules/ToolUI.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(lazy, "log", function () {
@@ -1335,6 +1337,13 @@ export class AIWindow extends MozLitElement {
       return;
     }
 
+    // Auto-cancel any active website confirmation when starting a new prompt
+    lazy.ToolUI.autoCancelActiveConfirmation(
+      this.#conversation,
+      this.#topChromeWindow,
+      this.mode
+    ).catch(e => lazy.log.error("Failed to auto-cancel confirmation:", e));
+
     Glean.smartWindow.chatSubmit.record({
       chat_id: this.conversationId,
       detected_intent: detectedIntent,
@@ -1688,6 +1697,31 @@ export class AIWindow extends MozLitElement {
 
   #onMessageComplete = (_event, msg) => {
     this.#addConversationTitle(msg?.content?.body);
+
+    // Check if we need to inject retry toolUIData
+    // This handles the case where a user cancelled a website confirmation dialog
+    // and then submitted a new prompt. The cancelled confirmation's original prompt
+    // is stored in conversation.pendingRetry. When this new message completes,
+    // we inject a retry UI component at the top of the message, allowing the user
+    // to retry the previously cancelled action if they wish.
+    const retryInjected = lazy.ToolUI.injectRetryToolUIDataIfNeeded(
+      msg,
+      this.#conversation
+    );
+
+    // If retry toolUIData was injected, dispatch the updated message
+    if (retryInjected) {
+      this.#dispatchMessageToChatContent({
+        ...msg,
+        role: "assistant",
+        isPreviousMessage: false,
+        // Deep clone toolUIData to prevent UI mutations from affecting the conversation model
+        toolUIData: msg.toolUIData
+          ? structuredClone(msg.toolUIData)
+          : undefined,
+      });
+    }
+
     this.#dispatchMessageToChatContent({
       role: "assistant-message-complete",
       content: {
@@ -2231,13 +2265,24 @@ export class AIWindow extends MozLitElement {
     }
   }
 
-  handleToolUIUpdate(data) {
-    lazy.ToolUI.handleUpdate(
+  async handleToolUIUpdate(data) {
+    const success = await lazy.ToolUI.handleUpdate(
       data,
       this.#conversation,
       this.#topChromeWindow,
       this.mode
     );
+
+    // Check if this was a retry prompt update
+    if (success && data?.updateType === lazy.UI_UPDATE_TYPES.RETRY_PROMPT) {
+      const retryPrompt = data?.updateData?.prompt;
+      if (retryPrompt) {
+        this.submitChatMessage({
+          text: retryPrompt,
+          submitType: "retry",
+        });
+      }
+    }
   }
 
   #openFeedbackModal(type) {
