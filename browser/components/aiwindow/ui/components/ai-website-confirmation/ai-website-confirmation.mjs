@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { html } from "chrome://global/content/vendor/lit.all.mjs";
+import { html, ifDefined } from "chrome://global/content/vendor/lit.all.mjs";
 import { MozLitElement } from "chrome://global/content/lit-utils.mjs";
 // eslint-disable-next-line import/no-unassigned-import
 import "chrome://browser/content/aiwindow/components/ai-website-select.mjs";
@@ -17,10 +17,10 @@ const SUBMIT_CONFIRMATION_EVENT = "ai-website-confirmation:submit";
  * A container component for listing and managing multiple AI website selects
  *
  * @property {Array} tabs - Array of tab objects with properties:
- *   {string} tabId - Unique identifier for the tab
- *   {string} label - Display name for the tab
+ *   {string} linkedPanel - Id of the linked panel (used for associating with tab objects)
+ *   {string} title - Display name for the tab
  *   {string} iconSrc - URL for the tab favicon
- *   {string} href - URL of the tab
+ *   {string} url - URL of the tab
  *   {boolean} checked - Selection state of the tab
  */
 export class AIWebsiteConfirmation extends MozLitElement {
@@ -40,11 +40,11 @@ export class AIWebsiteConfirmation extends MozLitElement {
    */
   handleSelectChange(event) {
     event.stopPropagation();
-    const { tabId, checked } = event.detail;
+    const { linkedPanel, checked } = event.detail;
 
     // Update the tabs array with new selection state
     this.tabs = this.tabs.map(tab =>
-      tab.tabId === tabId ? { ...tab, checked } : tab
+      tab.linkedPanel === linkedPanel ? { ...tab, checked } : tab
     );
 
     this.dispatchSelectionEvent();
@@ -105,11 +105,12 @@ export class AIWebsiteConfirmation extends MozLitElement {
     if (selectedTabs.length === 0) {
       return;
     }
-
-    // TODO: Dispatch selection event with selected tabs  https://bugzilla.mozilla.org/show_bug.cgi?id=2031516
     const closeEvent = new CustomEvent(SUBMIT_CONFIRMATION_EVENT, {
       bubbles: true,
       composed: true,
+      detail: {
+        selectedTabs,
+      },
     });
     this.dispatchEvent(closeEvent);
   }
@@ -165,10 +166,10 @@ export class AIWebsiteConfirmation extends MozLitElement {
               ${this.tabs.map(
                 tab => html`
                   <ai-website-select
-                    .tabId=${tab.tabId}
-                    .label=${tab.label}
+                    .linkedPanel=${tab.linkedPanel}
+                    .label=${tab.title}
                     .iconSrc=${tab.iconSrc}
-                    .href=${tab.href}
+                    .url=${tab.url}
                     .checked=${tab.checked}
                   ></ai-website-select>
                 `
@@ -188,9 +189,11 @@ export class AIWebsiteConfirmation extends MozLitElement {
               type="primary"
               ?disabled=${confirmButtonDisabled}
               data-l10n-id=${confirmButtonL10nId}
-              data-l10n-args=${confirmButtonDisabled
-                ? undefined
-                : JSON.stringify({ count: selectedCount })}
+              data-l10n-args=${ifDefined(
+                confirmButtonDisabled
+                  ? undefined
+                  : JSON.stringify({ count: selectedCount })
+              )}
             >
             </moz-button>
           </div>

@@ -23,6 +23,7 @@ support-files = [
   "test_website_select.mjs",
   "test_website_confirmation_page.html",
   "test_website_confirmation.mjs",
+  "test_aiwindow_tab_close_integration.html",
   "test_context_url_page.html",
   "test_context_url_page2.html"
 ]
@@ -126,6 +127,10 @@ skip-if = [
 ["browser_aiwindow_website_confirmation.js"]
 
 ["browser_aiwindow_website_select.js"]
+
+["browser_aiwindow_chat_tool_ui.js"]
+
+["browser_aiwindow_tab_close_integration.js"]
 
 ["browser_aiwindowui.js"]
 

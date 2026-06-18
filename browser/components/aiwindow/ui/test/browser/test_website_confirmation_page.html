@@ -23,31 +23,31 @@
         const mixedConfirmation = document.getElementById("test-confirmation-mixed");
         mixedConfirmation.tabs = [
           {
-            tabId: "tab-1",
-            label: "Mozilla Developer Network",
+            linkedPanel: "tab-1",
+            title: "Mozilla Developer Network",
             iconSrc: "chrome://branding/content/icon16.png",
-            href: "https://developer.mozilla.org",
+            url: "https://developer.mozilla.org",
             checked: true,
           },
           {
-            tabId: "tab-2",
-            label: "Stack Overflow",
+            linkedPanel: "tab-2",
+            title: "Stack Overflow",
             iconSrc: "chrome://global/skin/icons/defaultFavicon.svg",
-            href: "https://stackoverflow.com",
+            url: "https://stackoverflow.com",
             checked: false,
           },
           {
-            tabId: "tab-3",
-            label: "GitHub",
+            linkedPanel: "tab-3",
+            title: "GitHub",
             iconSrc: "chrome://branding/content/about-logo.svg",
-            href: "https://github.com",
+            url: "https://github.com",
             checked: true,
           },
           {
-            tabId: "tab-4",
-            label: "Example Site",
+            linkedPanel: "tab-4",
+            title: "Example Site",
             iconSrc: "chrome://global/skin/icons/defaultFavicon.svg",
-            href: "https://example.com",
+            url: "https://example.com",
             checked: false,
           },
         ];
@@ -55,17 +55,17 @@
         const allCheckedConfirmation = document.getElementById("test-confirmation-all-checked");
         allCheckedConfirmation.tabs = [
           {
-            tabId: "checked-1",
-            label: "Site One",
+            linkedPanel: "checked-1",
+            title: "Site One",
             iconSrc: "chrome://branding/content/icon16.png",
-            href: "https://site1.example",
+            url: "https://site1.example",
             checked: true,
           },
           {
-            tabId: "checked-2",
-            label: "Site Two",
+            linkedPanel: "checked-2",
+            title: "Site Two",
             iconSrc: "chrome://branding/content/icon16.png",
-            href: "https://site2.example",
+            url: "https://site2.example",
             checked: true,
           },
         ];

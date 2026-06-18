@@ -987,7 +987,7 @@ export class ChatConversation extends EventEmitter {
 
     // Add specific data based on the UI type
     if (nextUI === "ai-action-result") {
-      message.toolUIData.properties.confirmedSelections = data.updateData;
+      message.toolUIData.properties.confirmedData = data.updateData;
     }
 
     // Emit event to trigger re-render

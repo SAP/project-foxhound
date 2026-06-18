@@ -335,11 +335,6 @@ var allowlist = [
     file: "resource://app/modules/backup/CookiesBackupResource.sys.mjs",
   },
 
-  // Bug 2035340: TabManagementService will be used by AI Window for tab management
-  {
-    file: "moz-src:///browser/components/aiwindow/ui/modules/TabManagementService.sys.mjs",
-  },
-
   // Bug 2023223: Replace loginOrigin, addresses, payments, and form history
   // richlist items with autocomplete-row-item
   {

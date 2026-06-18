@@ -793,13 +793,70 @@ export class AIChatContent extends MozLitElement {
     `;
   }
 
+  #getCloseTabsData(confirmedData) {
+    const selectedTabs = confirmedData.selectedTabs || [];
+    const tabCount = selectedTabs.length;
+    const label = tabCount === 1 ? "Closed 1 tab" : `Closed ${tabCount} tabs`; // place holder
+    const summary = `Successfully closed ${tabCount} tab${tabCount !== 1 ? "s" : ""}`; // place holder
+
+    // Format rows to show the closed tabs
+    const rows = [];
+    if (selectedTabs.length) {
+      rows.push({
+        label: "Closed tabs", // place holder
+        items: selectedTabs.map(tab => ({
+          url: tab.url,
+          label: tab.title,
+        })),
+      });
+    }
+
+    return {
+      label,
+      rows,
+      summary,
+      canUndo: !!confirmedData.operationId,
+      isExpanded: false,
+    };
+  }
+
+  #getRestoreTabsData(originalClosedTabs) {
+    const actionResultLabel = "Closed and reopened tabs"; // place holder
+    const closeRowLabel = "Closed tabs"; // place holder
+    const summary = "Place holder success message"; // place holder
+    const restoreRowLabel = "Restored tabs"; // place holder
+
+    // Format rows to show both closed and restored tabs
+    const rows = [
+      {
+        label: closeRowLabel,
+        items: originalClosedTabs.map(({ url, title }) => ({
+          url,
+          label: title,
+        })),
+      },
+      {
+        label: restoreRowLabel,
+        // Design opted out of showing items here.
+      },
+    ];
+
+    return {
+      label: actionResultLabel,
+      rows,
+      summary,
+      canUndo: false,
+      isExpanded: true,
+    };
+  }
+
   #renderToolUI(toolUIData, messageId) {
     if (!toolUIData) {
       return nothing;
     }
 
     switch (toolUIData.uiType) {
-      case "website-confirmation":
+      case UI_TYPES.WEBSITE_CONFIRMATION:
         return html`
           <ai-website-confirmation
             .tabs=${toolUIData.properties?.tabs || []}
@@ -817,9 +874,43 @@ export class AIChatContent extends MozLitElement {
               )}
           ></ai-website-confirmation>
         `;
-      case "ai-action-result":
-        return html`<div>confirmation placeholder</div>`;
-      case "cancelled-component":
+      case UI_TYPES.AI_ACTION_RESULT: {
+        // Extract the confirmed selections and operation data
+        const confirmedData = toolUIData.properties?.confirmedData || {};
+        const wasRestored = confirmedData.wasRestored || false;
+
+        // Get the data object for the action result component
+        const actionResultData = wasRestored
+          ? this.#getRestoreTabsData(confirmedData.originalClosedTabs || [])
+          : this.#getCloseTabsData(confirmedData);
+
+        // Handle undo action if applicable
+        const onUndo = actionResultData.canUndo
+          ? () =>
+              this.#dispatchToolUIUpdate({
+                messageId,
+                toolCallId: toolUIData.toolCallId,
+                updateType: UI_UPDATE_TYPES.UNDO_TAB_CLOSE,
+                updateData: {
+                  operationId: confirmedData.operationId,
+                  selectedTabs: confirmedData.selectedTabs || [],
+                },
+              })
+          : undefined;
+
+        // Explicitly render the ai-action-result component
+        return html`
+          <ai-action-result
+            .label=${actionResultData.label}
+            .rows=${actionResultData.rows}
+            .summary=${actionResultData.summary}
+            .canUndo=${actionResultData.canUndo}
+            .isExpanded=${actionResultData.isExpanded}
+            @action-result-undo=${onUndo}
+          ></ai-action-result>
+        `;
+      }
+      case UI_TYPES.CANCELLED_COMPONENT:
         return html`<div>cancelled placeholder</div>`;
       default:
         return nothing;
@@ -827,7 +918,6 @@ export class AIChatContent extends MozLitElement {
   }
 
   #handleConfirmationSubmit = (event, messageId, toolCallId) => {
-    // TODO - add selected tabs, this will be part of the card integration pach
     this.#dispatchToolUIUpdate({
       messageId,
       toolCallId,

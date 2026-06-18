@@ -12,27 +12,27 @@ const CHANGE_EVENT = "ai-website-select:change";
 /**
  * A website select component for listing and selecting tabs
  *
- * @property {string} tabId - Id of tab
+ * @property {string} linkedPanel - Id of the linked panel (used for associating with tab objects)
  * @property {string} label - The text content (tab name)
  * @property {string} iconSrc - Favicon or icon URL
- * @property {string} href - URL for the link
+ * @property {string} url - URL for the link
  * @property {boolean} checked - Whether this item is selected
  */
 export class AIWebsiteSelect extends MozLitElement {
   static properties = {
-    tabId: { type: String },
+    linkedPanel: { type: String },
     label: { type: String },
     iconSrc: { type: String },
-    href: { type: String },
+    url: { type: String },
     checked: { type: Boolean, reflect: true },
   };
 
   constructor() {
     super();
-    this.tabId = "";
+    this.linkedPanel = "";
     this.label = "";
     this.iconSrc = "";
-    this.href = "";
+    this.url = "";
     this.checked = false;
   }
 
@@ -53,9 +53,9 @@ export class AIWebsiteSelect extends MozLitElement {
       composed: true,
       cancelable: true,
       detail: {
-        tabId: this.tabId,
+        linkedPanel: this.linkedPanel,
         label: this.label,
-        href: this.href,
+        url: this.url,
         iconSrc: this.iconSrc,
         checked: newCheckedState,
       },
@@ -84,9 +84,9 @@ export class AIWebsiteSelect extends MozLitElement {
       composed: true,
       cancelable: true,
       detail: {
-        tabId: this.tabId,
+        linkedPanel: this.linkedPanel,
         label: this.label,
-        href: this.href,
+        url: this.url,
         iconSrc: this.iconSrc,
         checked,
       },
@@ -110,8 +110,8 @@ export class AIWebsiteSelect extends MozLitElement {
         class="website-select-checkbox text-truncated-ellipsis"
         .checked=${this.checked}
         @change=${this.handleCheckboxChange}
-        name=${this.tabId}
-        value=${this.tabId}
+        name=${this.linkedPanel}
+        value=${this.linkedPanel}
         label=${this.label}
         iconSrc=${this.iconSrc ||
         "chrome://global/skin/icons/defaultFavicon.svg"}

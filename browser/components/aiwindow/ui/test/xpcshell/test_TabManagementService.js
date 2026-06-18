@@ -476,3 +476,172 @@ add_task(async function test_timestamp_disambiguation() {
     "The newer manually-closed tab should remain"
   );
 });
+
+/**
+ * Test that restoreTabs preserves the originally selected tab
+ */
+add_task(async function test_restoreTabs_preserves_original_selected_tab() {
+  mockSessionStore.reset();
+  const mockWindow = createMockWindow();
+
+  // Create tabs with one being selected
+  const tab1 = createMockTab("https://example.com", "Example");
+  const tab2 = createMockTab("https://mozilla.org", "Mozilla");
+  const selectedTab = createMockTab("https://selected.com", "Selected Tab");
+
+  tab1.documentGlobal = mockWindow;
+  tab2.documentGlobal = mockWindow;
+  selectedTab.documentGlobal = mockWindow;
+
+  mockWindow.gBrowser.tabs = [tab1, tab2, selectedTab];
+  mockWindow.gBrowser.selectedTab = selectedTab;
+
+  // Close two tabs
+  const closeResult = await tabManagementService.closeTabs({
+    tabs: [tab1, tab2],
+    window: mockWindow,
+  });
+
+  // Restore the tabs
+  const restoreResult = await tabManagementService.restoreTabs({
+    operationId: closeResult.operationId,
+    window: mockWindow,
+  });
+
+  // Verify the originally selected tab is still selected
+  Assert.equal(
+    mockWindow.gBrowser.selectedTab,
+    selectedTab,
+    "Originally selected tab should remain selected after restoration"
+  );
+  Assert.equal(restoreResult.restoredCount, 2, "Should restore both tabs");
+});
+
+/**
+ * Test restoreTabs handles missing original selected tab gracefully
+ */
+add_task(async function test_restoreTabs_handles_missing_original_tab() {
+  mockSessionStore.reset();
+  const mockWindow = createMockWindow();
+
+  // Create tabs
+  const tab1 = createMockTab("https://example.com", "Example");
+  const tab2 = createMockTab("https://mozilla.org", "Mozilla");
+  const selectedTab = createMockTab("https://selected.com", "Selected Tab");
+
+  tab1.documentGlobal = mockWindow;
+  tab2.documentGlobal = mockWindow;
+  selectedTab.documentGlobal = mockWindow;
+
+  mockWindow.gBrowser.tabs = [tab1, tab2, selectedTab];
+  mockWindow.gBrowser.selectedTab = selectedTab;
+
+  // Close the selected tab and another tab
+  const closeResult = await tabManagementService.closeTabs({
+    tabs: [tab1, selectedTab],
+    window: mockWindow,
+  });
+
+  // Remove the selected tab from the tabs array (simulate it being gone)
+  mockWindow.gBrowser.tabs = [tab2];
+  mockWindow.gBrowser.selectedTab = tab2;
+
+  // Restore the tabs
+  const restoreResult = await tabManagementService.restoreTabs({
+    operationId: closeResult.operationId,
+    window: mockWindow,
+  });
+
+  // Should not throw and should restore tabs
+  Assert.equal(
+    restoreResult.restoredCount,
+    2,
+    "Should restore both tabs even if original selected tab is missing"
+  );
+  // Selected tab should remain as the fallback (tab2)
+  Assert.equal(
+    mockWindow.gBrowser.selectedTab,
+    tab2,
+    "Should keep the current selected tab when original is missing"
+  );
+});
+
+/**
+ * Test that tabs are restored in background without switching to them
+ */
+add_task(async function test_restoreTabs_in_background() {
+  mockSessionStore.reset();
+  const mockWindow = createMockWindow();
+
+  // Create tabs
+  const tab1 = createMockTab("https://example.com", "Example");
+  const tab2 = createMockTab("https://mozilla.org", "Mozilla");
+  const activeTab = createMockTab("https://active.com", "Active Tab");
+
+  tab1.documentGlobal = mockWindow;
+  tab2.documentGlobal = mockWindow;
+  activeTab.documentGlobal = mockWindow;
+
+  mockWindow.gBrowser.tabs = [activeTab];
+  mockWindow.gBrowser.selectedTab = activeTab;
+
+  // Store a fake operation for tabs that were closed
+  const operationId = tabManagementService.storeClosedTabsForUndo({
+    closedTabs: [
+      {
+        url: "https://example.com",
+        label: "Example",
+        closedAt: Date.now(),
+      },
+      {
+        url: "https://mozilla.org",
+        label: "Mozilla",
+        closedAt: Date.now(),
+      },
+    ],
+    timestamp: Date.now(),
+  });
+
+  // Track which tabs were selected during restoration
+  const selectedTabs = [];
+  const originalSelectedTabSetter = Object.getOwnPropertyDescriptor(
+    mockWindow.gBrowser,
+    "selectedTab"
+  ).set;
+
+  Object.defineProperty(mockWindow.gBrowser, "selectedTab", {
+    get() {
+      return this._selectedTab || activeTab;
+    },
+    set(tab) {
+      selectedTabs.push(tab);
+      this._selectedTab = tab;
+      if (originalSelectedTabSetter) {
+        originalSelectedTabSetter.call(this, tab);
+      }
+    },
+    configurable: true,
+  });
+
+  // Restore the tabs
+  await tabManagementService.restoreTabs({
+    operationId,
+    window: mockWindow,
+  });
+
+  // The active tab should be re-selected at the end
+  Assert.ok(
+    selectedTabs.includes(activeTab),
+    "Active tab should be re-selected after restoration"
+  );
+  Assert.equal(
+    selectedTabs[selectedTabs.length - 1],
+    activeTab,
+    "Active tab should be the last selected tab"
+  );
+  Assert.equal(
+    mockWindow.gBrowser.selectedTab,
+    activeTab,
+    "Active tab should remain selected after restoration completes"
+  );
+});

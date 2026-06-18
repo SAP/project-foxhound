@@ -80,7 +80,7 @@ add_task(async function test_website_select_checkbox_interaction() {
         "Event detail contains correct checked state"
       );
       Assert.equal(
-        event.detail.tabId,
+        event.detail.linkedPanel,
         "test-select-unchecked",
         "Event detail contains correct tab ID"
       );
@@ -114,9 +114,9 @@ add_task(async function test_website_select_event_details() {
       const select = content.document.getElementById("test-select-unchecked");
 
       // Set up test data
-      select.tabId = "test-id";
+      select.linkedPanel = "test-id";
       select.label = "Test Label";
-      select.href = "https://test.example.com";
+      select.url = "https://test.example.com";
       select.iconSrc = "chrome://branding/content/icon16.png";
 
       const eventPromise = new Promise(resolve => {
@@ -131,12 +131,16 @@ add_task(async function test_website_select_event_details() {
       const event = await eventPromise;
 
       // Verify event detail contains all properties
-      Assert.equal(event.detail.tabId, "test-id", "Event has correct tabId");
+      Assert.equal(
+        event.detail.linkedPanel,
+        "test-id",
+        "Event has correct linkedPanel"
+      );
       Assert.equal(event.detail.label, "Test Label", "Event has correct label");
       Assert.equal(
-        event.detail.href,
+        event.detail.url,
         "https://test.example.com",
-        "Event has correct href"
+        "Event has correct url"
       );
       Assert.equal(
         event.detail.iconSrc,
@@ -204,7 +208,7 @@ add_task(async function test_website_select_programmatic_methods() {
         "Label property is accessible"
       );
       Assert.ok(select.iconSrc, "IconSrc property is accessible");
-      Assert.ok(select.href, "Href property is accessible");
+      Assert.ok(select.url, "URL property is accessible");
     });
   });
 });
