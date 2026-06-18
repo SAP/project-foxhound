@@ -31,6 +31,7 @@ MOZ_SRC_FILES += [
     "modules/TabManagementService.sys.mjs",
     "modules/ToolActionLog.sys.mjs",
     "modules/ToolUI.sys.mjs",
+    "modules/ToolUITelemetry.sys.mjs",
 ]
 
 TESTING_JS_MODULES += [

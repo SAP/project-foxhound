@@ -1118,3 +1118,114 @@ smart_window:
       - interaction
     notification_emails: *emails
     expires: never
+
+  browser_action_prompt:
+    type: event
+    description: |
+      Displays a disambiguation picker, batch preview, or safety confirmation before acting.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2037203
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2037203
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    expires: never
+    extra_keys:
+      location: *location
+      chat_id: *chat_id
+      message_seq: *message_seq
+      action_type:
+        type: string
+        description: Type of browser action requested
+      prompt_type:
+        type: string
+        description: Type of prompt shown - disambiguation, batch_preview, or safety_confirmation
+      reason:
+        type: string
+        description: Why the prompt was shown - multiple_matches, low_confidence, batch_action, pinned_tab, active_tab, last_tab
+      candidates:
+        type: quantity
+        unit: count
+        description: Number of candidate tabs shown
+      preselected:
+        type: quantity
+        unit: count
+        description: Number of tabs preselected
+
+  browser_action_prompt_response:
+    type: event
+    description: |
+      User responds to a disambiguation picker, batch preview, or safety confirmation.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2037203
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2037203
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    expires: never
+    extra_keys:
+      location: *location
+      chat_id: *chat_id
+      message_seq: *message_seq
+      action_type:
+        type: string
+        description: >
+          Type of browser action requested
+      prompt_type:
+        type: string
+        description: >
+          Type of prompt shown: disambiguation, batch_preview, or safety_confirmation
+      response:
+        type: string
+        description: >
+          User response: select, confirm, cancel, or dismiss
+      selected:
+        type: quantity
+        unit: count
+        description: >
+          Number of tabs selected or confirmed
+      reason:
+        type: string
+        description: >
+          Reason the original prompt was shown
+
+  browser_action_undo:
+    type: event
+    description: |
+      User clicks Undo after a successful tab-close action.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2037203
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2037203
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    expires: never
+    extra_keys:
+      location: *location
+      chat_id: *chat_id
+      message_seq: *message_seq
+      action_type:
+        type: string
+        description: >
+          Type of browser action that was undone
+      tabs_restored:
+        type: quantity
+        unit: count
+        description: >
+          Number of tabs restored
+      time_delta:
+        type: quantity
+        unit: ms
+        description: >
+          Time in ms between action completion and Undo click
+      result:
+        type: string
+        description: >
+          Undo result: success, partial_success, or error
+      error:
+        type: string
+        description: >
+          Error code if Undo was not successful

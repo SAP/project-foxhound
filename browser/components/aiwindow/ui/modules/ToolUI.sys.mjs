@@ -37,6 +37,8 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   tabManagementService:
     "moz-src:///browser/components/aiwindow/ui/modules/TabManagementService.sys.mjs",
+  ToolUITelemetry:
+    "moz-src:///browser/components/aiwindow/ui/modules/ToolUITelemetry.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(lazy, "console", function () {
@@ -132,6 +134,19 @@ export class ToolUI {
     return result;
   }
 
+  static #getConfirmationReason(tabs) {
+    if (tabs.some(t => t.pinned)) {
+      return "pinned_tab";
+    }
+    if (tabs.some(t => t.selected)) {
+      return "active_tab";
+    }
+    if (tabs.length === 1) {
+      return "last_tab";
+    }
+    return "user_action";
+  }
+
   /* ========================================================================
    * Tool UI Update Handlers
    * ======================================================================== */
@@ -144,7 +159,8 @@ export class ToolUI {
    * @private
    */
   static async #handleConfirmationTabSelection(context) {
-    const { updateData, message, conversation, window, originalData } = context;
+    const { updateData, message, conversation, window, originalData, mode } =
+      context;
     const { selectedTabs = [] } = updateData ?? {};
 
     const result = await this.closeSelectedTabs(selectedTabs, window);
@@ -152,12 +168,25 @@ export class ToolUI {
       return false;
     }
 
+    // Record telemetry for browser action prompt response
+    lazy.ToolUITelemetry.recordBrowserActionPromptResponse({
+      location: mode,
+      chat_id: conversation?.id || "",
+      message_seq: conversation?.messages?.length || 0,
+      action_type: "close_tabs",
+      prompt_type: "safety_confirmation",
+      response: "confirm",
+      selected: selectedTabs.length,
+      reason: "user_action",
+    });
+
     // Include the operationId in the update data for potential undo
     const enhancedData = {
       ...originalData,
       updateData: {
         ...updateData,
         operationId: result.operationId,
+        actionTimestamp: Date.now(),
       },
     };
 
@@ -173,7 +202,20 @@ export class ToolUI {
    * @private
    */
   static #handleCancelTabSelection(context) {
-    const { message, conversation, originalData } = context;
+    const { message, conversation, originalData, mode } = context;
+
+    // Record telemetry for browser action prompt response (cancellation)
+    lazy.ToolUITelemetry.recordBrowserActionPromptResponse({
+      location: mode,
+      chat_id: conversation?.id || "",
+      message_seq: conversation?.messages?.length || 0,
+      action_type: "close_tabs",
+      prompt_type: "safety_confirmation",
+      response: "cancel",
+      selected: 0,
+      reason: "user_action",
+    });
+
     conversation.updateToolUI(message, originalData, "cancelled-component");
     return true;
   }
@@ -186,8 +228,14 @@ export class ToolUI {
    * @private
    */
   static async #handleUndoTabClose(context) {
-    const { updateData, message, conversation, window, originalData } = context;
-    const { operationId, selectedTabs = [] } = updateData ?? {};
+    const { updateData, message, conversation, window, originalData, mode } =
+      context;
+    const {
+      operationId,
+      selectedTabs = [],
+      actionTimestamp,
+    } = updateData ?? {};
+    const undoStartTime = Date.now();
 
     if (!operationId) {
       lazy.console.error("ToolUI: No operationId provided for undo");
@@ -200,14 +248,36 @@ export class ToolUI {
     }
 
     try {
-      const result = await lazy.tabManagementService.restoreTabs({
-        operationId,
-        window,
-      });
+      const { restoredCount, requestedCount, failedTabs } =
+        await lazy.tabManagementService.restoreTabs({
+          operationId,
+          window,
+        });
 
-      lazy.console.log(
-        `Restored ${result.restoredCount} of ${result.requestedCount} tabs`
-      );
+      lazy.console.log(`Restored ${restoredCount} of ${requestedCount} tabs`);
+
+      // Calculate time delta from when action completed to when undo was clicked
+      const timeDelta = actionTimestamp ? undoStartTime - actionTimestamp : 0;
+
+      let undoResult = "success";
+      let errorCode = "";
+
+      if (failedTabs && failedTabs > 0) {
+        errorCode = "one_or_more_tabs_failed_to_restore";
+        undoResult = restoredCount > 0 ? "partial_success" : "error";
+      }
+
+      // Record telemetry for browser action undo
+      lazy.ToolUITelemetry.recordBrowserActionUndo({
+        location: mode,
+        chat_id: conversation?.id || "",
+        message_seq: conversation?.messages?.length || 0,
+        action_type: "close_tabs",
+        tabs_restored: restoredCount,
+        time_delta: Math.max(0, timeDelta),
+        result: undoResult,
+        error: errorCode,
+      });
 
       // Update the UI to show the undo was successful
       const enhancedData = {
@@ -215,7 +285,7 @@ export class ToolUI {
         updateData: {
           ...updateData,
           wasRestored: true,
-          restoredCount: result.restoredCount,
+          restoredCount,
           originalClosedTabs: selectedTabs,
         },
       };
@@ -223,7 +293,25 @@ export class ToolUI {
       conversation.updateToolUI(message, enhancedData, "ai-action-result");
       return true;
     } catch (error) {
+      // This will only catch catastrophic errors like invalid window
+      // since TabManagementService has its own try/catch
       lazy.console.error("Failed to restore tabs:", error);
+
+      // Calculate time delta for error case
+      const timeDelta = actionTimestamp ? undoStartTime - actionTimestamp : 0;
+
+      // Record telemetry for catastrophic failure
+      lazy.ToolUITelemetry.recordBrowserActionUndo({
+        location: mode,
+        chat_id: conversation?.id || "",
+        message_seq: conversation?.messages?.length || 0,
+        action_type: "close_tabs",
+        tabs_restored: 0,
+        time_delta: Math.max(0, timeDelta),
+        result: "error",
+        error: error?.name || "invalid_window",
+      });
+
       return false;
     }
   }
@@ -231,6 +319,24 @@ export class ToolUI {
   /* ========================================================================
    * Handler Mapping and Public API
    * ======================================================================== */
+
+  static handleUIDisplayTelemetry(toolUIData, telemetryData) {
+    if (toolUIData.uiType !== "website-confirmation") {
+      return;
+    }
+
+    const tabs = toolUIData.properties?.tabs ?? [];
+    const reason = this.#getConfirmationReason(tabs);
+
+    lazy.ToolUITelemetry.recordBrowserActionPrompt({
+      ...telemetryData,
+      action_type: "close_tabs",
+      prompt_type: "safety_confirmation",
+      reason,
+      candidates: tabs.length,
+      preselected: 0, // we currently don't preselect any tabs
+    });
+  }
 
   /**
    * Map of update type strings to their handler functions
@@ -254,9 +360,10 @@ export class ToolUI {
    * @param {ToolUpdateData} data.updateData - Additional data for the update
    * @param {object} conversation - The conversation object containing messages
    * @param {ChromeWindow} window - The browser window object
+   * @param {string} [mode] - The mode of the AI Window (e.g., "sidebar", "popup") for context
    * @returns {Promise<boolean>} True if update was successful, false otherwise
    */
-  static async handleUpdate(data, conversation, window) {
+  static async handleUpdate(data, conversation, window, mode) {
     const { messageId, toolCallId, updateType, updateData } = data ?? {};
 
     if (!messageId || !toolCallId) {
@@ -286,6 +393,7 @@ export class ToolUI {
       conversation,
       window,
       originalData: data,
+      mode,
     });
   }
 }

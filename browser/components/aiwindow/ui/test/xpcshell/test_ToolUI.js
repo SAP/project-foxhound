@@ -214,13 +214,22 @@ add_task(async function test_handleUpdate_confirmation_success() {
     "ai-action-result",
     "Should change uiType to ai-action-result"
   );
+  const confirmedData = assistantMessage.toolUIData.properties.confirmedData;
   Assert.deepEqual(
-    assistantMessage.toolUIData.properties.confirmedData,
+    {
+      selectedTabs: confirmedData.selectedTabs,
+      operationId: confirmedData.operationId,
+    },
     {
       ...updateData,
       operationId: "mock-operation-123",
     },
     "Should add confirmedData to properties with operationId"
+  );
+  Assert.ok(
+    typeof confirmedData.actionTimestamp === "number" &&
+      confirmedData.actionTimestamp > 0,
+    "Should include actionTimestamp for undo time calculation"
   );
 });
 

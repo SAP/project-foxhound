@@ -894,6 +894,7 @@ export class AIChatContent extends MozLitElement {
                 updateData: {
                   operationId: confirmedData.operationId,
                   selectedTabs: confirmedData.selectedTabs || [],
+                  actionTimestamp: confirmedData.actionTimestamp,
                 },
               })
           : undefined;

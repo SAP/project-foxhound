@@ -222,3 +222,5 @@ skip-if = [
   "os == 'win' && os_version == '11.26200' && arch == 'x86'", # Bug 2024015
   "os == 'win' && os_version == '11.26200' && arch == 'x86_64'", # Bug 2024015
 ]
+
+["browser_smartwindow_uitool_telemetry.js"]
