@@ -26,8 +26,6 @@ support-files = [
 
 ["test_AboutNewTabResourceMapping_emergencyFallback.js"]
 
-["test_AboutNewTabResourceMapping_langpackShadow.js"]
-
 ["test_disableNewTabAsAddon_pref.js"]
 prefs = ["browser.newtabpage.disableNewTabAsAddon=true"]
 
