@@ -4509,15 +4509,6 @@ export class Dictionary extends ExtensionData {
 }
 
 export class Langpack extends ExtensionData {
-  /**
-   * Set of langpack ids (matching `langpackId`, which is also the
-   * langpack's L10nRegistry metasource string) for langpacks that have
-   * completed startup and not yet shut down.
-   *
-   * @type {Set<string>}
-   */
-  static activeLangpackIds = new Set();
-
   constructor(addonData) {
     super(addonData.resourceURI);
     this.startupData = addonData.startupData;
@@ -4526,10 +4517,6 @@ export class Langpack extends ExtensionData {
 
   static getBootstrapScope() {
     return new LangpackBootstrapScope();
-  }
-
-  get langpackId() {
-    return this.startupData.langpackId;
   }
 
   async promiseLocales() {
@@ -4561,7 +4548,7 @@ export class Langpack extends ExtensionData {
       );
     }
 
-    const langpackId = this.langpackId;
+    const langpackId = this.startupData.langpackId;
     const l10nRegistrySources = this.startupData.l10nRegistrySources;
 
     lazy.resourceProtocol.setSubstitution(langpackId, this.rootURI);
@@ -4577,8 +4564,6 @@ export class Langpack extends ExtensionData {
     });
 
     L10nRegistry.getInstance().registerSources(fileSources);
-
-    Langpack.activeLangpackIds.add(langpackId);
 
     Services.obs.notifyObservers(
       { wrappedJSObject: { langpack: this } },
@@ -4604,13 +4589,6 @@ export class Langpack extends ExtensionData {
     }
 
     lazy.resourceProtocol.setSubstitution(this.startupData.langpackId, null);
-
-    Langpack.activeLangpackIds.delete(this.startupData.langpackId);
-
-    Services.obs.notifyObservers(
-      { wrappedJSObject: { langpack: this } },
-      "webextension-langpack-shutdown"
-    );
   }
 }
 
