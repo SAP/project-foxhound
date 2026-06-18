@@ -506,7 +506,8 @@ void WindowsGamepadService::PollXInput() {
     XINPUT_STATE state = {};
 
     if (!mXInput.mXInputGetState ||
-        mXInput.mXInputGetState(i, &state) != ERROR_SUCCESS) {
+        mXInput.mXInputGetState(mGamepads[i].userIndex, &state) !=
+            ERROR_SUCCESS) {
       continue;
     }
 
