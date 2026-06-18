@@ -486,17 +486,7 @@ features:
       enabled:
         description: Enables the feature
         type: Boolean
-        default: false
-    defaults:
-      - channel: developer
-        value:
-          enabled: true
-      - channel: nightly
-        value:
-          enabled: true
-      - channel: beta
-        value:
-          enabled: true
+        default: true
 
   remote-tab-management:
     description: >
