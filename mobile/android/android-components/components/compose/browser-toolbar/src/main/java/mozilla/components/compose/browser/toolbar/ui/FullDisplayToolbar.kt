@@ -14,12 +14,11 @@ import androidx.compose.material3.DividerDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.adaptive.currentWindowAdaptiveInfo
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTag
@@ -27,6 +26,7 @@ import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.tooling.preview.PreviewParameter
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.window.core.layout.WindowSizeClass
 import mozilla.components.compose.base.progressbar.AnimatedProgressBar
@@ -71,23 +71,13 @@ internal fun FullDisplayToolbar(
     pageActionsEndModifier: Modifier = Modifier,
     browserActionsEndModifier: Modifier = Modifier,
 ) {
-    val windowSizeClass = currentWindowAdaptiveInfo().windowSizeClass
-    val isSmallWidthScreen = remember(windowSizeClass) {
-        windowSizeClass.minWidthDp < WindowSizeClass.WIDTH_DP_MEDIUM_LOWER_BOUND
-    }
-
     Surface(color = backgroundColor) {
         Box(
             modifier = modifier
                 .semantics { testTagsAsResourceId = true },
         ) {
             Row(
-                modifier = Modifier.padding(
-                    horizontal = when (isSmallWidthScreen) {
-                        true -> NO_TOOLBAR_PADDING_DP.dp
-                        else -> LARGE_TOOLBAR_PADDING_DP.dp
-                    },
-                ),
+                modifier = Modifier.adaptiveHorizontalPadding(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (browserActionsStart.isNotEmpty()) {
@@ -197,14 +187,42 @@ internal fun FullDisplayToolbar(
                             testTag = ADDRESSBAR_PROGRESSBAR
                         }
                         .align(
-                        when (gravity) {
-                            Top -> Alignment.BottomCenter
-                            Bottom -> Alignment.TopCenter
-                        },
-                    ),
+                            when (gravity) {
+                                Top -> Alignment.BottomCenter
+                                Bottom -> Alignment.TopCenter
+                            },
+                        ),
                 )
             }
         }
+    }
+}
+
+/**
+ * Applies the toolbar's adaptive horizontal padding, depending on the width of the current screen.
+ *
+ * This is an interim fix for https://issuetracker.google.com/issues/515098186.
+ */
+private fun Modifier.adaptiveHorizontalPadding() = layout { measurable, constraints ->
+    val isSmallWidthScreen = constraints.maxWidth < WindowSizeClass.WIDTH_DP_MEDIUM_LOWER_BOUND.dp.roundToPx()
+    val padding = when (isSmallWidthScreen) {
+        true -> NO_TOOLBAR_PADDING_DP
+        else -> LARGE_TOOLBAR_PADDING_DP
+    }.dp.roundToPx()
+
+    val horizontal = padding * 2
+    val placeable = measurable.measure(
+        constraints.copy(
+            minWidth = (constraints.minWidth - horizontal).coerceAtLeast(0),
+            maxWidth = when (constraints.maxWidth) {
+                Constraints.Infinity -> Constraints.Infinity
+                else -> (constraints.maxWidth - horizontal).coerceAtLeast(0)
+            },
+        ),
+    )
+
+    layout((placeable.width + horizontal).coerceAtMost(constraints.maxWidth), placeable.height) {
+        placeable.place(padding, 0)
     }
 }
 
