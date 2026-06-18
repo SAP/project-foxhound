@@ -101,7 +101,7 @@ export class ToolUI {
    * @param {ChromeWindow} win - The browser window object
    * @returns {Promise<{operationId: string, closedTabs: Array, failedTabs: Array}|null>} Result object with operation details if successful, null otherwise
    */
-  static async #closeSelectedTabs(selectedTabs = [], win) {
+  static async closeSelectedTabs(selectedTabs = [], win) {
     // Verify we have a valid window
     if (!win) {
       lazy.console.error("No browser window provided");
@@ -147,7 +147,7 @@ export class ToolUI {
     const { updateData, message, conversation, window, originalData } = context;
     const { selectedTabs = [] } = updateData ?? {};
 
-    const result = await this.#closeSelectedTabs(selectedTabs, window);
+    const result = await this.closeSelectedTabs(selectedTabs, window);
     if (!result) {
       return false;
     }

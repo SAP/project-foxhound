@@ -869,6 +869,141 @@ add_task(async function test_undo_with_failed_restoration() {
 });
 
 /**
+ * Test ToolUI.closeSelectedTabs public method directly
+ */
+add_task(async function test_closeSelectedTabs_public_method() {
+  // Mock the tabManagementService since closeSelectedTabs calls it internally
+  // and we need to control its behavior in the test environment
+  const { tabManagementService } = ChromeUtils.importESModule(
+    "moz-src:///browser/components/aiwindow/ui/modules/TabManagementService.sys.mjs"
+  );
+
+  const originalCloseTabs = tabManagementService.closeTabs;
+  let passedTabs = null;
+  // Mock closeTabs to capture what tabs are passed and return a controlled result
+  tabManagementService.closeTabs = async function ({ tabs }) {
+    passedTabs = tabs; // Capture tabs to verify verification logic worked correctly
+    return {
+      operationId: "test-operation-456",
+      closedTabs: tabs,
+      failedTabs: [],
+    };
+  };
+
+  const mockTabs = [
+    {
+      linkedPanel: "panel-1",
+      linkedBrowser: {
+        currentURI: {
+          spec: "https://example.com",
+        },
+      },
+    },
+    {
+      linkedPanel: "panel-2",
+      linkedBrowser: {
+        currentURI: {
+          spec: "https://mozilla.org",
+        },
+      },
+    },
+  ];
+
+  const mockWindow = {
+    gBrowser: {
+      tabs: mockTabs,
+      selectedTab: null,
+    },
+  };
+
+  const selectedTabsData = [
+    {
+      linkedPanel: "panel-1",
+      url: "https://example.com",
+      title: "Example Tab",
+    },
+    {
+      linkedPanel: "panel-2",
+      url: "https://mozilla.org",
+      title: "Mozilla Tab",
+    },
+  ];
+
+  let result;
+  try {
+    result = await ToolUI.closeSelectedTabs(selectedTabsData, mockWindow);
+  } finally {
+    // Restore original function even if test throws
+    tabManagementService.closeTabs = originalCloseTabs;
+  }
+
+  // Verify the method returns the tabManagementService result
+  Assert.ok(result, "Should return a result object");
+  Assert.equal(
+    result.operationId,
+    "test-operation-456",
+    "Should return correct operationId"
+  );
+  // Verify that only verified tabs were passed to the service
+  Assert.equal(
+    passedTabs.length,
+    2,
+    "Should pass 2 verified tabs to tabManagementService"
+  );
+  Assert.equal(
+    passedTabs[0].linkedPanel,
+    "panel-1",
+    "Should pass correct first tab"
+  );
+  Assert.equal(
+    passedTabs[1].linkedPanel,
+    "panel-2",
+    "Should pass correct second tab"
+  );
+});
+
+/**
+ * Test ToolUI.closeSelectedTabs returns null when no window provided
+ */
+add_task(async function test_closeSelectedTabs_no_window() {
+  const selectedTabsData = [
+    {
+      linkedPanel: "panel-1",
+      url: "https://example.com",
+      title: "Example Tab",
+    },
+  ];
+
+  const result = await ToolUI.closeSelectedTabs(selectedTabsData, null);
+
+  Assert.equal(result, null, "Should return null when no window provided");
+});
+
+/**
+ * Test ToolUI.closeSelectedTabs returns null when no valid tabs to close
+ */
+add_task(async function test_closeSelectedTabs_no_valid_tabs() {
+  const mockWindow = {
+    gBrowser: {
+      tabs: [],
+      selectedTab: null,
+    },
+  };
+
+  const selectedTabsData = [
+    {
+      linkedPanel: "panel-nonexistent",
+      url: "https://example.com",
+      title: "Example Tab",
+    },
+  ];
+
+  const result = await ToolUI.closeSelectedTabs(selectedTabsData, mockWindow);
+
+  Assert.equal(result, null, "Should return null when no valid tabs found");
+});
+
+/**
  * Test that undo updates UI correctly with restore results
  */
 add_task(async function test_undo_updates_ui_correctly() {
