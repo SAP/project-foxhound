@@ -135,3 +135,47 @@ add_task(async function test_stop_button_stops_generation() {
     await restore();
   }
 });
+
+add_task(
+  async function test_smartbar_cta_reflects_input_when_typing_during_generation() {
+    const { restore } = await stubEngineNetworkBoundaries({
+      serverOptions: {
+        streamChunks: ["Hello", " from", " mock."],
+        streamChunkDelayMs: 500,
+      },
+    });
+
+    const win = await openAIWindow();
+    const browser = win.gBrowser.selectedBrowser;
+
+    try {
+      await typeInSmartbar(browser, "first message");
+      await submitSmartbar(browser);
+      await waitForStopButton(browser);
+      await typeInSmartbar(browser, "second message");
+
+      const action = await SpecialPowers.spawn(browser, [], async () => {
+        const aiWindowElement = content.document.querySelector("ai-window");
+        const smartbar = aiWindowElement.shadowRoot.querySelector(
+          "#ai-window-smartbar"
+        );
+        const inputCta = smartbar.querySelector("input-cta");
+        await ContentTaskUtils.waitForMutationCondition(
+          inputCta,
+          { attributes: true, attributeFilter: ["action"] },
+          () => inputCta.getAttribute("action") !== "stop"
+        );
+        return inputCta.getAttribute("action");
+      });
+
+      Assert.equal(
+        action,
+        "chat",
+        "Smartbar CTA should show current action after generation completes"
+      );
+    } finally {
+      await BrowserTestUtils.closeWindow(win);
+      await restore();
+    }
+  }
+);

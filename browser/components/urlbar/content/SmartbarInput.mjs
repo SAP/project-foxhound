@@ -273,9 +273,6 @@ ${
   #scrollAnimationId = null;
   #smartbarAction = "";
   #smartbarActionPending = false;
-  // Stores the smartbar action in effect before generation started, so it can
-  // be restored when generation ends or is stopped.
-  #smartbarActionSaved = "";
   #detectedIntent = "";
   #smartbarAssistantIsGenerating = false;
   #smartbarEditor = null;
@@ -788,11 +785,9 @@ ${
     }
     this.#smartbarAssistantIsGenerating = value;
     if (value) {
-      this.#smartbarActionSaved = this.#smartbarAction;
       this._inputCta.setAttribute("action", "stop");
     } else {
-      this._inputCta.setAttribute("action", this.#smartbarActionSaved || "");
-      this.#smartbarActionSaved = "";
+      this._inputCta.setAttribute("action", this.smartbarAction);
     }
   }
 
