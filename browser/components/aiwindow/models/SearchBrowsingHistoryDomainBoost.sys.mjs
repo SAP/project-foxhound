@@ -330,9 +330,11 @@ export async function searchByDomains({
              NULL AS distance,
              visit_count,
              frecency,
-             last_visit_date
+             last_visit_date,
+             preview_image_url
       FROM moz_places
       WHERE frecency <> 0
+        AND hidden = 0
         AND (:startTs IS NULL OR last_visit_date >= :startTs)
         AND (:endTs IS NULL OR last_visit_date <= :endTs)
         AND ${where}

@@ -224,7 +224,7 @@ moz-button.memories-trigger {
   pointer-events: none;
   position: absolute;
   /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
-  width: 318px;
+  width: min(318px, 100%);
   /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
   bottom: 40px;
   left: 0;

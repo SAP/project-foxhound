@@ -26,6 +26,7 @@
   min-height: 0;
   overflow-y: auto;
   width: 100%;
+  scrollbar-gutter: stable;
 
   &[overflowing] {
     --bottom-fade-size: var(--smart-window-fade-size);

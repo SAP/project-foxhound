@@ -240,6 +240,7 @@ let JSWINDOWACTORS = {
         "AIChatContent:DispatchNewChat": { wantUntrusted: true },
         "AIChatContent:AccountSignIn": { wantUntrusted: true },
         "AIChatContent:ToolUIUpdate": { wantUntrusted: true },
+        "AIChatContent:RequestAssets": { wantUntrusted: true },
       },
     },
     allFrames: true,

@@ -78,6 +78,10 @@ export const BackgroundPageThumbs = {
    * @param {string} [options.contentType]
    *   Can be set to an image contentType for the capture, defaults to
    *   PageThumbs.contentType.
+   * @param {number} [options.settleWaitTime]
+   *   Milliseconds to wait after the page reports loaded before capturing, to
+   *   allow for in-page redirects. Defaults to 2500. Set to 0 when capturing a
+   *   direct image URL where no settle is needed.
    */
   capture(url, options = {}) {
     if (!PageThumbs._prefEnabled()) {
@@ -630,9 +634,14 @@ Capture.prototype = {
       return;
     }
 
-    let waitTime = Cu.isInAutomation
-      ? TESTING_SETTLE_WAIT_TIME
-      : SETTLE_WAIT_TIME;
+    let waitTime;
+    if (this.options.settleWaitTime !== undefined) {
+      waitTime = this.options.settleWaitTime;
+    } else if (Cu.isInAutomation) {
+      waitTime = TESTING_SETTLE_WAIT_TIME;
+    } else {
+      waitTime = SETTLE_WAIT_TIME;
+    }
 
     // There was additional activity, so restart the wait timer
     if (this.redirectTimer) {
