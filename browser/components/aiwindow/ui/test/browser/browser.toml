@@ -205,10 +205,6 @@ skip-if = [
 
 ["browser_smartwindow_sidebar_auto_open_pref_prompt.js"]
 
-["browser_smartwindow_smartbar_glow.js"]
-
-["browser_smartwindow_smartbar_model_select.js"]
-
 ["browser_smartwindow_smartbar_tab_state.js"]
 
 ["browser_smartwindow_switcher_telemetry.js"]
