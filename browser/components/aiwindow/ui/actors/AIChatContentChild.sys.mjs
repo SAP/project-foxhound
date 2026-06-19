@@ -34,12 +34,6 @@ export class AIChatContentChild extends JSWindowActorChild {
     "AIChatContent:SetGenerating": {
       event: "aiChatContentActor:set-generating",
     },
-    "AIChatContent:AssetsReady": {
-      event: "aiChatContentActor:assets-ready",
-    },
-    "AIChatContent:HistoryResults": {
-      event: "aiChatContentActor:history-results",
-    },
   };
 
   static #VALID_EVENTS_FROM_CONTENT = new Set([
@@ -50,7 +44,6 @@ export class AIChatContentChild extends JSWindowActorChild {
     "AIChatContent:DispatchNewChat",
     "AIChatContent:AccountSignIn",
     "AIChatContent:ToolUIUpdate",
-    "AIChatContent:RequestAssets",
   ]);
 
   /**
@@ -98,10 +91,6 @@ export class AIChatContentChild extends JSWindowActorChild {
 
       case "AIChatContent:ToolUIUpdate":
         this.sendAsyncMessage("AIChatContent:ToolUIUpdate", event.detail);
-        break;
-
-      case "AIChatContent:RequestAssets":
-        this.sendAsyncMessage("AIChatContent:RequestAssets", event.detail);
         break;
 
       default:

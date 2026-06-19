@@ -560,7 +560,7 @@ async function typeInSmartbar(browser, text) {
       "Wait for Smartbar to be rendered"
     );
     info("typeInSmartbar: smartbar found, calling focus()");
-    smartbar.inputField.focus();
+    smartbar.focus();
     await ContentTaskUtils.waitForCondition(
       () => smartbar.matches(":focus-within"),
       "Wait for smartbar to receive focus"

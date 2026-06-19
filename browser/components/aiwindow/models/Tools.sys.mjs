@@ -424,21 +424,6 @@ export async function searchBrowsingHistory(toolParams, conversation) {
   });
 
   conversation.addSeenUrls(result.results.map(({ url }) => url));
-  // Set history result on convsersation so it can be
-  // sent to the content page.
-  conversation.addHistoryResults(
-    result.results.map(
-      ({ url, title, favicon, thumbnail, visitDate, visitCount }) => ({
-        url,
-        title,
-        favicon,
-        thumbnail,
-        visitDate,
-        visitCount,
-      })
-    )
-  );
-
   conversation.securityProperties.setPrivateData();
   lazy.console.log("[Tool] searchBrowsingHistory", result);
   return result;

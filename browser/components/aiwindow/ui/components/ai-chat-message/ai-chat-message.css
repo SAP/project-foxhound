@@ -34,12 +34,6 @@
   }
 }
 
-.message-assistant.with-history {
-  :is(ul, ol) {
-    display: none;
-  }
-}
-
 .message-user p {
   margin-block-start: 0;
   margin-block-end: 0;
@@ -82,85 +76,12 @@ ai-chat-table {
   }
 }
 
-ai-chat-grid::part(row) {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: var(--space-small);
-  padding: var(--space-medium) 0;
-  text-decoration: none;
-}
-
-[part~="row"]:first-child {
-  padding-top: 0;
-}
-
-ai-chat-grid::part(scrollarea-grid) {
-  background-color: transparent;
-  margin-top: var(--space-medium);
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.5) transparent;
-}
-
-ai-chat-grid::part(scrollarea-list) {
-  --background-color: light-dark(var(--color-violet-10), var(--color-violet-80));
-  --card-border: var(--card-border-radius) solid light-dark(var(--color-violet-10), var(--color-violet-80));
-
-  box-sizing: border-box;
-  background-color: var(--background-color);
-  border-radius: var(--card-border-radius);
-  padding: 0 var(--space-xlarge);
-  margin-top: var(--space-medium);
-  /* stylelint-disable-next-line -- Figma design */
-  height: 255px;
-  overflow: auto;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.5) transparent;
-  border-inline-end: var(--card-border);
-  border-block: var(--card-border);
-}
-
-ai-chat-grid::part(favicon) {
-  width: var(--icon-size-small);
-  height: var(--icon-size-small);
-}
-
-ai-chat-grid::part(title) {
-  flex-grow: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--text-color);
-}
-
-ai-chat-grid::part(timestamp) {
-  white-space: nowrap;
-  text-align: end;
-  color: var(--text-color);
-}
-
-:host([data-message-role="assistant"]) {
-  display: block;
-  width: 100%;
-  container-type: inline-size;
-}
-
-ai-chat-grid {
-  --ai-chat-grid-columns: repeat(2, minmax(0, 1fr));
-}
-
-@container (width <= 320px) {
-  ai-chat-grid {
-    --ai-chat-grid-columns: repeat(1, minmax(0, 1fr));
-  }
-}
-
 /* stylelint-disable-next-line media-query-no-invalid */
 @media -moz-pref("browser.nova.enabled") {
   .message-assistant {
     a {
       --smartwindow-assistant-link-color-active: light-dark(var(--color-violet-80), var(--color-violet-50));
-      --smartwindow-assistant-accent-color-focus: light-dark(var(--color-violet-50), var(--color-violet-10));
+      --smartwindow-assistant-accent-color-focus: light-dark(var(--color-violet-50), var(--color-violet-20));
     }
   }
 }

@@ -38,17 +38,12 @@ import { SecurityProperties } from "moz-src:///browser/components/aiwindow/model
 
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
-  convertTimestamp: "chrome://browser/content/firefoxview/helpers.mjs",
   ChatStore:
     "moz-src:///browser/components/aiwindow/ui/modules/ChatStore.sys.mjs",
   MemoriesManager:
     "moz-src:///browser/components/aiwindow/models/memories/MemoriesManager.sys.mjs",
   ToolUI: "moz-src:///browser/components/aiwindow/ui/modules/ToolUI.sys.mjs",
   UI_TYPES: "moz-src:///browser/components/aiwindow/ui/modules/ToolUI.sys.mjs",
-});
-
-ChromeUtils.defineLazyGetter(lazy, "fluentStrings", () => {
-  return new Localization(["browser/firefoxView.ftl"], true);
 });
 
 ChromeUtils.defineLazyGetter(lazy, "console", function () {
@@ -139,39 +134,6 @@ export class ChatConversation extends EventEmitter {
    * @type {Set<string>}
    */
   seenUrls;
-
-  /**
-   * URLs found in SERP contents from run_search that we are willing to
-   * fetch via a anonymous request even when the conversation has
-   * been exposed to both private and untrusted content.
-   *
-   * Initialized from the constructor params (restored from DB) or as an empty Set.
-   *
-   * @type {Set<string>}
-   */
-  serpUrlsForAnonymousFetch;
-
-  /**
-   * Conversation-level pool of history results keyed by URL, accumulated across
-   * every `search_browsing_history` invocation in this conversation. A message
-   * snapshots this pool when it completes (see `receiveResponse`), so any
-   * assistant message that lists previously-searched URLs renders a history
-   * grid — even when the model answered a follow-up from prior results without
-   * re-invoking the tool. Not persisted to the database.
-   *
-   * @type {Map<string, object>}
-   */
-  #historyResultsPool = new Map();
-
-  /**
-   * Dispatcher that forwards the history results pool to the
-   * content page. Injected by the owner (ai-window). Called from
-   * `addHistoryResults` during tool execution; actor delivers
-   * the pool to content before the follow-up answer streams.
-   *
-   * @type {?function(object): void}
-   */
-  #historyResultsDispatcher = null;
 
   /**
    * @param {object} params
@@ -401,16 +363,7 @@ export class ChatConversation extends EventEmitter {
     }
 
     await lazy.ChatStore.updateConversation(this);
-
-    // Only finalize the message when the turn is actually done. When the model
-    // requested tool calls, the same assistant message keeps streaming its
-    // answer after the tools run (see the loop in Chat.sys.mjs), so emitting
-    // completion here would mark a still-streaming message complete mid-turn —
-    // e.g. converting a streamed history list into a grid before the answer
-    // finishes.
-    if (!pendingToolCalls?.length) {
-      this.emit("chat-conversation:message-complete", currentMessage);
-    }
+    this.emit("chat-conversation:message-complete", currentMessage);
 
     return { pendingToolCalls, fullResponseText, usage };
   }
@@ -1155,56 +1108,5 @@ export class ChatConversation extends EventEmitter {
       dataAdded: enrichedUIData,
       isUpdate,
     };
-  }
-
-  /**
-   * Merge records returned by a `search_browsing_history` tool call into the
-   * conversation-level history results pool, keyed by URL. Accumulates across
-   * every search in the conversation. The pool is snapshotted onto an assistant
-   * message when it completes in `receiveResponse()` so the message that
-   * triggered the search and any later message reusing those results
-   * can both render a grid.
-   *
-   * @param {Iterable<object>} records - Per-URL records from search_browsing_history.
-   */
-  addHistoryResults(records) {
-    for (const record of records) {
-      record.timestamp = lazy.convertTimestamp(
-        record.visitDate,
-        lazy.fluentStrings
-      );
-      this.#historyResultsPool.set(record.url, record);
-    }
-
-    // Deliver to the content page. This runs during tool
-    // execution, so it's dispatched before the assistant's follow-up answer
-    // streams, content side should have the pool
-    // before it renders the list. Tool execution should not block content
-    // process side.
-    this.#historyResultsDispatcher?.({
-      records: [...this.#historyResultsPool.values()],
-    });
-  }
-
-  /**
-   * Register the dispatcher used to forward history results to the content
-   * page. See {@link ChatConversation#addHistoryResults}.
-   *
-   * @param {?function(object): void} dispatcher
-   */
-  setHistoryResultsDispatcher(dispatcher) {
-    this.#historyResultsDispatcher = dispatcher;
-  }
-
-  /**
-   * A snapshot of the accumulated history results pool, as a records array.
-   * Attached to a message when it completes so the content page can render the
-   * history grid deterministically — independent of the streaming-time
-   * dispatch, whose delivery races the message lifecycle.
-   *
-   * @returns {object[]}
-   */
-  getHistoryResultsSnapshot() {
-    return [...this.#historyResultsPool.values()];
   }
 }
