@@ -69,10 +69,9 @@ add_task(async function test_ai_chat_message_rendering() {
       }
 
       function setRoleAndMessage(el, role, message) {
-        // `role` reflects to `data-message-role` (the `role` attribute is the
-        // native ARIA role and collides with Element.prototype.role), so drive
-        // it via that attribute rather than the `role` property/attribute.
-        el.setAttribute("data-message-role", role);
+        // Set both property + attribute to avoid any reflection differences.
+        el.role = role;
+        el.setAttribute("role", role);
 
         el.message = message;
         el.setAttribute("message", message);
@@ -206,9 +205,8 @@ add_task(async function test_user_message_website_mentions_render_as_chips() {
       // Set properties on the unwrapped element AND set attributes to guarantee update.
       const elJS = el.wrappedJSObject || el;
 
-      // `role` reflects to `data-message-role` (the `role` attribute is the
-      // native ARIA role), so drive it via that attribute.
-      el.setAttribute("data-message-role", "user");
+      elJS.role = "user";
+      el.setAttribute("role", "user");
 
       elJS.message = markdown;
       el.setAttribute("message", markdown);
@@ -323,7 +321,8 @@ add_task(
         doc.body.appendChild(el);
 
         const elJS = el.wrappedJSObject || el;
-        el.setAttribute("data-message-role", "user");
+        elJS.role = "user";
+        el.setAttribute("role", "user");
         elJS.message = emptyMarkdown;
         el.setAttribute("message", emptyMarkdown);
 
