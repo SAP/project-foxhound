@@ -1,0 +1,18 @@
+{
+  "label": "www.kuaishou.com",
+  "bugs": {
+    "2044288": {
+      "issue": "broken-layout",
+      "matches": ["*://www.kuaishou.com/*"]
+    }
+  },
+  "css": {
+    "fix_missing_video_thumbnails": ".video-card-main { display: block }"
+  },
+  "interventions": [
+    {
+      "platforms": ["desktop"],
+      "css": ["fix_missing_video_thumbnails"]
+    }
+  ]
+}

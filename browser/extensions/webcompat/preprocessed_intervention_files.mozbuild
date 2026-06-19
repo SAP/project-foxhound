@@ -156,4 +156,5 @@ preprocessed_intervention_files = [
     "bug2025249-infyspringboard.onwingspan.com-hide_browser_notice.css",
     "bug2029246-discord.com-fix_scrollbars.css",
     "bug2034409-www.wanyiwan.top.js",
+    "bug2044288-www.kuaishou.com-fix_missing_video_thumbnails.css",
 ]
