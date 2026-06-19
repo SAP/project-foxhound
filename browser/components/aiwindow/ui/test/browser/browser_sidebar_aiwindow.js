@@ -3,6 +3,55 @@
 
 "use strict";
 
+function triggerSidebarToggleKeybind(win) {
+  const modifiers =
+    AppConstants.platform === "macosx"
+      ? { ctrlKey: true }
+      : { ctrlKey: true, altKey: true };
+  EventUtils.synthesizeKey("x", modifiers, win);
+}
+
+add_task(
+  async function test_aichat_sidebar_toggle_keybinding_in_smartwindow_fullpage() {
+    let win;
+    try {
+      win = await openAIWindow();
+
+      Assert.ok(!AIWindowUI.isSidebarOpen(win), "Should have sidebar closed");
+      triggerSidebarToggleKeybind(win);
+      Assert.ok(
+        !AIWindowUI.isSidebarOpen(win),
+        "Should have sidebar still closed"
+      );
+    } finally {
+      if (win) {
+        await BrowserTestUtils.closeWindow(win);
+      }
+    }
+  }
+);
+
+add_task(
+  async function test_aichat_sidebar_toggle_keybinding_in_smartwindow_sidebar() {
+    let win;
+    try {
+      const { win: w } = await openAIWindowWithSidebar();
+      win = w;
+
+      Assert.ok(AIWindowUI.isSidebarOpen(win), "Should have sidebar open");
+      triggerSidebarToggleKeybind(win);
+      Assert.ok(!AIWindowUI.isSidebarOpen(win), "Should toggle sidebar closed");
+
+      triggerSidebarToggleKeybind(win);
+      Assert.ok(AIWindowUI.isSidebarOpen(win), "Should toggle sidebar open");
+    } finally {
+      if (win) {
+        await BrowserTestUtils.closeWindow(win);
+      }
+    }
+  }
+);
+
 /**
  * Test that AI chat sidebar is hidden in AI Window.
  */

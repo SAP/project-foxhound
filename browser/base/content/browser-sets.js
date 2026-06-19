@@ -8,6 +8,8 @@ document.addEventListener(
     const lazy = {};
     ChromeUtils.defineESModuleGetters(lazy, {
       TranslationsParent: "resource://gre/actors/TranslationsParent.sys.mjs",
+      AIWindowUI:
+        "moz-src:///browser/components/aiwindow/ui/modules/AIWindowUI.sys.mjs",
     });
 
     // <commandset id="mainCommandSet"> defined in browser-sets.inc.xhtml
@@ -305,6 +307,14 @@ document.addEventListener(
           BookmarkingUI.toggleBookmarksToolbar("shortcut");
           break;
         case "viewGenaiChatSidebarKb": {
+          const currentURI = window.gBrowser.selectedBrowser.currentURI;
+          const isSmartWindowFullPageMode =
+            AIWindow.isAIWindowContentPage(currentURI);
+          if (AIWindow.isAIWindowActive(window) && !isSmartWindowFullPageMode) {
+            lazy.AIWindowUI.toggleSidebar(window);
+            break;
+          }
+
           const pref = "browser.ml.chat.enabled";
           const enabled = Services.prefs.getBoolPref(pref);
           Glean.genaiChatbot.keyboardShortcut.record({
