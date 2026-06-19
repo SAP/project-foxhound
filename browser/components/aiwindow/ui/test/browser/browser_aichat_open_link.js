@@ -48,8 +48,12 @@ async function clickRenderedLink(browserOrBC, url, eventOptions = {}) {
       doc.body.appendChild(el);
 
       const elJS = el.wrappedJSObject || el;
-      elJS.role = "assistant";
-      el.setAttribute("role", "assistant");
+      // `role` reflects to the `data-message-role` attribute: the bare `role`
+      // attribute is the native ARIA role and collides with the reactive
+      // property, so it's set via the data-* attribute instead.
+      // TODO: rename the reactive property off `role` so callers can set it
+      // directly (`elJS.role = "assistant"`).
+      el.setAttribute("data-message-role", "assistant");
       elJS.trustedUrls = Cu.cloneInto([linkUrl], content);
       const md = `Click [here](${linkUrl}) for more`;
       elJS.message = md;
@@ -363,7 +367,9 @@ describe("aichat open link", () => {
         content.document.body.appendChild(el);
 
         const elJS = el.wrappedJSObject || el;
-        elJS.role = "assistant";
+        // See note above: drive `role` via `data-message-role` (ARIA role
+        // collision; TODO rename the reactive property off `role`).
+        el.setAttribute("data-message-role", "assistant");
         elJS.trustedUrls = Cu.cloneInto([], content);
         const md = `Go to [Manage memories](about:preferences#manageMemories)`;
         elJS.message = md;
@@ -388,7 +394,9 @@ describe("aichat open link", () => {
         content.document.body.appendChild(el);
 
         const elJS = el.wrappedJSObject || el;
-        elJS.role = "assistant";
+        // See note above: drive `role` via `data-message-role` (ARIA role
+        // collision; TODO rename the reactive property off `role`).
+        el.setAttribute("data-message-role", "assistant");
         elJS.trustedUrls = Cu.cloneInto([], content);
         elJS.message = `See [config](about:config) for details`;
 

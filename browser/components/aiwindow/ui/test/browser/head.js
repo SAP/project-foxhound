@@ -840,6 +840,215 @@ async function getSidebarChatMessages(sidebarBrowser) {
 }
 
 /**
+ * Default bound for the render waits below. Generous enough to never false-fail
+ * behind the mock LLM round-trip, but a fraction of the harness timeout so a
+ * genuine stall fails fast with a clear message rather than hanging.
+ */
+const RENDER_TIMEOUT_MS = 15000;
+
+/**
+ * Bounded wrapper around BrowserTestUtils.waitForMutationCondition, which on its
+ * own never rejects. Races the (event-driven) mutation wait against a timeout so
+ * a missing element fails fast with a clear message instead of hanging until the
+ * harness aborts the task.
+ *
+ * @param {Node} target - The node on which to observe mutations
+ * @param {MutationObserverInit} options - Options for MutationObserver.observe()
+ * @param {Function} checkFn - Returns the awaited value once it is truthy
+ * @param {string} label - Description used in the timeout error message
+ * @param {number} [timeoutMs=RENDER_TIMEOUT_MS]
+ *
+ * @returns {Promise<any>} The value returned by checkFn
+ */
+function waitForMutationBounded(
+  target,
+  options,
+  checkFn,
+  label,
+  timeoutMs = RENDER_TIMEOUT_MS
+) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`Timed out waiting for: ${label}`)),
+      timeoutMs
+    );
+  });
+  return Promise.race([
+    BrowserTestUtils.waitForMutationCondition(target, options, checkFn),
+    timeout,
+  ]).finally(() => clearTimeout(timer));
+}
+
+/**
+ * Resolves the #aichat-browser frame for the AI Window hosted in the given
+ * browser. By the time the post-response helpers below run, both ai-window and
+ * #aichat-browser already exist, so the check resolves immediately; the bound
+ * just guarantees a fast, clear failure if they ever don't.
+ *
+ * @param {MozBrowser} browser - The browser hosting the AI Window
+ *
+ * @returns {Promise<MozBrowser>} The #aichat-browser frame
+ */
+function getAIChatBrowser(browser) {
+  return waitForMutationBounded(
+    browser.contentDocument.documentElement,
+    { childList: true, subtree: true },
+    () =>
+      browser.contentDocument
+        ?.querySelector("ai-window")
+        ?.shadowRoot?.querySelector("#aichat-browser"),
+    "ai-window #aichat-browser"
+  );
+}
+
+/**
+ * Runs a SpecialPowers.spawn task bounded by a timeout. The content task can use
+ * plain ContentTaskUtils.waitForMutationCondition (event-driven, no polling),
+ * which never rejects on its own; this wrapper races the spawn against a timer so
+ * a task that never settles fails fast with a clear message instead of hanging
+ * until the harness aborts the SpecialPowers actor.
+ *
+ * @param {MozBrowser} browser - The frame to run the task in
+ * @param {Array} args - Arguments forwarded to the task
+ * @param {Function} task - The content task
+ * @param {string} label - Description used in the timeout error message
+ * @param {number} [timeoutMs=RENDER_TIMEOUT_MS]
+ *
+ * @returns {Promise<any>} The task's return value
+ */
+function spawnBounded(
+  browser,
+  args,
+  task,
+  label,
+  timeoutMs = RENDER_TIMEOUT_MS
+) {
+  const spawned = SpecialPowers.spawn(browser, args, task);
+  // If the timeout wins, the spawn promise is abandoned; handle its eventual
+  // rejection (the actor is torn down at cleanup) so it isn't surfaced as an
+  // unhandled rejection. A real task error still propagates through the race.
+  spawned.catch(() => {});
+
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`Timed out waiting for: ${label}`)),
+      timeoutMs
+    );
+  });
+  return Promise.race([spawned, timeout]).finally(() => clearTimeout(timer));
+}
+
+/**
+ * Checks for presence of a selector within the chat messages, either at a
+ * specific message element or in any message element
+ *
+ * @param {MozBrowser} browser - browser that the messages are in
+ * @param {string} selector - The selector to look for
+ * @param {number} [nthElement] - Which message index to check for the selector,
+ *                                defaults to last item
+ *
+ * @returns {boolean} Whether the selector was found
+ */
+async function checkForElementInChatMessage(
+  browser,
+  selector,
+  nthElement = -1
+) {
+  const aiChatBrowser = await getAIChatBrowser(browser);
+
+  return spawnBounded(
+    aiChatBrowser,
+    [selector, nthElement],
+    async (sel, nthEl) => {
+      await ContentTaskUtils.waitForMutationCondition(
+        content.document.documentElement,
+        { childList: true, subtree: true },
+        () => content.document.querySelector("ai-chat-content")
+      );
+      const contentEl = content.document.querySelector("ai-chat-content");
+
+      await ContentTaskUtils.waitForMutationCondition(
+        contentEl.shadowRoot,
+        { childList: true, subtree: true },
+        () => {
+          const messages = Array.from(
+            contentEl.shadowRoot.querySelectorAll("ai-chat-message")
+          );
+          const message = messages.at(nthEl);
+          return message && ContentTaskUtils.querySelectorDeep(message, sel);
+        }
+      );
+
+      const messages = Array.from(
+        contentEl.shadowRoot.querySelectorAll("ai-chat-message")
+      );
+      return !!ContentTaskUtils.querySelectorDeep(messages.at(nthEl), sel);
+    },
+    `${selector} in chat message ${nthElement}`
+  );
+}
+
+async function checkForNumberOfElementsInChatMessage(
+  browser,
+  selector,
+  amount,
+  nthElement = -1
+) {
+  const aiChatBrowser = await getAIChatBrowser(browser);
+
+  return spawnBounded(
+    aiChatBrowser,
+    [selector, nthElement, amount],
+    async (sel, nthEl, amt) => {
+      await ContentTaskUtils.waitForMutationCondition(
+        content.document.documentElement,
+        { childList: true, subtree: true },
+        () => content.document.querySelector("ai-chat-content")
+      );
+      const contentEl = content.document.querySelector("ai-chat-content");
+
+      await ContentTaskUtils.waitForMutationCondition(
+        contentEl.shadowRoot,
+        { childList: true, subtree: true },
+        () => {
+          const messages = Array.from(
+            contentEl.shadowRoot.querySelectorAll("ai-chat-message")
+          );
+          const message = messages.at(nthEl);
+          return (
+            message &&
+            ContentTaskUtils.querySelectorDeep(message, "ai-chat-grid")
+          );
+        }
+      );
+
+      const messages = Array.from(
+        contentEl.shadowRoot.querySelectorAll("ai-chat-message")
+      );
+      const aiChatGrid = ContentTaskUtils.querySelectorDeep(
+        messages.at(nthEl),
+        "ai-chat-grid"
+      );
+
+      // The counted children render asynchronously inside the grid's own shadow
+      // root, so observe there.
+      await ContentTaskUtils.waitForMutationCondition(
+        aiChatGrid.shadowRoot,
+        { childList: true, subtree: true },
+        () =>
+          ContentTaskUtils.querySelectorDeep(aiChatGrid, sel)?.children
+            .length === amt
+      );
+
+      return true;
+    },
+    `${amount} ${selector} in chat message ${nthElement}`
+  );
+}
+
+/**
  * Mock OpenAI server helpers
  */
 

@@ -147,6 +147,7 @@
       fill: light-dark(var(--color-violet-10), var(--color-violet-70));
     }
 
+    /* stylelint-disable-next-line media-query-no-invalid */
     @media -moz-pref("browser.nova.enabled") and (not (forced-colors)) {
       /* stylelint-disable-next-line -- Figma design */
       fill: light-dark(var(--color-violet-desaturated-10), var(--color-violet-desaturated-70));

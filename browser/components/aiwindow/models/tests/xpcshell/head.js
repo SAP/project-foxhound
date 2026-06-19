@@ -30,6 +30,7 @@ function makeConversation({
   return {
     securityProperties,
     addSeenUrls() {},
+    async addHistoryResults() {},
     getAllMentionURLs() {
       return new Set();
     },

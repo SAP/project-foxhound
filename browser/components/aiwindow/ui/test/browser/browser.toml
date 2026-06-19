@@ -7,6 +7,7 @@ prefs = [
 ]
 support-files = [
   "head.js",
+  "head_history_thumbnails.js",
   "test_ai_action_result_page.html",
   "test_ai_action_result.mjs",
   "test_assistant_message_footer_page.html",
@@ -166,6 +167,10 @@ skip-if = [
 
 ["browser_smartwindow_history_commands.js"]
 
+["browser_smartwindow_history_thumbnails.js"]
+
+["browser_smartwindow_history_thumbnails_telemetry.js"]
+
 ["browser_smartwindow_init.js"]
 
 ["browser_smartwindow_jump_to_bottom.js"]
@@ -199,6 +204,10 @@ skip-if = [
 ["browser_smartwindow_sidebar.js"]
 
 ["browser_smartwindow_sidebar_auto_open_pref_prompt.js"]
+
+["browser_smartwindow_smartbar_glow.js"]
+
+["browser_smartwindow_smartbar_model_select.js"]
 
 ["browser_smartwindow_smartbar_tab_state.js"]
 
