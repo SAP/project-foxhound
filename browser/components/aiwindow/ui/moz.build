@@ -18,7 +18,6 @@ MOZ_SRC_FILES += [
     "modules/AIWindowConstants.sys.mjs",
     "modules/AIWindowMenu.sys.mjs",
     "modules/AIWindowTabStatesManager.sys.mjs",
-    "modules/AIWindowTelemetry.sys.mjs",
     "modules/AIWindowUI.sys.mjs",
     "modules/ChatConversation.sys.mjs",
     "modules/ChatEnums.sys.mjs",

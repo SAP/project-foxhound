@@ -12,8 +12,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "moz-src:///browser/components/aiwindow/ui/modules/SmartWindowTelemetry.sys.mjs",
   AIWindowUI:
     "moz-src:///browser/components/aiwindow/ui/modules/AIWindowUI.sys.mjs",
-  AIWindowTelemetry:
-    "moz-src:///browser/components/aiwindow/ui/modules/AIWindowTelemetry.sys.mjs",
   BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
   URILoadingHelper: "resource:///modules/URILoadingHelper.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
@@ -89,7 +87,7 @@ export class AIChatContentParent extends JSWindowActorParent {
 
   receiveMessage({ data, name }) {
     switch (name) {
-      case "AIChatContent:DispatchFollowUp":
+      case "aiChatContentActor:followUp":
         this.#handleFollowUpFromChild(data);
         break;
 
@@ -101,7 +99,7 @@ export class AIChatContentParent extends JSWindowActorParent {
         this.#handleNewChat();
         break;
 
-      case "AIChatContent:DispatchAction":
+      case "aiChatContentActor:footer-action":
         this.#handleFooterActionFromChild(data);
         break;
 
@@ -119,15 +117,6 @@ export class AIChatContentParent extends JSWindowActorParent {
 
       case "AIChatContent:RequestAssets":
         this.#handleRequestAssets(data);
-        break;
-
-      case "AIChatContent:HistoryGridRender":
-      case "AIChatContent:HistoryGridItemClick":
-        lazy.AIWindowTelemetry.recordHistoryGridEvent(
-          this.#getAIWindowElement(),
-          data,
-          name
-        );
         break;
 
       default:

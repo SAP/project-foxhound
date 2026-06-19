@@ -51,8 +51,6 @@ export class AIChatContentChild extends JSWindowActorChild {
     "AIChatContent:AccountSignIn",
     "AIChatContent:ToolUIUpdate",
     "AIChatContent:RequestAssets",
-    "AIChatContent:HistoryGridRender",
-    "AIChatContent:HistoryGridItemClick",
   ]);
 
   /**
@@ -66,25 +64,67 @@ export class AIChatContentChild extends JSWindowActorChild {
       return;
     }
 
-    const { action, text } = event.detail ?? {};
-    const copyActions = ["copy", "copy-table"];
-    const isCopyAction = copyActions.includes(action) && text;
-
     switch (event.type) {
       case "AIChatContent:DispatchAction":
-        // Copy is handled in the child actor since it depends on content-side
-        // selection and clipboard context.
-        if (isCopyAction) {
-          lazy.ClipboardHelper.copyString(text, this.windowContext);
-        }
-
-        this.sendAsyncMessage(event.type, event.detail);
+        this.#handleActionDispatch(event);
         break;
 
-      // Relay known events to AIChatContentParent
+      case "AIChatContent:DispatchFollowUp":
+        this.#handleFollowUpDispatch(event);
+        break;
+
+      case "AIChatContent:DispatchNewChat":
+        /*
+         * This message round-trips:
+         * child
+         * -> parent (to reset conversation state in ai-window)
+         * -> child (to clear the UI via "clear-conversation").
+         * The parent owns the conversation state, so we must go through it to start a new chat.
+         */
+        this.sendAsyncMessage("AIChatContent:DispatchNewChat");
+        break;
+
+      case "AIChatContent:Ready":
+        this.sendAsyncMessage("AIChatContent:Ready");
+        break;
+
+      case "AIChatContent:OpenLink":
+        this.sendAsyncMessage("AIChatContent:OpenLink", event.detail);
+        break;
+
+      case "AIChatContent:AccountSignIn":
+        this.sendAsyncMessage("AIChatContent:AccountSignIn", event.detail);
+        break;
+
+      case "AIChatContent:ToolUIUpdate":
+        this.sendAsyncMessage("AIChatContent:ToolUIUpdate", event.detail);
+        break;
+
+      case "AIChatContent:RequestAssets":
+        this.sendAsyncMessage("AIChatContent:RequestAssets", event.detail);
+        break;
+
       default:
-        this.sendAsyncMessage(event.type, event.detail);
+        console.warn(
+          `AIChatContentChild received unknown event: ${event.type}`
+        );
     }
+  }
+
+  #handleActionDispatch(event) {
+    const { action, text } = event.detail ?? {};
+    // Copy is handled in the child actor since it depends on content-side
+    // selection and clipboard context.
+    if (action === "copy") {
+      if (text) {
+        lazy.ClipboardHelper.copyString(text, this.windowContext);
+      }
+    }
+    this.sendAsyncMessage("aiChatContentActor:footer-action", event.detail);
+  }
+
+  #handleFollowUpDispatch(event) {
+    this.sendAsyncMessage("aiChatContentActor:followUp", event.detail);
   }
 
   async receiveMessage(message) {
