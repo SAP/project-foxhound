@@ -18,6 +18,7 @@
   addMemory,
   addChat,
   triggerBlockAndWaitForDialog,
+  selectCustomModel,
 */
 
 ChromeUtils.defineESModuleGetters(this, {
@@ -136,4 +137,26 @@ async function triggerBlockAndWaitForDialog(doc, win) {
   await dialogShown;
   await dialogEl.updateComplete;
   return { setting, dialogEl };
+}
+
+async function selectCustomModel(doc) {
+  const modelSelection = doc.getElementById("modelSelection");
+  await modelSelection.updateComplete;
+
+  const customRadio = doc.querySelector(
+    'moz-radio[data-l10n-id="smart-window-model-custom"]'
+  );
+  await BrowserTestUtils.waitForMutationCondition(
+    doc.body,
+    { attributes: true, childList: true, subtree: true },
+    () => BrowserTestUtils.isVisible(customRadio)
+  );
+  customRadio.click();
+
+  await BrowserTestUtils.waitForMutationCondition(
+    doc.body,
+    { attributes: true, childList: true, subtree: true },
+    () => BrowserTestUtils.isVisible(doc.getElementById("customModelName"))
+  );
+  return doc.getElementById("customModelName");
 }
