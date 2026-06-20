@@ -31,20 +31,6 @@ internal fun Collection<OnboardingCardData>.toPageUiData(
         .toList()
 }
 
-private fun OnboardingCardData.isCardEnabled(
-    showDefaultBrowserPage: Boolean,
-    showNotificationPage: Boolean,
-    showAddWidgetPage: Boolean,
-    showToolbarPage: Boolean,
-): Boolean = when (cardType) {
-    OnboardingCardType.DEFAULT_BROWSER -> enabled && showDefaultBrowserPage
-    OnboardingCardType.NOTIFICATION_PERMISSION -> enabled && showNotificationPage
-    OnboardingCardType.ADD_SEARCH_WIDGET -> enabled && showAddWidgetPage
-    OnboardingCardType.TOOLBAR_PLACEMENT ->
-        showToolbarPage && enabled && extraData?.customizationToolbarData?.isNotEmpty() == true
-    else -> enabled
-}
-
 /**
  *  Determines whether the given [OnboardingCardData] should be displayed.
  *
@@ -91,6 +77,20 @@ private fun OnboardingCardData.shouldDisplayCard(
         }
 
     return validPrerequisites && !hasDisqualifiers
+}
+
+private fun OnboardingCardData.isCardEnabled(
+    showDefaultBrowserPage: Boolean,
+    showNotificationPage: Boolean,
+    showAddWidgetPage: Boolean,
+    showToolbarPage: Boolean,
+): Boolean = when (cardType) {
+    OnboardingCardType.DEFAULT_BROWSER -> enabled && showDefaultBrowserPage
+    OnboardingCardType.NOTIFICATION_PERMISSION -> enabled && showNotificationPage
+    OnboardingCardType.ADD_SEARCH_WIDGET -> enabled && showAddWidgetPage
+    OnboardingCardType.TOOLBAR_PLACEMENT ->
+        showToolbarPage && enabled && extraData?.customizationToolbarData?.isNotEmpty() == true
+    else -> enabled
 }
 
 private fun OnboardingCardData.toPageUiData() = OnboardingPageUiData(
