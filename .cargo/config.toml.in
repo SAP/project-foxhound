@@ -104,9 +104,9 @@ git = "https://github.com/mozilla/mls-platform-api"
 rev = "bbbf9d51d60e5f63ab2b791ffbfd884c4d1a317b"
 replace-with = "vendored-sources"
 
-[source."git+https://github.com/mozilla/mp4parse-rust?rev=fb7ed9effb5eae0f3768c2c5ec0a63c61f35ba60"]
+[source."git+https://github.com/mozilla/mp4parse-rust?rev=b693c7e4a91d1d5a391c0404d18b6fc94714894e"]
 git = "https://github.com/mozilla/mp4parse-rust"
-rev = "fb7ed9effb5eae0f3768c2c5ec0a63c61f35ba60"
+rev = "b693c7e4a91d1d5a391c0404d18b6fc94714894e"
 replace-with = "vendored-sources"
 
 [source."git+https://github.com/mozilla/neqo?tag=v0.28.0"]
