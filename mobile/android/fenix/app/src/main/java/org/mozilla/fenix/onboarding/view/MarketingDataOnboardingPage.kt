@@ -41,11 +41,13 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTag
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.tooling.preview.PreviewParameterProvider
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import mozilla.components.compose.base.LinkText
 import mozilla.components.compose.base.LinkTextState
@@ -58,6 +60,7 @@ import org.mozilla.fenix.nimbus.MarketingCardVariant
 import org.mozilla.fenix.theme.FirefoxTheme
 
 private val MARKETING_CONTENT_IMAGE_HEIGHT = 150.dp
+private val MARKETING_CONTENT_IMAGE_HEIGHT_TREATMENT_C = 130.dp
 
 /**
  * UI for an onboarding page that allows the user to opt out of marketing data analytics.
@@ -126,12 +129,16 @@ fun MarketingDataOnboardingPage(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.Center,
                         ) {
-                            val imageResource = getImageResourceForVariant(state)
-                            Image(
-                                modifier = Modifier.height(MARKETING_CONTENT_IMAGE_HEIGHT),
-                                painter = painterResource(id = imageResource),
-                                contentDescription = null,
-                            )
+                            state.marketingData?.let {
+                                val imageResource = getImageResourceForVariant(state)
+                                val imageHeight = imageHeightForTreatment(it)
+
+                                Image(
+                                    modifier = Modifier.height(imageHeight),
+                                    painter = painterResource(id = imageResource),
+                                    contentDescription = null,
+                                )
+                            }
                         }
 
                         state.marketingData?.let {
@@ -155,12 +162,16 @@ fun MarketingDataOnboardingPage(
                 )
             }
 
-            if (state.marketingData?.marketingCardVariant != MarketingCardVariant.DEFAULT) {
+            val shouldShowBottomLinkText = state.marketingData?.marketingCardVariant?.let {
+                it == MarketingCardVariant.TREATMENT_A || it == MarketingCardVariant.TREATMENT_B
+            } ?: false
+
+            if (shouldShowBottomLinkText) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.Center,
                 ) {
-                    state.marketingData?.let {
+                    state.marketingData.let {
                         LinkText(
                             text = it.bodyOneLinkText,
                             linkTextStates = listOf(
@@ -191,6 +202,19 @@ fun MarketingDataOnboardingPage(
     LaunchedEffect(Unit) {
         state.onRecordImpressionEvent()
     }
+}
+
+/**
+ * We are temporarily adjusting the image size for treatment c only.
+ */
+@Composable
+private fun imageHeightForTreatment(data: OnboardingMarketingData): Dp {
+    val imageHeight = if (data.marketingCardVariant == MarketingCardVariant.TREATMENT_C) {
+        MARKETING_CONTENT_IMAGE_HEIGHT_TREATMENT_C
+    } else {
+        MARKETING_CONTENT_IMAGE_HEIGHT
+    }
+    return imageHeight
 }
 
 @Composable
@@ -329,21 +353,32 @@ private fun MarketingDataView(
     onMarketingOptInToggle: (optIn: Boolean) -> Unit,
 ) {
     Column {
-        if (marketingData.marketingCardVariant == MarketingCardVariant.DEFAULT) {
-            DefaultContent(
-                checkboxChecked = checkboxChecked,
-                onMarketingOptInToggle = onMarketingOptInToggle,
-                marketingData = marketingData,
-                onMarketingDataLearnMoreClick = onMarketingDataLearnMoreClick,
-            )
-        } else {
-            Row {
+        when (marketingData.marketingCardVariant) {
+            MarketingCardVariant.DEFAULT -> {
+                DefaultContent(
+                    checkboxChecked = checkboxChecked,
+                    onMarketingOptInToggle = onMarketingOptInToggle,
+                    marketingData = marketingData,
+                    onMarketingDataLearnMoreClick = onMarketingDataLearnMoreClick,
+                )
+            }
+
+            MarketingCardVariant.TREATMENT_A,
+            MarketingCardVariant.TREATMENT_B,
+                -> {
                 val bodyCopyRes = bodyCopyForVariant(marketingData.marketingCardVariant)
 
                 Text(
                     text = stringResource(bodyCopyRes),
                     style = FirefoxTheme.typography.body2,
                     textAlign = TextAlign.Start,
+                )
+            }
+
+            MarketingCardVariant.TREATMENT_C -> {
+                TreatmentCContent(
+                    marketingData = marketingData,
+                    onMarketingDataLearnMoreClick = onMarketingDataLearnMoreClick,
                 )
             }
         }
@@ -391,6 +426,44 @@ private fun DefaultContent(
             textAlign = TextAlign.Start,
         )
     }
+}
+
+@Composable
+private fun TreatmentCContent(
+    marketingData: OnboardingMarketingData,
+    onMarketingDataLearnMoreClick: () -> Unit,
+) {
+    val bodyCopyRes = bodyCopyForVariant(marketingData.marketingCardVariant)
+    val bodyCopy = stringResource(bodyCopyRes)
+    val linkCopy = stringResource(R.string.nova_onboarding_marketing_body_link_text_1)
+
+    LinkText(
+        text = bodyCopy.updateFirstPlaceholder(linkCopy),
+        linkTextStates = listOf(
+            LinkTextState(
+                text = linkCopy,
+                url = "",
+                onClick = { onMarketingDataLearnMoreClick() },
+            ),
+        ),
+        linkTextDecoration = TextDecoration.Underline,
+        style = FirefoxTheme.typography.body2,
+        textAlign = TextAlign.Start,
+    )
+
+    Spacer(Modifier.height(16.dp))
+
+    Text(
+        text = stringResource(R.string.nova_onboarding_marketing_body_line_two),
+        style = FirefoxTheme.typography.body2,
+        textAlign = TextAlign.Start,
+    )
+    Text(
+        text = stringResource(R.string.nova_onboarding_marketing_body_line_three),
+        fontWeight = FontWeight.Bold,
+        style = FirefoxTheme.typography.body2,
+        textAlign = TextAlign.Start,
+    )
 }
 
 @Composable
@@ -447,9 +520,8 @@ private fun bodyCopyForVariant(marketingCardVariant: MarketingCardVariant) =
     when (marketingCardVariant) {
         MarketingCardVariant.DEFAULT -> R.string.nova_onboarding_marketing_body_2
         MarketingCardVariant.TREATMENT_A -> R.string.nova_onboarding_marketing_body_3
-        MarketingCardVariant.TREATMENT_B,
-        MarketingCardVariant.TREATMENT_C,
-            -> R.string.nova_onboarding_marketing_body_4
+        MarketingCardVariant.TREATMENT_B -> R.string.nova_onboarding_marketing_body_4
+        MarketingCardVariant.TREATMENT_C -> R.string.nova_onboarding_marketing_body_7
     }
 
 private class BodyResourcePreviewProvider : PreviewParameterProvider<MarketingCardVariant> {
