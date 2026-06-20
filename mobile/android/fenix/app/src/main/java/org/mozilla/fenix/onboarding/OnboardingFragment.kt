@@ -92,12 +92,12 @@ class OnboardingFragment : Fragment() {
 
     private val pagesToDisplay by lazy {
         with(requireContext()) {
+            val appWidgetManager = AppWidgetManager.getInstance(this)
             pagesToDisplay(
                 showDefaultBrowserPage = displayDefaultBrowserPage(this),
                 showNotificationPage = canShowNotificationPage(this),
-                showAddWidgetPage = AppWidgetManager.getInstance(requireContext())
-                    ?.let { canShowAddSearchWidgetPrompt(it) }
-                    ?: false,
+                showAddWidgetPage = !BuildManufacturerChecker().isXiaomi() &&
+                    canShowAddSearchWidgetPrompt(appWidgetManager),
             ).toMutableList()
         }
     }
@@ -430,7 +430,6 @@ class OnboardingFragment : Fragment() {
                 showNotificationPage,
                 showAddWidgetPage,
                 requireContext().settings().isTabStripEnabled.not(),
-                BuildManufacturerChecker(),
                 jexlConditions,
             ) { condition -> jexlHelper.evalJexlSafe(condition) }
         }

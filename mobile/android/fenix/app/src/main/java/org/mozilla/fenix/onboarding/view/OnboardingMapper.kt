@@ -4,7 +4,6 @@
 
 package org.mozilla.fenix.onboarding.view
 
-import mozilla.components.support.utils.ManufacturerChecker
 import org.mozilla.fenix.nimbus.CustomizationToolbarData
 import org.mozilla.fenix.nimbus.MarketingData
 import org.mozilla.fenix.nimbus.OnboardingCardData
@@ -15,13 +14,11 @@ import org.mozilla.fenix.nimbus.ToolbarType
 /**
  * Returns a list of all the required Nimbus 'cards' that have been converted to [OnboardingPageUiData].
  */
-@Suppress("LongParameterList")
 internal fun Collection<OnboardingCardData>.toPageUiData(
     showDefaultBrowserPage: Boolean,
     showNotificationPage: Boolean,
     showAddWidgetPage: Boolean,
     showToolbarPage: Boolean,
-    manufacturerChecker: ManufacturerChecker,
     jexlConditions: Map<String, String>,
     jexlEvaluator: (String) -> Boolean,
 ): List<OnboardingPageUiData> {
@@ -29,9 +26,6 @@ internal fun Collection<OnboardingCardData>.toPageUiData(
     return asSequence().filter { it.shouldDisplayCard(jexlEvaluator, jexlConditions) }
         // we are then filtering again based on device capabilities
         .filter { it.isCardEnabled(showDefaultBrowserPage, showNotificationPage, showAddWidgetPage, showToolbarPage) }
-        // Don't show the Add Search Widget card on Xiaomi devices because the system prompt doesn't work
-        // without permissions on many Xiaomi devices.
-        .filterNot { it.cardType == OnboardingCardType.ADD_SEARCH_WIDGET && manufacturerChecker.isXiaomi() }
         .sortedBy { it.ordering }
         .map { it.toPageUiData() }
         .toList()
