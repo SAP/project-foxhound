@@ -19,7 +19,6 @@ class OnboardingMapperTest {
             description = "default browser body with link text",
             primaryButton = Action("default browser primary button text", unitLambda),
             secondaryButton = Action("default browser secondary button text", unitLambda),
-            shouldShowElevation = true,
         )
 
         val onboardingPageUiData = OnboardingPageUiData(
@@ -42,7 +41,6 @@ class OnboardingMapperTest {
             onAddFirefoxWidgetSkipClick = {},
             onCustomizeToolbarButtonClick = {},
             onTermsOfServiceButtonClick = {},
-            shouldShowElevation = true,
         )
 
         assertEquals(expected, actual)
@@ -56,7 +54,6 @@ class OnboardingMapperTest {
             description = "sync body",
             primaryButton = Action("sync primary button text", unitLambda),
             secondaryButton = Action("sync secondary button text", unitLambda),
-            shouldShowElevation = true,
         )
 
         val onboardingPageUiData = OnboardingPageUiData(
@@ -79,7 +76,6 @@ class OnboardingMapperTest {
             onAddFirefoxWidgetSkipClick = {},
             onCustomizeToolbarButtonClick = {},
             onTermsOfServiceButtonClick = {},
-            shouldShowElevation = true,
         )
 
         assertEquals(expected, actual)
@@ -93,7 +89,6 @@ class OnboardingMapperTest {
             description = "notification body",
             primaryButton = Action("notification primary button text", unitLambda),
             secondaryButton = Action("notification secondary button text", unitLambda),
-            shouldShowElevation = true,
         )
 
         val onboardingPageUiData = OnboardingPageUiData(
@@ -116,7 +111,6 @@ class OnboardingMapperTest {
             onAddFirefoxWidgetSkipClick = {},
             onCustomizeToolbarButtonClick = {},
             onTermsOfServiceButtonClick = {},
-            shouldShowElevation = true,
         )
 
         assertEquals(expected, actual)
@@ -130,7 +124,6 @@ class OnboardingMapperTest {
             description = "add search widget body with link text",
             primaryButton = Action("add search widget primary button text", unitLambda),
             secondaryButton = Action("add search widget secondary button text", unitLambda),
-            shouldShowElevation = true,
         )
 
         val onboardingPageUiData = OnboardingPageUiData(
@@ -153,7 +146,6 @@ class OnboardingMapperTest {
             onAddFirefoxWidgetSkipClick = unitLambda,
             onCustomizeToolbarButtonClick = {},
             onTermsOfServiceButtonClick = {},
-            shouldShowElevation = true,
         )
 
         assertEquals(expected, actual)
@@ -180,7 +172,6 @@ class OnboardingMapperTest {
             description = "Keep searches within reach",
             primaryButton = Action("Save and continue", unitLambda),
             toolbarOptions = toolbarOptions,
-            shouldShowElevation = true,
         )
 
         val onboardingPageUiData = OnboardingPageUiData(
@@ -205,7 +196,6 @@ class OnboardingMapperTest {
             onCustomizeToolbarButtonClick = unitLambda,
             onTermsOfServiceButtonClick = {},
             onMarketingDataContinueClick = {},
-            shouldShowElevation = true,
         )
 
         assertEquals(expected, actual)
@@ -226,7 +216,6 @@ class OnboardingMapperTest {
             description = "marketing data body",
             primaryButton = Action("marketing data button text", unitLambda),
             marketingData = marketingData,
-            shouldShowElevation = true,
         )
 
         val onboardingPageUiData = OnboardingPageUiData(
@@ -251,7 +240,6 @@ class OnboardingMapperTest {
             onCustomizeToolbarButtonClick = {},
             onTermsOfServiceButtonClick = {},
             onMarketingDataContinueClick = unitLambda,
-            shouldShowElevation = true,
         )
 
         assertEquals(expected, actual)

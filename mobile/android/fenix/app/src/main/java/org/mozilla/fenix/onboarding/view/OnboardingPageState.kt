@@ -19,7 +19,6 @@ import org.mozilla.fenix.nimbus.MarketingCardVariant
  * @property toolbarOptions Optional list of toolbar selection options.
  * @property marketingData Optional marketing page data.
  * @property onRecordImpressionEvent Callback for recording impression event.
- * @property shouldShowElevation Whether to show elevation/shadow for the page card.
  * @property isSmallDevice Whether to apply layout optimizations for constrained screen heights.
  */
 data class OnboardingPageState(
@@ -32,7 +31,6 @@ data class OnboardingPageState(
     val toolbarOptions: List<ToolbarOption>? = null,
     val marketingData: OnboardingMarketingData? = null,
     val onRecordImpressionEvent: () -> Unit = {},
-    val shouldShowElevation: Boolean = true,
     val isSmallDevice: Boolean = false,
 )
 

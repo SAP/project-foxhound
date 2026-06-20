@@ -83,7 +83,7 @@ private fun CardView(
     ) {
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(if (pageState.shouldShowElevation) 6.dp else 0.dp),
+        elevation = CardDefaults.cardElevation(if (!pageState.isSmallDevice) 6.dp else 0.dp),
     ) {
             val verticalPadding = if (isSmallDevice) 0.dp else FirefoxTheme.layout.space.static300
             Column(

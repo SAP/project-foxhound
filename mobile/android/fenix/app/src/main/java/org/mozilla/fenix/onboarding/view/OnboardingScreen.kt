@@ -388,7 +388,6 @@ private fun OnboardingContent(
                     onAddFirefoxWidgetSkipClick = onSkipFirefoxWidgetClick,
                     onCustomizeToolbarButtonClick = onCustomizeToolbarButtonClick,
                     onTermsOfServiceButtonClick = onAgreeAndConfirmTermsOfService,
-                    shouldShowElevation = !layout.isSmall,
                     isSmallDevice = layout.isSmall,
                 )
 
