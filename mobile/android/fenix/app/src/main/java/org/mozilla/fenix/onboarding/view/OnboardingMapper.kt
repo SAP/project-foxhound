@@ -21,8 +21,8 @@ internal fun Collection<OnboardingCardData>.toPageUiData(
     showNotificationPage: Boolean,
     showAddWidgetPage: Boolean,
     showToolbarPage: Boolean,
-    jexlConditions: Map<String, String>,
     manufacturerChecker: ManufacturerChecker,
+    jexlConditions: Map<String, String>,
     jexlEvaluator: (String) -> Boolean,
 ): List<OnboardingPageUiData> {
     // we are first filtering the cards based on Nimbus configuration

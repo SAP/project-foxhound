@@ -71,8 +71,8 @@ class OnboardingMapperTest {
                 showNotificationPage = true,
                 showAddWidgetPage = false,
                 showToolbarPage = false,
-                jexlConditions = jexlConditions,
                 manufacturerChecker = testManufacturerChecker,
+                jexlConditions = jexlConditions,
                 jexlEvaluator = evalFunction,
             ),
         )
@@ -88,8 +88,8 @@ class OnboardingMapperTest {
                 showNotificationPage = false,
                 showAddWidgetPage = false,
                 showToolbarPage = false,
-                jexlConditions = jexlConditions,
                 manufacturerChecker = testManufacturerChecker,
+                jexlConditions = jexlConditions,
                 jexlEvaluator = evalFunction,
             ),
         )
@@ -105,8 +105,8 @@ class OnboardingMapperTest {
                 showNotificationPage = false,
                 showAddWidgetPage = true,
                 showToolbarPage = false,
-                jexlConditions = jexlConditions,
                 manufacturerChecker = testManufacturerChecker,
+                jexlConditions = jexlConditions,
                 jexlEvaluator = evalFunction,
             ),
         )
@@ -122,8 +122,8 @@ class OnboardingMapperTest {
                 showNotificationPage = false,
                 showAddWidgetPage = true,
                 showToolbarPage = false,
-                jexlConditions = jexlConditions,
                 manufacturerChecker = testManufacturerChecker,
+                jexlConditions = jexlConditions,
                 jexlEvaluator = evalFunction,
             ),
         )
@@ -144,8 +144,8 @@ class OnboardingMapperTest {
                 showNotificationPage = true,
                 showAddWidgetPage = true,
                 showToolbarPage = false,
-                jexlConditions = jexlConditions,
                 manufacturerChecker = testManufacturerChecker,
+                jexlConditions = jexlConditions,
                 jexlEvaluator = evalFunction,
             ),
         )
@@ -167,8 +167,8 @@ class OnboardingMapperTest {
                 showNotificationPage = true,
                 showAddWidgetPage = true,
                 showToolbarPage = true,
-                jexlConditions = jexlConditions,
                 manufacturerChecker = testManufacturerChecker,
+                jexlConditions = jexlConditions,
                 jexlEvaluator = evalFunction,
             ),
         )
@@ -238,8 +238,8 @@ class OnboardingMapperTest {
                 showNotificationPage = false,
                 showAddWidgetPage = false,
                 showToolbarPage = false,
-                jexlConditions = jexlConditions,
                 manufacturerChecker = testManufacturerChecker,
+                jexlConditions = jexlConditions,
                 jexlEvaluator = evalFunction,
             ).last(),
         )
@@ -257,8 +257,8 @@ class OnboardingMapperTest {
                 showNotificationPage = false,
                 showAddWidgetPage = false,
                 showToolbarPage = false,
-                jexlConditions = jexlConditions,
                 manufacturerChecker = testManufacturerChecker,
+                jexlConditions = jexlConditions,
                 jexlEvaluator = evalFunction,
             ),
         )
@@ -276,8 +276,8 @@ class OnboardingMapperTest {
                 showNotificationPage = false,
                 showAddWidgetPage = false,
                 showToolbarPage = false,
-                jexlConditions = jexlConditions,
                 manufacturerChecker = testManufacturerChecker,
+                jexlConditions = jexlConditions,
                 jexlEvaluator = evalFunction,
             ),
         )
@@ -295,8 +295,8 @@ class OnboardingMapperTest {
                 showNotificationPage = false,
                 showAddWidgetPage = false,
                 showToolbarPage = false,
-                jexlConditions = jexlConditions,
                 manufacturerChecker = testManufacturerChecker,
+                jexlConditions = jexlConditions,
                 jexlEvaluator = evalFunction,
             ),
         )
@@ -314,8 +314,8 @@ class OnboardingMapperTest {
                 showNotificationPage = false,
                 showAddWidgetPage = false,
                 showToolbarPage = false,
-                jexlConditions = jexlConditions,
                 manufacturerChecker = testManufacturerChecker,
+                jexlConditions = jexlConditions,
                 jexlEvaluator = evalFunction,
             ),
         )
@@ -333,8 +333,8 @@ class OnboardingMapperTest {
                 showNotificationPage = false,
                 showAddWidgetPage = false,
                 showToolbarPage = false,
-                jexlConditions = jexlConditions,
                 manufacturerChecker = testManufacturerChecker,
+                jexlConditions = jexlConditions,
                 jexlEvaluator = evalFunction,
             ),
         )
@@ -352,8 +352,8 @@ class OnboardingMapperTest {
                 showNotificationPage = false,
                 showAddWidgetPage = false,
                 showToolbarPage = false,
-                jexlConditions = jexlConditions,
                 manufacturerChecker = testManufacturerChecker,
+                jexlConditions = jexlConditions,
                 jexlEvaluator = evalFunction,
             ),
         )
@@ -371,8 +371,8 @@ class OnboardingMapperTest {
                 showNotificationPage = false,
                 showAddWidgetPage = false,
                 showToolbarPage = false,
-                jexlConditions = jexlConditions,
                 manufacturerChecker = testManufacturerChecker,
+                jexlConditions = jexlConditions,
                 jexlEvaluator = evalFunction,
             ),
         )
@@ -390,8 +390,8 @@ class OnboardingMapperTest {
                 showNotificationPage = false,
                 showAddWidgetPage = false,
                 showToolbarPage = false,
-                jexlConditions = jexlConditions,
                 manufacturerChecker = testManufacturerChecker,
+                jexlConditions = jexlConditions,
                 jexlEvaluator = evalFunction,
             ),
         )
@@ -409,8 +409,8 @@ class OnboardingMapperTest {
                 showNotificationPage = false,
                 showAddWidgetPage = false,
                 showToolbarPage = false,
-                jexlConditions = jexlConditions,
                 manufacturerChecker = testManufacturerChecker,
+                jexlConditions = jexlConditions,
                 jexlEvaluator = evalFunction,
             ),
         )
@@ -428,8 +428,8 @@ class OnboardingMapperTest {
                 showNotificationPage = false,
                 showAddWidgetPage = false,
                 showToolbarPage = false,
-                jexlConditions = jexlConditions,
                 manufacturerChecker = testManufacturerChecker,
+                jexlConditions = jexlConditions,
                 jexlEvaluator = evalFunction,
             ),
         )
@@ -447,8 +447,8 @@ class OnboardingMapperTest {
                 showNotificationPage = true,
                 showAddWidgetPage = true,
                 showToolbarPage = false,
-                jexlConditions = jexlConditions,
                 manufacturerChecker = testManufacturerChecker,
+                jexlConditions = jexlConditions,
                 jexlEvaluator = evalFunction,
             ),
         )
@@ -471,8 +471,8 @@ class OnboardingMapperTest {
                 showNotificationPage = true,
                 showAddWidgetPage = true,
                 showToolbarPage = false,
-                jexlConditions = jexlConditions,
                 manufacturerChecker = testManufacturerChecker,
+                jexlConditions = jexlConditions,
                 jexlEvaluator = evalFunction,
             ),
         )

@@ -430,8 +430,8 @@ class OnboardingFragment : Fragment() {
                 showNotificationPage,
                 showAddWidgetPage,
                 requireContext().settings().isTabStripEnabled.not(),
-                jexlConditions,
                 BuildManufacturerChecker(),
+                jexlConditions,
             ) { condition -> jexlHelper.evalJexlSafe(condition) }
         }
     }
