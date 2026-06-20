@@ -71,16 +71,6 @@ nsresult StringToUsage(const nsString& aUsage, CryptoKey::KeyUsage& aUsageOut) {
   return NS_OK;
 }
 
-// This helper function will release the memory backing a SECKEYPrivateKey and
-// any resources acquired in its creation. It will leave the backing PKCS#11
-// object untouched, however. This should only be called from
-// PrivateKeyFromPrivateKeyTemplate.
-static void DestroyPrivateKeyWithoutDestroyingPKCS11Object(
-    SECKEYPrivateKey* key) {
-  PK11_FreeSlot(key->pkcs11Slot);
-  PORT_FreeArena(key->arena, PR_TRUE);
-}
-
 // To protect against key ID collisions, PrivateKeyFromPrivateKeyTemplate
 // generates a random ID for each key. The given template must contain an
 // attribute slot for a key ID, but it must consist of a null pointer and have a
@@ -103,12 +93,9 @@ UniqueSECKEYPrivateKey PrivateKeyFromPrivateKeyTemplate(
   SECKEYPrivateKey* preexistingKey =
       PK11_FindKeyByKeyID(slot.get(), objID.get(), nullptr);
   if (preexistingKey) {
-    // Note that we can't just call SECKEY_DestroyPrivateKey here because that
-    // will destroy the PKCS#11 object that is backing a preexisting key (that
-    // we still have a handle on somewhere else in memory). If that object were
-    // destroyed, cryptographic operations performed by that other key would
-    // fail.
-    DestroyPrivateKeyWithoutDestroyingPKCS11Object(preexistingKey);
+    // PK11_FindKeyByKeyID returns a non-owning reference, so destroying it
+    // here does not touch the PKCS#11 object backing the preexisting key.
+    SECKEY_DestroyPrivateKey(preexistingKey);
     // Try again with a new ID (but only once - collisions are very unlikely).
     rv = PK11_GenerateRandomOnSlot(slot.get(), objID->data, objID->len);
     if (rv != SECSuccess) {
@@ -116,7 +103,7 @@ UniqueSECKEYPrivateKey PrivateKeyFromPrivateKeyTemplate(
     }
     preexistingKey = PK11_FindKeyByKeyID(slot.get(), objID.get(), nullptr);
     if (preexistingKey) {
-      DestroyPrivateKeyWithoutDestroyingPKCS11Object(preexistingKey);
+      SECKEY_DestroyPrivateKey(preexistingKey);
       return nullptr;
     }
   }
@@ -147,9 +134,16 @@ UniqueSECKEYPrivateKey PrivateKeyFromPrivateKeyTemplate(
     return nullptr;
   }
 
-  // Have NSS translate the object to a private key.
-  return UniqueSECKEYPrivateKey(
+  // Have NSS translate the object to a private key. Since NSS 3.122 (bug
+  // 2017945) PK11_FindKeyByKeyID returns a wrapper that does not own the
+  // underlying PKCS#11 object. We created this session object above, so we own
+  // it and must mark it owned so it is destroyed along with the key.
+  UniqueSECKEYPrivateKey privKey(
       PK11_FindKeyByKeyID(slot.get(), objID.get(), nullptr));
+  if (privKey) {
+    SECKEYPRIVATEKEY_SET_OWNED(privKey.get(), PR_TRUE);
+  }
+  return privKey;
 }
 
 CryptoKey::CryptoKey(nsIGlobalObject* aGlobal)
