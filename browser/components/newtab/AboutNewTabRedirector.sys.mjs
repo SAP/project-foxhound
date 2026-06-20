@@ -498,6 +498,7 @@ export class AboutNewTabRedirectorParent extends BaseAboutNewTabRedirector {
           pageshow: {},
           visibilitychange: {},
         },
+        observers: ["intl:l10n-sources-changed"],
       },
       // The wildcard on about:newtab is for the # parameter
       // that is used for the newtab devtools. The wildcard for about:home
