@@ -85,8 +85,8 @@ pane-appearance-title = Appearance
 pane-downloads-title2 = Downloads
   .title = Downloads
 
-pane-downloads2 =
-    .heading = { pane-downloads-title2 }
+pane-downloads3 =
+    .heading = Downloads
 
 pane-accessibility-title = Accessibility
   .title = { pane-accessibility-title }
@@ -94,8 +94,8 @@ pane-accessibility-title = Accessibility
 pane-languages-title2 = Languages
   .title = Languages
 
-preferences-languages-header2 =
-    .heading = { pane-languages-title2 }
+preferences-languages-header3 =
+    .heading = Languages
 
 settings-pane-labs-title2 = { -firefoxlabs-brand-name }
   .title = { -firefoxlabs-brand-name }
@@ -2518,8 +2518,8 @@ motion-and-link-group =
 
 ## AI controls page
 
-preferences-ai-controls-header2 =
-    .heading = { pane-ai-controls-title2 }
+preferences-ai-controls-header3 =
+    .heading = AI controls
 
 preferences-ai-controls-description = You always have a choice in { -brand-short-name }, including whether to use features enhanced with AI. More controls coming soon.
 

@@ -251,7 +251,7 @@ const CONFIG_PANES = Object.freeze({
     visible: () => srdSectionPrefs.all,
   },
   ai: {
-    l10nId: "preferences-ai-controls-header2",
+    l10nId: "preferences-ai-controls-header3",
     iconSrc: "chrome://global/skin/icons/highlights.svg",
     groupIds: ["aiControlsDescription", "aiFeatures", "aiStatesDescription"],
     module: "chrome://browser/content/preferences/config/aiFeatures.mjs",
@@ -259,7 +259,7 @@ const CONFIG_PANES = Object.freeze({
       Services.prefs.getBoolPref("browser.preferences.aiControls", false),
   },
   downloads: {
-    l10nId: "pane-downloads2",
+    l10nId: "pane-downloads3",
     iconSrc: "chrome://browser/skin/downloads/downloads.svg",
     groupIds: ["downloads", "applications"],
     module: "chrome://browser/content/preferences/config/downloads.mjs",
@@ -321,7 +321,7 @@ const CONFIG_PANES = Object.freeze({
     replaces: "home",
   },
   languages: {
-    l10nId: "preferences-languages-header2",
+    l10nId: "preferences-languages-header3",
     iconSrc: "chrome://browser/skin/translations.svg",
     groupIds: [
       "browserLanguage",
