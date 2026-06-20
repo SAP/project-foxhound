@@ -214,25 +214,23 @@ private fun SecondaryButton(
 
 @Composable
 private fun getImageResourceForVariant(state: OnboardingPageState): Int {
-    val imageResource =
-        state.marketingData?.let {
-            imageResourceForVariant(
-                defaultImageResource = state.imageRes,
-                marketingCardVariant = it.marketingCardVariant,
-            )
-        } ?: state.imageRes
+    val imageResource = state.marketingData?.let {
+        imageResourceForVariant(
+            defaultImageResource = state.imageRes,
+            marketingCardVariant = it.marketingCardVariant,
+        )
+    } ?: state.imageRes
     return imageResource
 }
 
 @Composable
 private fun getTitleForVariant(state: OnboardingPageState): String {
-    val title =
-        state.marketingData?.let {
-            titleCopyForVariant(
-                defaultString = state.title,
-                marketingCardVariant = it.marketingCardVariant,
-            )
-        } ?: state.title
+    val title = state.marketingData?.let {
+        titleCopyForVariant(
+            defaultString = state.title,
+            marketingCardVariant = it.marketingCardVariant,
+        )
+    } ?: state.title
     return title
 }
 
@@ -332,40 +330,12 @@ private fun MarketingDataView(
 ) {
     Column {
         if (marketingData.marketingCardVariant == MarketingCardVariant.DEFAULT) {
-            Row(
-                Modifier.toggleable(
-                    value = checkboxChecked,
-                    role = Role.Checkbox,
-                    onValueChange = {
-                        onMarketingOptInToggle.invoke(!checkboxChecked)
-                    },
-                ),
-            ) {
-                Checkbox(
-                    modifier = Modifier
-                        .align(Alignment.Top)
-                        .offset(y = (-12).dp, x = (-12).dp)
-                        .clearAndSetSemantics {},
-                    checked = checkboxChecked,
-                    onCheckedChange = {
-                        onMarketingOptInToggle.invoke(!checkboxChecked)
-                    },
-                )
-
-                LinkText(
-                    text = marketingData.bodyOneText.updateFirstPlaceholder(marketingData.bodyOneLinkText),
-                    linkTextStates = listOf(
-                        LinkTextState(
-                            text = marketingData.bodyOneLinkText,
-                            url = "",
-                            onClick = { onMarketingDataLearnMoreClick() },
-                        ),
-                    ),
-                    linkTextDecoration = TextDecoration.Underline,
-                    style = FirefoxTheme.typography.body2,
-                    textAlign = TextAlign.Start,
-                )
-            }
+            DefaultContent(
+                checkboxChecked = checkboxChecked,
+                onMarketingOptInToggle = onMarketingOptInToggle,
+                marketingData = marketingData,
+                onMarketingDataLearnMoreClick = onMarketingDataLearnMoreClick,
+            )
         } else {
             Row {
                 val bodyCopyRes = bodyCopyForVariant(marketingData.marketingCardVariant)
@@ -377,6 +347,49 @@ private fun MarketingDataView(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun DefaultContent(
+    checkboxChecked: Boolean,
+    onMarketingOptInToggle: (Boolean) -> Unit,
+    marketingData: OnboardingMarketingData,
+    onMarketingDataLearnMoreClick: () -> Unit,
+) {
+    Row(
+        Modifier.toggleable(
+            value = checkboxChecked,
+            role = Role.Checkbox,
+            onValueChange = {
+                onMarketingOptInToggle.invoke(!checkboxChecked)
+            },
+        ),
+    ) {
+        Checkbox(
+            modifier = Modifier
+                .align(Alignment.Top)
+                .offset(y = (-12).dp, x = (-12).dp)
+                .clearAndSetSemantics {},
+            checked = checkboxChecked,
+            onCheckedChange = {
+                onMarketingOptInToggle.invoke(!checkboxChecked)
+            },
+        )
+
+        LinkText(
+            text = marketingData.bodyOneText.updateFirstPlaceholder(marketingData.bodyOneLinkText),
+            linkTextStates = listOf(
+                LinkTextState(
+                    text = marketingData.bodyOneLinkText,
+                    url = "",
+                    onClick = { onMarketingDataLearnMoreClick() },
+                ),
+            ),
+            linkTextDecoration = TextDecoration.Underline,
+            style = FirefoxTheme.typography.body2,
+            textAlign = TextAlign.Start,
+        )
     }
 }
 
