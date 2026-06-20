@@ -23,10 +23,10 @@ internal fun Collection<OnboardingCardData>.toPageUiData(
     showToolbarPage: Boolean,
     jexlConditions: Map<String, String>,
     manufacturerChecker: ManufacturerChecker,
-    func: (String) -> Boolean,
+    jexlEvaluator: (String) -> Boolean,
 ): List<OnboardingPageUiData> {
     // we are first filtering the cards based on Nimbus configuration
-    return filter { it.shouldDisplayCard(func, jexlConditions) }
+    return asSequence().filter { it.shouldDisplayCard(jexlEvaluator, jexlConditions) }
         // we are then filtering again based on device capabilities
         .filter { it.isCardEnabled(showDefaultBrowserPage, showNotificationPage, showAddWidgetPage, showToolbarPage) }
         // Don't show the Add Search Widget card on Xiaomi devices because the system prompt doesn't work
@@ -34,6 +34,7 @@ internal fun Collection<OnboardingCardData>.toPageUiData(
         .filterNot { it.cardType == OnboardingCardType.ADD_SEARCH_WIDGET && manufacturerChecker.isXiaomi() }
         .sortedBy { it.ordering }
         .map { it.toPageUiData() }
+        .toList()
 }
 
 private fun OnboardingCardData.isCardEnabled(
@@ -53,13 +54,14 @@ private fun OnboardingCardData.isCardEnabled(
 /**
  *  Determines whether the given [OnboardingCardData] should be displayed.
  *
- *  @param func Function that receives a condition as a [String] and returns its JEXL evaluation as a [Boolean].
+ *  @param jexlEvaluator Function that receives a condition as a [String] and returns its JEXL
+ *  evaluation as a [Boolean].
  *  @param jexlConditions A <String, String> map containing the Nimbus conditions.
  *
  *  @return True if the card should be displayed, otherwise false.
  */
 private fun OnboardingCardData.shouldDisplayCard(
-    func: (String) -> Boolean,
+    jexlEvaluator: (String) -> Boolean,
     jexlConditions: Map<String, String>,
 ): Boolean {
     val jexlCache: MutableMap<String, Boolean> = mutableMapOf()
@@ -76,7 +78,7 @@ private fun OnboardingCardData.shouldDisplayCard(
     val validPrerequisites = if (allPrerequisites.size == prerequisites.size) {
         allPrerequisites.all { condition ->
             jexlCache.getOrPut(condition) {
-                func(condition)
+                jexlEvaluator(condition)
             }
         }
     } else {
@@ -87,7 +89,7 @@ private fun OnboardingCardData.shouldDisplayCard(
         if (allDisqualifiers.isNotEmpty() && allDisqualifiers.size == disqualifiers.size) {
             allDisqualifiers.all { condition ->
                 jexlCache.getOrPut(condition) {
-                    func(condition)
+                    jexlEvaluator(condition)
                 }
             }
         } else {
