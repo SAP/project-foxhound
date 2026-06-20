@@ -85,10 +85,11 @@ private fun CardView(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(if (pageState.shouldShowElevation) 6.dp else 0.dp),
     ) {
+            val verticalPadding = if (isSmallDevice) 0.dp else FirefoxTheme.layout.space.static300
             Column(
                 modifier = Modifier.padding(
-                    horizontal = 16.dp,
-                    vertical = if (isSmallDevice) 0.dp else 24.dp,
+                    horizontal = FirefoxTheme.layout.space.static200,
+                    vertical = verticalPadding,
                 ),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
@@ -133,16 +134,17 @@ private fun ColumnScope.Content(
         CompositionLocalProvider(
             LocalOverscrollFactory provides null,
         ) {
+            val startPadding = 20.dp
             Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .verticalScroll(scrollState)
-                    .padding(start = 20.dp, end = 32.dp),
+                    .padding(start = startPadding, end = FirefoxTheme.layout.space.static400),
                 verticalArrangement = Arrangement.spacedBy(36.dp),
             ) {
                 Text(
                     text = pageState.title,
-                    style = MaterialTheme.typography.headlineSmall,
+                    style = FirefoxTheme.typography.headline6,
                 )
 
                 Box(

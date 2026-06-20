@@ -433,8 +433,20 @@
     <ID>HardcodedPaddingUsage:WebCompatReporter.kt$(vertical = 6.dp)</ID>
     <ID>HardcodedPaddingUsage:WebCompatReporterPreviewSheet.kt$(top = 72.dp)</ID>
     <ID>HardcodedPaddingUsage:Wordmark.kt$(end = 10.dp)</ID>
-    <ID>LongMethod:ThemeOnboardingPage.kt$@Composable private fun SelectableImageItem( boxWithConstraintsScope: BoxWithConstraintsScope, themeOption: ThemeOption, selectedOption: ThemeOptionType, onClick: (ThemeOptionType) -&gt; Unit, )</ID>
+    <ID>MaterialTextButtonUsage:AppLinksPromptFragment.kt$import androidx.compose.material3.TextButton</ID>
+    <ID>MaterialTextButtonUsage:HomeSectionHeader.kt$import androidx.compose.material3.TextButton</ID>
+    <ID>MaterialTextButtonUsage:WallpaperOnboarding.kt$import androidx.compose.material3.TextButton</ID>
+    <ID>MaterialTypographyUsage:ContinuousOnboardingScreen.kt$MaterialTheme.typography</ID>
+    <ID>MaterialTypographyUsage:DownloadDeleteBehaviorComposePreference.kt$MaterialTheme.typography</ID>
+    <ID>MaterialTypographyUsage:DownloadsScreen.kt$MaterialTheme.typography</ID>
+    <ID>MaterialTypographyUsage:FontSizeSlider.kt$MaterialTheme.typography</ID>
+    <ID>MaterialTypographyUsage:IPProtectionBottomSheet.kt$MaterialTheme.typography</ID>
+    <ID>MaterialTypographyUsage:NimbusExperiments.kt$MaterialTheme.typography</ID>
+    <ID>MaterialTypographyUsage:RenameAndChangeLocationDialogContent.kt$MaterialTheme.typography</ID>
+    <ID>MaterialTypographyUsage:SyncedTabsList.kt$MaterialTheme.typography</ID>
+    <ID>MaterialTypographyUsage:TabGroupColors.kt$MaterialTheme.typography</ID>
     <ID>MaxLineLength:TelemetryMiddleware.kt$TelemetryMiddleware$@Suppress("TooGenericExceptionCaught", "CognitiveComplexMethod", "NestedBlockDepth", "LongMethod", "CyclomaticComplexMethod")</ID>
+    <ID>LongMethod:ThemeOnboardingPage.kt$@Composable private fun SelectableImageItem( boxWithConstraintsScope: BoxWithConstraintsScope, themeOption: ThemeOption, selectedOption: ThemeOptionType, onClick: (ThemeOptionType) -&gt; Unit, )</ID>
     <ID>UndocumentedPublicClass:AboutItem.kt$AboutItem</ID>
     <ID>UndocumentedPublicClass:AboutItem.kt$AboutItem$Crashes : AboutItem</ID>
     <ID>UndocumentedPublicClass:AboutItem.kt$AboutItem$ExternalLink : AboutItem</ID>

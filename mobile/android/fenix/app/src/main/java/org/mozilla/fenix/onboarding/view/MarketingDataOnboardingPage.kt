@@ -81,10 +81,11 @@ fun MarketingDataOnboardingPage(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(if (state.shouldShowElevation) 6.dp else 0.dp),
     ) {
+        val verticalPadding = if (state.isSmallDevice) 0.dp else FirefoxTheme.layout.space.static300
         Column(
             modifier = Modifier.padding(
-                horizontal = 16.dp,
-                vertical = if (state.isSmallDevice) 0.dp else 24.dp,
+                horizontal = FirefoxTheme.layout.space.static200,
+                vertical = verticalPadding,
             ),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -106,18 +107,19 @@ fun MarketingDataOnboardingPage(
                 CompositionLocalProvider(
                     LocalOverscrollFactory provides null,
                 ) {
+                    val startPadding = 20.dp
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
                             .verticalScroll(scrollState)
-                            .padding(start = 20.dp, end = 32.dp),
+                            .padding(start = startPadding, end = FirefoxTheme.layout.space.static400),
                         verticalArrangement = Arrangement.spacedBy(36.dp),
                     ) {
                         val title = getTitleForVariant(state)
                         Text(
                             text = title,
                             textAlign = TextAlign.Start,
-                            style = MaterialTheme.typography.headlineSmall,
+                            style = FirefoxTheme.typography.headline6,
                         )
 
                         Row(

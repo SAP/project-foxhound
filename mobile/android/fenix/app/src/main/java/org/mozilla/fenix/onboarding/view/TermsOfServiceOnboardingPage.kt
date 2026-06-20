@@ -69,10 +69,11 @@ fun TermsOfServiceOnboardingPage(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(if (pageState.shouldShowElevation) 6.dp else 0.dp),
     ) {
+        val verticalPadding = if (pageState.isSmallDevice) 0.dp else FirefoxTheme.layout.space.static300
         Column(
             modifier = Modifier.padding(
-                horizontal = 16.dp,
-                vertical = if (pageState.isSmallDevice) 0.dp else 24.dp,
+                horizontal = FirefoxTheme.layout.space.static200,
+                vertical = verticalPadding,
             ),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -97,7 +98,7 @@ fun TermsOfServiceOnboardingPage(
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(end = 12.dp)
+                            .padding(end = FirefoxTheme.layout.space.static150)
                             .verticalScroll(scrollState),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
@@ -160,7 +161,7 @@ private fun Header(pageState: OnboardingPageState) {
     Text(
         text = pageState.title,
         textAlign = TextAlign.Center,
-        style = MaterialTheme.typography.headlineMedium,
+        style = FirefoxTheme.typography.headline6,
     )
 
     Spacer(Modifier.height(20.dp))
@@ -200,7 +201,7 @@ private fun BodyText(
     eventHandler: OnboardingTermsOfServiceEventHandler,
 ) {
     with(termsOfService) {
-        Column(modifier = Modifier.padding(horizontal = 8.dp)) {
+        Column(modifier = Modifier.padding(horizontal = FirefoxTheme.layout.space.static100)) {
             val bodyOneLinkState = LinkTextState(
                 text = lineOneLinkText,
                 url = lineOneLinkUrl,
