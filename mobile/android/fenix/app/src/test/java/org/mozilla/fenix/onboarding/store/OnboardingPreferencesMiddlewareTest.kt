@@ -18,7 +18,6 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.mozilla.fenix.onboarding.view.ThemeOptionType
 import org.mozilla.fenix.onboarding.view.ToolbarOptionType
 
 @RunWith(AndroidJUnit4::class)
@@ -44,29 +43,6 @@ class OnboardingPreferencesMiddlewareTest {
 
             verify { repository.init() }
             verify { repository.onboardingPreferenceUpdates }
-            confirmVerified(repository)
-        }
-
-    @Test
-    fun `GIVEN update selected theme action with WHEN middleware is invoked THEN the repo update function is called with the selected theme`() =
-        runTest {
-            val middleware = OnboardingPreferencesMiddleware(repository, this)
-
-            every { repository.updateOnboardingPreference(any()) } just Runs
-            middleware.invoke(
-                store = mockk(),
-                next = {},
-                action = OnboardingAction.OnboardingThemeAction.UpdateSelected(ThemeOptionType.THEME_DARK),
-            )
-            testScheduler.advanceUntilIdle()
-
-            verify {
-                repository.updateOnboardingPreference(
-                    OnboardingPreferencesRepository.OnboardingPreferenceUpdate(
-                        OnboardingPreferencesRepository.OnboardingPreference.DarkTheme,
-                    ),
-                )
-            }
             confirmVerified(repository)
         }
 

@@ -5,21 +5,19 @@
 package org.mozilla.fenix.onboarding.view
 
 import mozilla.components.support.utils.ManufacturerChecker
-import org.mozilla.fenix.nimbus.CustomizationThemeData
 import org.mozilla.fenix.nimbus.CustomizationToolbarData
 import org.mozilla.fenix.nimbus.MarketingData
 import org.mozilla.fenix.nimbus.OnboardingCardData
 import org.mozilla.fenix.nimbus.OnboardingCardType
 import org.mozilla.fenix.nimbus.TermsOfServiceData
-import org.mozilla.fenix.nimbus.ThemeType
 import org.mozilla.fenix.nimbus.ToolbarType
+import org.mozilla.fenix.onboarding.redesign.view.OnboardingPageRedesign
 
 /**
  * Returns a list of all the required Nimbus 'cards' that have been converted to [OnboardingPageUiData].
  */
 @Suppress("LongParameterList")
 internal fun Collection<OnboardingCardData>.toPageUiData(
-    privacyCaption: Caption,
     showDefaultBrowserPage: Boolean,
     showNotificationPage: Boolean,
     showAddWidgetPage: Boolean,
@@ -36,10 +34,7 @@ internal fun Collection<OnboardingCardData>.toPageUiData(
         // without permissions on many Xiaomi devices.
         .filterNot { it.cardType == OnboardingCardType.ADD_SEARCH_WIDGET && manufacturerChecker.isXiaomi() }
         .sortedBy { it.ordering }
-        .mapIndexed { index, onboardingCardData ->
-            // only first onboarding card shows privacy caption
-            onboardingCardData.toPageUiData(if (index == 0) privacyCaption else null)
-        }
+        .map { it.toPageUiData() }
 }
 
 private fun OnboardingCardData.isCardEnabled(
@@ -53,7 +48,6 @@ private fun OnboardingCardData.isCardEnabled(
     OnboardingCardType.ADD_SEARCH_WIDGET -> enabled && showAddWidgetPage
     OnboardingCardType.TOOLBAR_PLACEMENT ->
         showToolbarPage && enabled && extraData?.customizationToolbarData?.isNotEmpty() == true
-    OnboardingCardType.THEME_SELECTION -> enabled && extraData?.customizationThemeData?.isNotEmpty() == true
     else -> enabled
 }
 
@@ -104,20 +98,16 @@ private fun OnboardingCardData.shouldDisplayCard(
     return validPrerequisites && !hasDisqualifiers
 }
 
-private fun OnboardingCardData.toPageUiData(privacyCaption: Caption?) = OnboardingPageUiData(
+private fun OnboardingCardData.toPageUiData() = OnboardingPageUiData(
     type = cardType.toPageUiDataType(),
     imageRes = imageRes.resourceId,
     title = title,
     description = body,
     primaryButtonLabel = primaryButtonLabel,
     secondaryButtonLabel = secondaryButtonLabel.ifEmpty { null },
-    privacyCaption = privacyCaption,
     toolbarOptions = extraData?.customizationToolbarData
         ?.takeIf { it.isNotEmpty() }
         ?.toOnboardingToolbarOptions(),
-    themeOptions = extraData?.customizationThemeData
-        ?.takeIf { it.isNotEmpty() }
-        ?.toOnboardingThemeOptions(),
     termsOfService = extraData?.termOfServiceData?.toOnboardingTermsOfService(),
     marketingData = extraData?.marketingData?.toOnboardingMarketingData(),
 )
@@ -128,7 +118,6 @@ private fun OnboardingCardType.toPageUiDataType() = when (this) {
     OnboardingCardType.NOTIFICATION_PERMISSION -> OnboardingPageUiData.Type.NOTIFICATION_PERMISSION
     OnboardingCardType.ADD_SEARCH_WIDGET -> OnboardingPageUiData.Type.ADD_SEARCH_WIDGET
     OnboardingCardType.TOOLBAR_PLACEMENT -> OnboardingPageUiData.Type.TOOLBAR_PLACEMENT
-    OnboardingCardType.THEME_SELECTION -> OnboardingPageUiData.Type.THEME_SELECTION
     OnboardingCardType.TERMS_OF_SERVICE -> OnboardingPageUiData.Type.TERMS_OF_SERVICE
     OnboardingCardType.MARKETING_DATA -> OnboardingPageUiData.Type.MARKETING_DATA
 }
@@ -171,25 +160,9 @@ private fun ToolbarType.toToolbarOptionType() = when (this) {
     ToolbarType.TOOLBAR_BOTTOM -> ToolbarOptionType.TOOLBAR_BOTTOM
 }
 
-private fun List<CustomizationThemeData>.toOnboardingThemeOptions() = map { it.toOnboardingThemeOption() }
-
-private fun CustomizationThemeData.toOnboardingThemeOption() = with(this) {
-    ThemeOption(
-        label = label,
-        imageRes = imageRes.resourceId,
-        themeType = themeType.toThemeOptionType(),
-    )
-}
-
-private fun ThemeType.toThemeOptionType() = when (this) {
-    ThemeType.THEME_DARK -> ThemeOptionType.THEME_DARK
-    ThemeType.THEME_LIGHT -> ThemeOptionType.THEME_LIGHT
-    ThemeType.THEME_SYSTEM -> ThemeOptionType.THEME_SYSTEM
-}
-
 /**
  * Mapper to convert [OnboardingPageUiData] to [OnboardingPageState] that is a param for
- * [OnboardingPage] composable.
+ * [OnboardingPageRedesign] composable.
  */
 @Suppress("LongParameterList")
 internal fun mapToOnboardingPageState(
@@ -205,7 +178,6 @@ internal fun mapToOnboardingPageState(
     onAddFirefoxWidgetClick: () -> Unit,
     onAddFirefoxWidgetSkipClick: () -> Unit,
     onCustomizeToolbarButtonClick: () -> Unit,
-    onCustomizeThemeClick: () -> Unit = {},
     onTermsOfServiceButtonClick: () -> Unit,
     onMarketingDataContinueClick: () -> Unit = {},
 ): OnboardingPageState = when (onboardingPageUiData.type) {
@@ -249,14 +221,6 @@ internal fun mapToOnboardingPageState(
         isSmallDevice = isSmallDevice,
     )
 
-    OnboardingPageUiData.Type.THEME_SELECTION -> createOnboardingPageState(
-        onboardingPageUiData = onboardingPageUiData,
-        onPositiveButtonClick = onCustomizeThemeClick,
-        onNegativeButtonClick = {}, // No negative button option for theme selection.
-        shouldShowElevation = shouldShowElevation,
-        isSmallDevice = isSmallDevice,
-    )
-
     OnboardingPageUiData.Type.TERMS_OF_SERVICE -> createOnboardingPageState(
         onboardingPageUiData = onboardingPageUiData,
         onPositiveButtonClick = onTermsOfServiceButtonClick,
@@ -288,8 +252,6 @@ private fun createOnboardingPageState(
     secondaryButton = onboardingPageUiData.secondaryButtonLabel?.let {
         Action(it, onNegativeButtonClick)
     },
-    privacyCaption = onboardingPageUiData.privacyCaption,
-    themeOptions = onboardingPageUiData.themeOptions,
     toolbarOptions = onboardingPageUiData.toolbarOptions,
     termsOfService = onboardingPageUiData.termsOfService,
     marketingData = onboardingPageUiData.marketingData,

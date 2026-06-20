@@ -902,7 +902,7 @@ class HomeScreenRobot(private val composeTestRule: ComposeTestRule) {
         ): SettingsRobot.Transition {
             Log.i(TAG, "clickSetAsDefaultBrowserOnboardingButton: Trying to click \"Set as default browser\" onboarding button")
             composeTestRule.onNodeWithText(
-                getStringResource(R.string.juno_onboarding_default_browser_positive_button),
+                getStringResource(R.string.nova_onboarding_set_to_default_button),
             ).performClick()
             Log.i(TAG, "clickSetAsDefaultBrowserOnboardingButton: Clicked \"Set as default browser\" onboarding button")
 
@@ -915,7 +915,7 @@ class HomeScreenRobot(private val composeTestRule: ComposeTestRule) {
         ): SettingsSignInToSyncRobot.Transition {
             Log.i(TAG, "clickSignInOnboardingButton: Trying to click \"Sign in\" onboarding button")
             composeTestRule.onNodeWithText(
-                getStringResource(R.string.juno_onboarding_sign_in_positive_button),
+                getStringResource(R.string.onboarding_redesign_sync_positive_button),
             ).performClick()
             Log.i(TAG, "clickSignInOnboardingButton: Clicked \"Sign in\" onboarding button")
 

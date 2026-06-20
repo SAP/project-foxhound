@@ -51,7 +51,6 @@ import kotlinx.coroutines.launch
 import mozilla.components.compose.base.PagerIndicator
 import mozilla.components.compose.base.annotation.FlexibleWindowLightDarkPreview
 import mozilla.components.lib.state.ext.observeAsComposableState
-import mozilla.components.support.base.log.logger.Logger
 import org.mozilla.fenix.R
 import org.mozilla.fenix.components.appstate.AppAction
 import org.mozilla.fenix.components.appstate.setup.checklist.ChecklistItem
@@ -74,7 +73,6 @@ import org.mozilla.fenix.utils.isLargeScreenSize
  * The small device max height. The value comes from [org.mozilla.fenix.ext.isTallWindow].
  */
 private val SMALL_SCREEN_MAX_HEIGHT = 570.dp
-private val logger: Logger = Logger("OnboardingScreenRedesign")
 
 /**
  * A screen for displaying onboarding.
@@ -499,12 +497,6 @@ private fun OnboardingPageForType(
             state,
             termsOfServiceEventHandler,
         )
-
-        // no-ops
-        OnboardingPageUiData.Type.THEME_SELECTION,
-            -> {
-            logger.error("Unsupported page type: $type used for onboarding redesign.")
-        }
     }
 }
 

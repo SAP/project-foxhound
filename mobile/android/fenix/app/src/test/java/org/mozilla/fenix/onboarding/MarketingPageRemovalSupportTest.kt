@@ -45,7 +45,6 @@ class MarketingPageRemovalSupportTest {
                     description = "sync body",
                     primaryButtonLabel = "sync primary button text",
                     secondaryButtonLabel = "sync secondary button text",
-                    privacyCaption = null,
                 ),
             )
             add(
@@ -56,7 +55,6 @@ class MarketingPageRemovalSupportTest {
                     description = "notification body",
                     primaryButtonLabel = "notification primary button text",
                     secondaryButtonLabel = "notification secondary button text",
-                    privacyCaption = null,
                 ),
             )
         }
@@ -128,18 +126,16 @@ class MarketingPageRemovalSupportTest {
                     description = "sync body",
                     primaryButtonLabel = "sync primary button text",
                     secondaryButtonLabel = "sync secondary button text",
-                    privacyCaption = null,
                 ),
             )
             add(
                 OnboardingPageUiData(
-                    type = OnboardingPageUiData.Type.THEME_SELECTION,
+                    type = OnboardingPageUiData.Type.NOTIFICATION_PERMISSION,
                     imageRes = 0,
-                    title = "theme title",
+                    title = "notification title",
                     description = "notification body",
                     primaryButtonLabel = "notification primary button text",
                     secondaryButtonLabel = "notification secondary button text",
-                    privacyCaption = null,
                 ),
             )
         }

@@ -12,7 +12,7 @@ import android.content.Intent
 import android.os.Bundle
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import org.mozilla.fenix.onboarding.view.OnboardingScreen
+import org.mozilla.fenix.onboarding.redesign.view.OnboardingScreenRedesign
 
 /**
  * Receiver required to catch callback from Launcher when prompted
@@ -40,7 +40,7 @@ class WidgetPinnedReceiver : BroadcastReceiver() {
 
     /**
      * Object containing boolean that updates behavior of Add Search Widget
-     * card from [OnboardingScreen].
+     * card from [OnboardingScreenRedesign].
      * - True if widget added successfully and app resumed from launcher add widget dialog.
      * - False if dialog opened but widget was not added.
      */

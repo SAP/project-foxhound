@@ -5,19 +5,17 @@
 package org.mozilla.fenix.onboarding.view
 
 import androidx.annotation.DrawableRes
-import mozilla.components.compose.base.LinkTextState
 import org.mozilla.fenix.nimbus.MarketingCardVariant
+import org.mozilla.fenix.onboarding.redesign.view.OnboardingPageRedesign
 
 /**
- * Model containing data for [OnboardingPage].
+ * Model containing data for [OnboardingPageRedesign].
  *
  * @property imageRes The main image to be displayed on the page.
  * @property title Title of the page.
  * @property description Description of the page.
- * @property privacyCaption Optional privacy caption to show and allow user to view the privacy policy.
  * @property primaryButton [Action] for the primary button.
  * @property secondaryButton Optional [Action] for the secondary button.
- * @property themeOptions Optional list of theme customizing options during onboarding.
  * @property termsOfService Optional term of service page data.
  * @property toolbarOptions Optional list of toolbar selection options.
  * @property marketingData Optional marketing page data.
@@ -29,10 +27,8 @@ data class OnboardingPageState(
     @param:DrawableRes val imageRes: Int,
     val title: String,
     val description: String,
-    val privacyCaption: Caption? = null,
     val primaryButton: Action,
     val secondaryButton: Action? = null,
-    val themeOptions: List<ThemeOption>? = null,
     val termsOfService: OnboardingTermsOfService? = null,
     val toolbarOptions: List<ToolbarOption>? = null,
     val marketingData: OnboardingMarketingData? = null,
@@ -47,14 +43,6 @@ data class OnboardingPageState(
 data class Action(
     val text: String,
     val onClick: () -> Unit,
-)
-
-/**
- * Model containing text and [LinkTextState] for a caption.
- */
-data class Caption(
-    val text: String,
-    val linkTextState: LinkTextState,
 )
 
 /**
@@ -81,35 +69,6 @@ enum class ToolbarOptionType(val id: String) {
      * Sets the toolbar placement to the bottom.
      */
     TOOLBAR_BOTTOM("toolbar_bottom"),
-}
-
-/**
- * Model containing data for theme customizing during onboarding.
- */
-data class ThemeOption(
-    val label: String,
-    val imageRes: Int,
-    val themeType: ThemeOptionType,
-)
-
-/**
- * Types of theming options available.
- */
-enum class ThemeOptionType(val id: String) {
-    /**
-     * Sets the theme to dark mode.
-     */
-    THEME_DARK("theme_dark"),
-
-    /**
-     * Sets the theme to light mode.
-     */
-    THEME_LIGHT("theme_light"),
-
-    /**
-     * Adapts the theme to match the device's system setting.
-     */
-    THEME_SYSTEM("theme_system"),
 }
 
 /**

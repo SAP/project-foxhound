@@ -17,9 +17,7 @@ data class OnboardingPageUiData(
     val description: String,
     val primaryButtonLabel: String,
     val secondaryButtonLabel: String? = null,
-    val privacyCaption: Caption? = null,
     val toolbarOptions: List<ToolbarOption>? = null,
-    val themeOptions: List<ThemeOption>? = null,
     val termsOfService: OnboardingTermsOfService? = null,
     val marketingData: OnboardingMarketingData? = null,
 ) {
@@ -45,9 +43,6 @@ data class OnboardingPageUiData(
         ),
         TOOLBAR_PLACEMENT(
             telemetryId = "toolbar_placement",
-        ),
-        THEME_SELECTION(
-            telemetryId = "theme",
         ),
         TERMS_OF_SERVICE(
             telemetryId = "terms_of_service",

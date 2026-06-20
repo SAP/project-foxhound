@@ -150,19 +150,6 @@ class OnboardingTelemetryRecorder(
                 )
             }
 
-            OnboardingPageUiData.Type.THEME_SELECTION -> {
-                Onboarding.themeSelectionCard.record(
-                    Onboarding.ThemeSelectionCardExtra(
-                        action = ACTION_IMPRESSION,
-                        elementType = ET_ONBOARDING_CARD,
-                        sequenceId = sequenceId,
-                        sequencePosition = sequencePosition,
-                        onboardingReason = onboardingReason.value,
-                        installSource = installSource,
-                    ),
-                )
-            }
-
             OnboardingPageUiData.Type.TERMS_OF_SERVICE -> {
                 Onboarding.termsOfServiceCard.record(
                     Onboarding.TermsOfServiceCardExtra(
@@ -384,43 +371,6 @@ class OnboardingTelemetryRecorder(
                 sequenceId = sequenceId,
                 sequencePosition = sequencePosition,
                 toolbarPlacement = toolbarPlacement,
-                onboardingReason = onboardingReason.value,
-                installSource = installSource,
-            ),
-        )
-    }
-
-    /**
-     * Records select theme click event.
-     * @param themeOption The selected theme option ("dark", "light", or "system").
-     * @param sequenceId The identifier of the onboarding sequence shown to the user.
-     * @param sequencePosition The sequence position of the page for which the impression occurred.
-     */
-    fun onSelectThemeClick(themeOption: String, sequenceId: String, sequencePosition: String) {
-        Onboarding.selectTheme.record(
-            Onboarding.SelectThemeExtra(
-                action = ACTION_CLICK,
-                themeOption = themeOption,
-                sequenceId = sequenceId,
-                sequencePosition = sequencePosition,
-                onboardingReason = onboardingReason.value,
-                installSource = installSource,
-            ),
-        )
-    }
-
-    /**
-     * Records privacy policy link text click event.
-     * @param sequenceId The identifier of the onboarding sequence shown to the user.
-     * @param sequencePosition The sequence position of the page on which the link click event occurred.
-     */
-    fun onPrivacyPolicyClick(sequenceId: String, sequencePosition: String) {
-        Onboarding.privacyPolicy.record(
-            Onboarding.PrivacyPolicyExtra(
-                action = ACTION_CLICK,
-                elementType = ET_SECONDARY_BUTTON,
-                sequenceId = sequenceId,
-                sequencePosition = sequencePosition,
                 onboardingReason = onboardingReason.value,
                 installSource = installSource,
             ),

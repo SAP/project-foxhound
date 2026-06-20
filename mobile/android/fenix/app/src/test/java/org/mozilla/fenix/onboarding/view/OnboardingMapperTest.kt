@@ -29,7 +29,6 @@ class OnboardingMapperTest {
             description = "default browser body with link text",
             primaryButtonLabel = "default browser primary button text",
             secondaryButtonLabel = "default browser secondary button text",
-            privacyCaption = null,
         )
         val actual = mapToOnboardingPageState(
             onboardingPageUiData = onboardingPageUiData,
@@ -42,7 +41,6 @@ class OnboardingMapperTest {
             onAddFirefoxWidgetClick = {},
             onAddFirefoxWidgetSkipClick = {},
             onCustomizeToolbarButtonClick = {},
-            onCustomizeThemeClick = {},
             onTermsOfServiceButtonClick = {},
             shouldShowElevation = true,
         )
@@ -68,7 +66,6 @@ class OnboardingMapperTest {
             description = "sync body",
             primaryButtonLabel = "sync primary button text",
             secondaryButtonLabel = "sync secondary button text",
-            privacyCaption = null,
         )
         val actual = mapToOnboardingPageState(
             onboardingPageUiData = onboardingPageUiData,
@@ -81,7 +78,6 @@ class OnboardingMapperTest {
             onAddFirefoxWidgetClick = {},
             onAddFirefoxWidgetSkipClick = {},
             onCustomizeToolbarButtonClick = {},
-            onCustomizeThemeClick = {},
             onTermsOfServiceButtonClick = {},
             shouldShowElevation = true,
         )
@@ -107,7 +103,6 @@ class OnboardingMapperTest {
             description = "notification body",
             primaryButtonLabel = "notification primary button text",
             secondaryButtonLabel = "notification secondary button text",
-            privacyCaption = null,
         )
         val actual = mapToOnboardingPageState(
             onboardingPageUiData = onboardingPageUiData,
@@ -120,7 +115,6 @@ class OnboardingMapperTest {
             onAddFirefoxWidgetClick = {},
             onAddFirefoxWidgetSkipClick = {},
             onCustomizeToolbarButtonClick = {},
-            onCustomizeThemeClick = {},
             onTermsOfServiceButtonClick = {},
             shouldShowElevation = true,
         )
@@ -146,7 +140,6 @@ class OnboardingMapperTest {
             description = "add search widget body with link text",
             primaryButtonLabel = "add search widget primary button text",
             secondaryButtonLabel = "add search widget secondary button text",
-            privacyCaption = null,
         )
         val actual = mapToOnboardingPageState(
             onboardingPageUiData = onboardingPageUiData,
@@ -159,7 +152,6 @@ class OnboardingMapperTest {
             onAddFirefoxWidgetClick = unitLambda,
             onAddFirefoxWidgetSkipClick = unitLambda,
             onCustomizeToolbarButtonClick = {},
-            onCustomizeThemeClick = {},
             onTermsOfServiceButtonClick = {},
             shouldShowElevation = true,
         )
@@ -211,7 +203,6 @@ class OnboardingMapperTest {
             onAddFirefoxWidgetClick = {},
             onAddFirefoxWidgetSkipClick = {},
             onCustomizeToolbarButtonClick = unitLambda,
-            onCustomizeThemeClick = {},
             onTermsOfServiceButtonClick = {},
             onMarketingDataContinueClick = {},
             shouldShowElevation = true,
@@ -258,76 +249,12 @@ class OnboardingMapperTest {
             onAddFirefoxWidgetClick = {},
             onAddFirefoxWidgetSkipClick = {},
             onCustomizeToolbarButtonClick = {},
-            onCustomizeThemeClick = {},
             onTermsOfServiceButtonClick = {},
             onMarketingDataContinueClick = unitLambda,
             shouldShowElevation = true,
         )
 
         assertEquals(expected, actual)
-    }
-
-    @Test
-    fun `GIVEN a customize theme page UI data WHEN mapping function is called THEN equivalent page state is created`() {
-        // Page UI values
-        val imageRes = R.drawable.ic_pick_a_theme
-        val title = "Pick a theme"
-        val description = "See the web in the best light."
-        val primaryButtonLabel = "Save and continue"
-
-        // Theming options
-        val themeOptionSystem = ThemeOption(
-            label = "System auto",
-            imageRes = R.drawable.ic_pick_a_theme_system_auto,
-            themeType = ThemeOptionType.THEME_SYSTEM,
-        )
-        val themeOptionLight = ThemeOption(
-            label = "Light",
-            imageRes = R.drawable.ic_pick_a_theme_light,
-            themeType = ThemeOptionType.THEME_LIGHT,
-        )
-        val themeOptionDark = ThemeOption(
-            label = "Dark",
-            imageRes = R.drawable.ic_pick_a_theme_dark,
-            themeType = ThemeOptionType.THEME_DARK,
-        )
-        val themeOptions = listOf(themeOptionSystem, themeOptionLight, themeOptionDark)
-
-        val pageUiData = OnboardingPageUiData(
-            type = OnboardingPageUiData.Type.THEME_SELECTION,
-            imageRes = imageRes,
-            title = title,
-            description = description,
-            primaryButtonLabel = primaryButtonLabel,
-            themeOptions = themeOptions,
-        )
-
-        val expectedPageState = OnboardingPageState(
-            imageRes = imageRes,
-            title = title,
-            description = description,
-            primaryButton = Action(primaryButtonLabel, unitLambda),
-            themeOptions = themeOptions,
-            shouldShowElevation = true,
-        )
-
-        val actualPageState = mapToOnboardingPageState(
-            onboardingPageUiData = pageUiData,
-            onMakeFirefoxDefaultClick = {},
-            onMakeFirefoxDefaultSkipClick = {},
-            onSignInButtonClick = {},
-            onSignInSkipClick = {},
-            onNotificationPermissionButtonClick = {},
-            onNotificationPermissionSkipClick = {},
-            onAddFirefoxWidgetClick = {},
-            onAddFirefoxWidgetSkipClick = {},
-            onCustomizeToolbarButtonClick = {},
-            onCustomizeThemeClick = unitLambda,
-            onTermsOfServiceButtonClick = {},
-            shouldShowElevation = true,
-        )
-
-        assertEquals(expectedPageState, actualPageState)
     }
 }
 
