@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-package org.mozilla.fenix.onboarding.redesign.view
+package org.mozilla.fenix.onboarding.view
 
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Image
@@ -53,10 +53,6 @@ import mozilla.components.compose.base.button.FilledButton
 import org.mozilla.fenix.R
 import org.mozilla.fenix.compose.ScrollIndicator
 import org.mozilla.fenix.onboarding.store.OnboardingStore
-import org.mozilla.fenix.onboarding.view.Action
-import org.mozilla.fenix.onboarding.view.OnboardingPageState
-import org.mozilla.fenix.onboarding.view.ToolbarOption
-import org.mozilla.fenix.onboarding.view.ToolbarOptionType
 import org.mozilla.fenix.theme.FirefoxTheme
 import mozilla.components.ui.icons.R as iconsR
 
@@ -72,7 +68,7 @@ private val buttonHeight = 40.dp
  * @param onToolbarSelectionClicked Callback for when a toolbar selection is clicked.
  */
 @Composable
-fun ToolbarOnboardingPageRedesign(
+fun ToolbarOnboardingPage(
     onboardingStore: OnboardingStore,
     pageState: OnboardingPageState,
     onToolbarSelectionClicked: (ToolbarOptionType) -> Unit,
@@ -144,7 +140,7 @@ fun ToolbarOnboardingPageRedesign(
                 modifier = Modifier
                     .width(width = FirefoxTheme.layout.size.maxWidth.small)
                     .semantics {
-                        testTag = pageState.title + "onboarding_card_redesign.positive_button"
+                        testTag = pageState.title + "onboarding_card.positive_button"
                     },
                 onClick = pageState.primaryButton.onClick,
             )
@@ -283,12 +279,12 @@ private fun SelectedCheckmark(selected: Boolean = false) {
 @Composable
 private fun OnboardingPagePreview() {
     FirefoxTheme {
-        ToolbarOnboardingPageRedesign(
+        ToolbarOnboardingPage(
             onboardingStore = OnboardingStore(),
             pageState = OnboardingPageState(
                 imageRes = R.drawable.ic_onboarding_customize_toolbar,
                 title = stringResource(id = R.string.nova_onboarding_toolbar_selection_title),
-                description = "", // Unused in redesign
+                description = "", // Unused
                 primaryButton = Action(
                     text = stringResource(
                         id = R.string.nova_onboarding_continue_button,
@@ -327,12 +323,12 @@ private fun OnboardingPagePreview() {
 @Composable
 private fun SpanishOnboardingPagePreview() {
     FirefoxTheme {
-        ToolbarOnboardingPageRedesign(
+        ToolbarOnboardingPage(
             onboardingStore = OnboardingStore(),
             pageState = OnboardingPageState(
                 imageRes = R.drawable.ic_onboarding_customize_toolbar,
                 title = stringResource(id = R.string.nova_onboarding_toolbar_selection_title),
-                description = "", // Unused in redesign
+                description = "", // Unused
                 primaryButton = Action(
                     text = stringResource(
                         id = R.string.nova_onboarding_continue_button,

@@ -6,10 +6,9 @@ package org.mozilla.fenix.onboarding.view
 
 import androidx.annotation.DrawableRes
 import org.mozilla.fenix.nimbus.MarketingCardVariant
-import org.mozilla.fenix.onboarding.redesign.view.OnboardingPageRedesign
 
 /**
- * Model containing data for [OnboardingPageRedesign].
+ * Model containing data for [OnboardingPage].
  *
  * @property imageRes The main image to be displayed on the page.
  * @property title Title of the page.

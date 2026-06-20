@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-package org.mozilla.fenix.onboarding.redesign.view
+package org.mozilla.fenix.onboarding.view
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.LocalOverscrollFactory
@@ -44,10 +44,6 @@ import mozilla.components.compose.base.LinkTextState
 import mozilla.components.compose.base.button.FilledButton
 import org.mozilla.fenix.R
 import org.mozilla.fenix.compose.ScrollIndicator
-import org.mozilla.fenix.onboarding.view.Action
-import org.mozilla.fenix.onboarding.view.OnboardingPageState
-import org.mozilla.fenix.onboarding.view.OnboardingTermsOfService
-import org.mozilla.fenix.onboarding.view.OnboardingTermsOfServiceEventHandler
 import org.mozilla.fenix.theme.FirefoxTheme
 
 private val TOU_IMAGE_HEIGHT = 176.dp
@@ -65,7 +61,7 @@ private val kitImageResources = listOf(
  * @param eventHandler The event handler for all user interactions of this page.
  */
 @Composable
-fun TermsOfServiceOnboardingPageRedesign(
+fun TermsOfServiceOnboardingPage(
     pageState: OnboardingPageState,
     eventHandler: OnboardingTermsOfServiceEventHandler,
 ) {
@@ -127,7 +123,7 @@ fun TermsOfServiceOnboardingPageRedesign(
                     .width(width = FirefoxTheme.layout.size.maxWidth.small)
                     .defaultMinSize(minHeight = FirefoxTheme.layout.size.static600)
                     .semantics {
-                        testTag = pageState.title + "onboarding_card_redesign.positive_button"
+                        testTag = pageState.title + "onboarding_card.positive_button"
                     },
                 onClick = pageState.primaryButton.onClick,
             )
@@ -263,7 +259,7 @@ private fun String.updateFirstPlaceholder(text: String) = replace($$"%1$s", text
 @Composable
 private fun OnboardingPagePreview() {
     FirefoxTheme {
-        TermsOfServiceOnboardingPageRedesign(
+        TermsOfServiceOnboardingPage(
             pageState = OnboardingPageState(
                 title = stringResource(id = R.string.onboarding_welcome_to_firefox),
                 description = "",

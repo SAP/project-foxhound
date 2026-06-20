@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-package org.mozilla.fenix.onboarding.redesign.view
+package org.mozilla.fenix.onboarding.view
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.LocalOverscrollFactory
@@ -37,8 +37,6 @@ import mozilla.components.compose.base.button.FilledButton
 import mozilla.components.compose.base.button.OutlinedButton
 import org.mozilla.fenix.R
 import org.mozilla.fenix.compose.ScrollIndicator
-import org.mozilla.fenix.onboarding.view.Action
-import org.mozilla.fenix.onboarding.view.OnboardingPageState
 import org.mozilla.fenix.theme.FirefoxTheme
 
 const val TITLE_TOP_SPACER_WEIGHT = 0.1f
@@ -52,7 +50,7 @@ val CONTENT_IMAGE_HEIGHT = 176.dp
  * @param pageState [OnboardingPageState] The page content that's displayed.
  */
 @Composable
-fun OnboardingPageRedesign(
+fun OnboardingPage(
     pageState: OnboardingPageState,
 ) {
     CardView(pageState, pageState.isSmallDevice)
@@ -71,7 +69,7 @@ private fun SecondaryButton(
         modifier = Modifier
             .width(width = FirefoxTheme.layout.size.maxWidth.small)
             .semantics {
-                testTag = title + "onboarding_card_redesign.negative_button"
+                testTag = title + "onboarding_card.negative_button"
             },
         text = secondaryButton.text,
         onClick = secondaryButton.onClick,
@@ -110,7 +108,7 @@ private fun CardView(
                     modifier = Modifier
                         .width(width = FirefoxTheme.layout.size.maxWidth.small)
                         .semantics {
-                            testTag = pageState.title + "onboarding_card_redesign.positive_button"
+                            testTag = pageState.title + "onboarding_card.positive_button"
                         },
                     text = pageState.primaryButton.text,
                     onClick = pageState.primaryButton.onClick,
@@ -179,7 +177,7 @@ private fun ColumnScope.Content(
 @Composable
 private fun OnboardingPageSetToDefaultPreview() {
     FirefoxTheme {
-        OnboardingPageRedesign(
+        OnboardingPage(
             pageState = OnboardingPageState(
                 imageRes = R.drawable.nova_onboarding_set_to_default,
                 title = stringResource(R.string.nova_onboarding_set_to_default_title_2),
@@ -202,7 +200,7 @@ private fun OnboardingPageSetToDefaultPreview() {
 @Composable
 private fun OnboardingPageSyncPreview() {
     FirefoxTheme {
-        OnboardingPageRedesign(
+        OnboardingPage(
             pageState = OnboardingPageState(
                 imageRes = R.drawable.nova_onboarding_sync,
                 title = stringResource(R.string.nova_onboarding_sync_title),
@@ -225,7 +223,7 @@ private fun OnboardingPageSyncPreview() {
 @Composable
 private fun OnboardingPageNotificationPreview() {
     FirefoxTheme {
-        OnboardingPageRedesign(
+        OnboardingPage(
             pageState = OnboardingPageState(
                 imageRes = R.drawable.nova_onboarding_notifications,
                 title = stringResource(R.string.nova_onboarding_add_search_widget_title),
@@ -248,7 +246,7 @@ private fun OnboardingPageNotificationPreview() {
 @Composable
 private fun OnboardingPageSearchWidgetPreview() {
     FirefoxTheme {
-        OnboardingPageRedesign(
+        OnboardingPage(
             pageState = OnboardingPageState(
                 imageRes = R.drawable.nova_onboarding_widget,
                 title = stringResource(R.string.nova_onboarding_add_search_widget_title),

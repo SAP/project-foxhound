@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-package org.mozilla.fenix.onboarding.redesign.view
+package org.mozilla.fenix.onboarding.view
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.LocalOverscrollFactory
@@ -55,9 +55,6 @@ import mozilla.components.ui.colors.PhotonColors
 import org.mozilla.fenix.R
 import org.mozilla.fenix.compose.ScrollIndicator
 import org.mozilla.fenix.nimbus.MarketingCardVariant
-import org.mozilla.fenix.onboarding.view.Action
-import org.mozilla.fenix.onboarding.view.OnboardingMarketingData
-import org.mozilla.fenix.onboarding.view.OnboardingPageState
 import org.mozilla.fenix.theme.FirefoxTheme
 
 private val MARKETING_CONTENT_IMAGE_HEIGHT = 150.dp
@@ -73,7 +70,7 @@ private val MARKETING_CONTENT_IMAGE_HEIGHT = 150.dp
  */
 @Suppress("LongMethod")
 @Composable
-fun MarketingDataOnboardingPageRedesign(
+fun MarketingDataOnboardingPage(
     state: OnboardingPageState,
     onMarketingDataLearnMoreClick: () -> Unit,
     onMarketingOptInToggle: (optIn: Boolean) -> Unit,
@@ -256,7 +253,7 @@ private fun PrimaryButton(
             modifier = Modifier
                 .width(width = FirefoxTheme.layout.size.maxWidth.small)
                 .semantics {
-                    testTag = state.title + "onboarding_card_redesign.positive_button"
+                    testTag = state.title + "onboarding_card.positive_button"
                 },
             onClick = { onMarketingDataContinueClick(checkboxChecked) },
         )
@@ -266,7 +263,7 @@ private fun PrimaryButton(
             modifier = Modifier
                 .width(width = FirefoxTheme.layout.size.maxWidth.small)
                 .semantics {
-                    testTag = state.title + "onboarding_card_redesign.positive_button"
+                    testTag = state.title + "onboarding_card.positive_button"
                 },
             icon = painterResource(id = R.drawable.ic_favourite_filled),
             iconModifier = Modifier.size(16.dp),
@@ -294,7 +291,7 @@ private fun SecondaryButtonFilled(
         modifier = Modifier
             .width(width = FirefoxTheme.layout.size.maxWidth.small)
             .semantics {
-                testTag = state.title + "onboarding_card_redesign.negative_button"
+                testTag = state.title + "onboarding_card.negative_button"
             },
         onClick = { onMarketingDataSkipClick() },
     )
@@ -318,7 +315,7 @@ private fun SecondaryButtonOutline(
         modifier = Modifier
             .width(width = FirefoxTheme.layout.size.maxWidth.small)
             .semantics {
-                testTag = state.title + "onboarding_card_redesign.negative_button"
+                testTag = state.title + "onboarding_card.negative_button"
             },
         onClick = { onMarketingDataSkipClick() },
     )
@@ -463,11 +460,11 @@ private fun MarketingDataOnboardingPagePreview(
     @PreviewParameter(BodyResourcePreviewProvider::class) variant: MarketingCardVariant,
 ) {
     FirefoxTheme {
-        MarketingDataOnboardingPageRedesign(
+        MarketingDataOnboardingPage(
             state = OnboardingPageState(
                 imageRes = R.drawable.nova_onboarding_marketing,
                 title = stringResource(id = R.string.nova_onboarding_marketing_title),
-                description = "", // NB: not used in the redesign
+                description = "", // NB: not used
                 primaryButton = Action(
                     text = stringResource(id = R.string.nova_onboarding_continue_button),
                     onClick = {},
@@ -480,7 +477,7 @@ private fun MarketingDataOnboardingPagePreview(
                     marketingCardVariant = variant,
                     bodyOneText = stringResource(id = R.string.nova_onboarding_marketing_body),
                     bodyOneLinkText = stringResource(id = R.string.nova_onboarding_marketing_body_link_text),
-                    bodyTwoText = "", // NB: not used in the redesign
+                    bodyTwoText = "", // NB: not used
                 ),
             ),
             onMarketingDataLearnMoreClick = {},

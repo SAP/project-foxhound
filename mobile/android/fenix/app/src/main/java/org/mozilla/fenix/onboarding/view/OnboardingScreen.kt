@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-package org.mozilla.fenix.onboarding.redesign.view
+package org.mozilla.fenix.onboarding.view
 
 import android.content.res.Configuration
 import androidx.activity.compose.BackHandler
@@ -59,13 +59,6 @@ import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.onboarding.WidgetPinnedReceiver.WidgetPinnedState
 import org.mozilla.fenix.onboarding.store.OnboardingAction.OnboardingToolbarAction
 import org.mozilla.fenix.onboarding.store.OnboardingStore
-import org.mozilla.fenix.onboarding.view.OnboardingPageState
-import org.mozilla.fenix.onboarding.view.OnboardingPageUiData
-import org.mozilla.fenix.onboarding.view.OnboardingTermsOfService
-import org.mozilla.fenix.onboarding.view.OnboardingTermsOfServiceEventHandler
-import org.mozilla.fenix.onboarding.view.ToolbarOption
-import org.mozilla.fenix.onboarding.view.ToolbarOptionType
-import org.mozilla.fenix.onboarding.view.mapToOnboardingPageState
 import org.mozilla.fenix.theme.FirefoxTheme
 import org.mozilla.fenix.utils.isLargeScreenSize
 
@@ -103,7 +96,7 @@ private val SMALL_SCREEN_MAX_HEIGHT = 570.dp
  */
 @Composable
 @Suppress("LongParameterList", "LongMethod")
-fun OnboardingScreenRedesign(
+fun OnboardingScreen(
     pagesToDisplay: MutableList<OnboardingPageUiData>,
     onMakeFirefoxDefaultClick: () -> Unit,
     onSkipDefaultClick: () -> Unit,
@@ -464,12 +457,12 @@ private fun OnboardingPageForType(
         OnboardingPageUiData.Type.SYNC_SIGN_IN,
         OnboardingPageUiData.Type.ADD_SEARCH_WIDGET,
         OnboardingPageUiData.Type.NOTIFICATION_PERMISSION,
-            -> OnboardingPageRedesign(state)
+            -> OnboardingPage(state)
 
         OnboardingPageUiData.Type.TOOLBAR_PLACEMENT -> {
             val context = LocalContext.current
             onboardingStore?.let { store ->
-                ToolbarOnboardingPageRedesign(
+                ToolbarOnboardingPage(
                     onboardingStore = store,
                     pageState = state,
                     onToolbarSelectionClicked = {
@@ -485,7 +478,7 @@ private fun OnboardingPageForType(
             }
         }
 
-        OnboardingPageUiData.Type.MARKETING_DATA -> MarketingDataOnboardingPageRedesign(
+        OnboardingPageUiData.Type.MARKETING_DATA -> MarketingDataOnboardingPage(
             state = state,
             onMarketingDataLearnMoreClick = onMarketingDataLearnMoreClick,
             onMarketingOptInToggle = onMarketingOptInToggle,
@@ -493,7 +486,7 @@ private fun OnboardingPageForType(
             onMarketingDataSkipClick = onMarketingDataSkipClick,
         )
 
-        OnboardingPageUiData.Type.TERMS_OF_SERVICE -> TermsOfServiceOnboardingPageRedesign(
+        OnboardingPageUiData.Type.TERMS_OF_SERVICE -> TermsOfServiceOnboardingPage(
             state,
             termsOfServiceEventHandler,
         )
@@ -724,7 +717,7 @@ private fun toolbarPlacementPageUiData() = OnboardingPageUiData(
     type = OnboardingPageUiData.Type.TOOLBAR_PLACEMENT,
     imageRes = R.drawable.ic_onboarding_customize_toolbar,
     title = stringResource(R.string.nova_onboarding_toolbar_selection_title),
-    description = "", // Unused in redesign
+    description = "", // Unused
     primaryButtonLabel = stringResource(R.string.nova_onboarding_continue_button),
     toolbarOptions = listOf(
         ToolbarOption(

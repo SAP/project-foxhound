@@ -47,20 +47,19 @@ import org.mozilla.fenix.components.startMetricsIfEnabled
 import org.mozilla.fenix.ext.application
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.hideToolbar
-import org.mozilla.fenix.ext.isDefaultBrowserPromptSupported
 import org.mozilla.fenix.ext.isLargeScreenSize
 import org.mozilla.fenix.ext.nav
 import org.mozilla.fenix.ext.openSetDefaultBrowserOption
 import org.mozilla.fenix.ext.requireComponents
 import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.nimbus.FxNimbus
-import org.mozilla.fenix.onboarding.redesign.view.OnboardingScreenRedesign
 import org.mozilla.fenix.onboarding.store.DefaultOnboardingPreferencesRepository
 import org.mozilla.fenix.onboarding.store.OnboardingPreferencesMiddleware
 import org.mozilla.fenix.onboarding.store.OnboardingState
 import org.mozilla.fenix.onboarding.store.OnboardingStore
 import org.mozilla.fenix.onboarding.view.ManagePrivacyPreferencesDialogFragment
 import org.mozilla.fenix.onboarding.view.OnboardingPageUiData
+import org.mozilla.fenix.onboarding.view.OnboardingScreen
 import org.mozilla.fenix.onboarding.view.sequencePosition
 import org.mozilla.fenix.onboarding.view.telemetrySequenceId
 import org.mozilla.fenix.onboarding.view.toPageUiData
@@ -103,9 +102,7 @@ class OnboardingFragment : Fragment() {
         }
     }
 
-    private fun displayDefaultBrowserPage(context: Context): Boolean = with(context) {
-        isNotDefaultBrowser(this) && (!isDefaultBrowserPromptSupported() || settings().useOnboardingRedesign)
-    }
+    private fun displayDefaultBrowserPage(context: Context): Boolean = isNotDefaultBrowser(context)
 
     private val telemetryRecorder by lazy {
         OnboardingTelemetryRecorder(
@@ -175,7 +172,7 @@ class OnboardingFragment : Fragment() {
         savedInstanceState: Bundle?,
     ) = content {
         FirefoxTheme {
-            ScreenContentRedesign()
+            ScreenContent()
         }
     }
 
@@ -218,8 +215,8 @@ class OnboardingFragment : Fragment() {
     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     @Composable
     @Suppress("LongMethod")
-    private fun ScreenContentRedesign() {
-        OnboardingScreenRedesign(
+    private fun ScreenContent() {
+        OnboardingScreen(
             pagesToDisplay = pagesToDisplay,
             onMakeFirefoxDefaultClick = {
                 promptToSetAsDefaultBrowser()

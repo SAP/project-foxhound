@@ -11,7 +11,6 @@ import org.mozilla.fenix.nimbus.OnboardingCardData
 import org.mozilla.fenix.nimbus.OnboardingCardType
 import org.mozilla.fenix.nimbus.TermsOfServiceData
 import org.mozilla.fenix.nimbus.ToolbarType
-import org.mozilla.fenix.onboarding.redesign.view.OnboardingPageRedesign
 
 /**
  * Returns a list of all the required Nimbus 'cards' that have been converted to [OnboardingPageUiData].
@@ -162,7 +161,7 @@ private fun ToolbarType.toToolbarOptionType() = when (this) {
 
 /**
  * Mapper to convert [OnboardingPageUiData] to [OnboardingPageState] that is a param for
- * [OnboardingPageRedesign] composable.
+ * [OnboardingPage] composable.
  */
 @Suppress("LongParameterList")
 internal fun mapToOnboardingPageState(
