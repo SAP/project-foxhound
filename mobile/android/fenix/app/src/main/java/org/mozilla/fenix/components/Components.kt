@@ -23,6 +23,8 @@ import mozilla.components.feature.addons.update.DefaultAddonUpdater
 import mozilla.components.feature.autofill.AutofillConfiguration
 import mozilla.components.feature.summarize.PageSummaryFeature
 import mozilla.components.feature.summarize.settings.SummarizationSettings
+import mozilla.components.lib.ai.controls.AIFeatureBlockStorage
+import mozilla.components.lib.ai.controls.dataStore
 import mozilla.components.lib.ai.controls.default
 import mozilla.components.lib.crash.store.CrashAction
 import mozilla.components.lib.crash.store.CrashMiddleware
@@ -499,6 +501,10 @@ class Components(private val context: Context) {
         )
     }
 
+    val aiFeatureBlockStorage by lazyMonitored {
+        AIFeatureBlockStorage.dataStore(context)
+    }
+
     val aiFeatureRegistry by lazyMonitored {
         AIFeatureRegistry.default(scope = MainScope(), context = context).also {
             if (settings.shakeToSummarizeFeatureFlagEnabled) {
@@ -516,7 +522,7 @@ class Components(private val context: Context) {
     @Suppress("unused")
     val aiControlsFeatureBlock by lazyMonitored {
         AIFeatureBlock.default(
-            context,
+            storage = aiFeatureBlockStorage,
             registry = aiFeatureRegistry,
         )
     }

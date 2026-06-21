@@ -200,7 +200,7 @@ class RecordedNimbusContext(
                 deviceInfo.localeTag,
             )
 
-            val isAiBlocked = runBlockingIncrement { context.components.aiControlsFeatureBlock.isBlocked.first() }
+            val isAiBlocked = runBlockingIncrement { context.components.aiFeatureBlockStorage.isBlocked.first() }
 
             return RecordedNimbusContext(
                 isFirstRun = isFirstRun,

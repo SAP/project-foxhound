@@ -13,9 +13,15 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
 
-internal interface AIFeatureBlockStorage {
+/**
+ * A storage API for features that can be controlled by the global AI toggle.
+ */
+interface AIFeatureBlockStorage {
     val isBlocked: Flow<Boolean>
 
+    /**
+     * Update the blocked state with [isBlocked].
+     */
     suspend fun setBlocked(isBlocked: Boolean)
 
     companion object {
@@ -36,7 +42,10 @@ private class InMemoryAiFeatureBlockStorage(initialBlocked: Boolean) : AIFeature
     }
 }
 
-internal fun AIFeatureBlockStorage.Companion.dataStore(context: Context): AIFeatureBlockStorage =
+/**
+ * The data source for [AIFeatureBlockStorage].
+ */
+fun AIFeatureBlockStorage.Companion.dataStore(context: Context): AIFeatureBlockStorage =
     DataStoreBackedAIFeatureBlockStorage(context.dataStore)
 
 internal class DataStoreBackedAIFeatureBlockStorage(

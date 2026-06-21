@@ -4,7 +4,6 @@
 
 package mozilla.components.lib.ai.controls
 
-import android.content.Context
 import mozilla.components.concept.ai.controls.AIFeatureBlock
 import mozilla.components.concept.ai.controls.AIFeatureRegistry
 
@@ -13,10 +12,10 @@ import mozilla.components.concept.ai.controls.AIFeatureRegistry
  * to block or unblock all registered features.
  */
 fun AIFeatureBlock.Companion.default(
-    context: Context,
+    storage: AIFeatureBlockStorage,
     registry: AIFeatureRegistry,
 ): AIFeatureBlock = DefaultAIFeatureBlock(
-    storage = AIFeatureBlockStorage.dataStore(context),
+    storage = storage,
     registry = registry,
 )
 
