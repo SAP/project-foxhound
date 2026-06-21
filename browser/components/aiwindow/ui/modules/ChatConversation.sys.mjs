@@ -535,6 +535,8 @@ export class ChatConversation extends EventEmitter {
     const newTurnIndex =
       this.#messages.length === 1 ? currentTurn : currentTurn + 1;
 
+    this.#dismissPendingUndos();
+
     return this.addMessage(
       MESSAGE_ROLE.USER,
       content,
@@ -570,6 +572,44 @@ export class ChatConversation extends EventEmitter {
       lazy.console.error("Failed to persist resolved tool confirmation", e);
     });
     return true;
+  }
+
+  /**
+   * Mark the most recent ai-action-result toolUIData with
+   * properties.undoDismissed: true. Called when a user message
+   * is added, signalling the previous action is no longer available.
+   *
+   * At most one card is non-dismissed at any time, so walk back
+   * and stop on first hit.
+   *
+   * Persistence: emit triggers re-render. The toolUIData mutation
+   * is persisted on the next ChatStore.updateConversation call
+   * which fires when the assistant turn that follows completes.
+   */
+  #dismissPendingUndos() {
+    for (let i = this.messages.length - 1; i >= 0; i--) {
+      const m = this.messages[i];
+      const td = m.toolUIData;
+      if (
+        !td ||
+        td.uiType !== "ai-action-result" ||
+        td.properties?.undoDismissed
+      ) {
+        continue;
+      }
+
+      const operationId = td.properties?.confirmedData?.operationId;
+      if (!operationId) {
+        continue;
+      }
+
+      m.toolUIData = {
+        ...td,
+        properties: { ...td.properties, undoDismissed: true },
+      };
+      this.emit("chat-conversation:message-update", m);
+      break;
+    }
   }
 
   /**

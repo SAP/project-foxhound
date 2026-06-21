@@ -63,7 +63,8 @@ CREATE TABLE message (
   memories_flag_source INTEGER,
   memories_applied_jsonb BLOB,
   web_search_queries_jsonb BLOB,
-  page_history_deleted BOOLEAN NOT NULL DEFAULT false
+  page_history_deleted BOOLEAN NOT NULL DEFAULT false,
+  tool_ui_data_jsonb BLOB
 ) WITHOUT ROWID;
 `;
 
@@ -111,19 +112,22 @@ INSERT INTO message (
   revision_root_message_id, ordinal, is_active_branch, role,
   model_id, params_jsonb, content_jsonb, usage_jsonb, page_url, turn_index,
   memories_enabled, memories_flag_source, memories_applied_jsonb,
-  web_search_queries_jsonb
+  web_search_queries_jsonb,
+  tool_ui_data_jsonb
 ) VALUES (
   :message_id, :conv_id, :created_date, :parent_message_id,
   :revision_root_message_id, :ordinal, :is_active_branch, :role,
   :model_id, jsonb(:params), jsonb(:content), jsonb(:usage), :page_url, :turn_index,
   :memories_enabled, :memories_flag_source, jsonb(:memories_applied_jsonb),
-  jsonb(:web_search_queries_jsonb)
+  jsonb(:web_search_queries_jsonb),
+  jsonb(:tool_ui_data_jsonb)
 )
 ON CONFLICT(message_id) DO UPDATE SET
   is_active_branch = :is_active_branch,
   memories_applied_jsonb = jsonb(:memories_applied_jsonb),
   content_jsonb = jsonb(:content),
-  web_search_queries_jsonb = jsonb(:web_search_queries_jsonb);
+  web_search_queries_jsonb = jsonb(:web_search_queries_jsonb),
+  tool_ui_data_jsonb = jsonb(:tool_ui_data_jsonb);
 `;
 
 export const CONVERSATIONS_MOST_RECENT = `
@@ -251,7 +255,8 @@ export function getConversationMessagesSql(amount) {
       page_url, turn_index, memories_enabled, memories_flag_source,
       json(memories_applied_jsonb) AS memories_applied,
       json(web_search_queries_jsonb) AS web_search_queries,
-      json(content_jsonb) AS content, page_history_deleted
+      json(content_jsonb) AS content, page_history_deleted,
+      json(tool_ui_data_jsonb) AS tool_ui_data
       FROM message
       WHERE conv_id IN(${new Array(amount).fill("?").join(",")})
       ORDER BY ordinal ASC;
@@ -337,7 +342,8 @@ SELECT
   page_url, turn_index, memories_enabled, memories_flag_source,
   json(memories_applied_jsonb) AS memories_applied,
   json(web_search_queries_jsonb) AS web_search_queries,
-  json(content_jsonb) AS content, page_history_deleted
+  json(content_jsonb) AS content, page_history_deleted,
+  json(tool_ui_data_jsonb) AS tool_ui_data
 FROM message
 WHERE created_date >= :start_date AND created_date <= :end_date
 ORDER BY created_date DESC
@@ -352,7 +358,8 @@ SELECT
   page_url, turn_index, memories_enabled, memories_flag_source,
   json(memories_applied_jsonb) AS memories_applied,
   json(web_search_queries_jsonb) AS web_search_queries,
-  json(content_jsonb) AS content, page_history_deleted
+  json(content_jsonb) AS content, page_history_deleted,
+  json(tool_ui_data_jsonb) AS tool_ui_data
 FROM message
 WHERE role = :role
   AND created_date >= :start_date AND created_date <= :end_date

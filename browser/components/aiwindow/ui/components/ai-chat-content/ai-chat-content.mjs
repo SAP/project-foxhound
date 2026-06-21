@@ -817,7 +817,6 @@ export class AIChatContent extends MozLitElement {
       summaryL10nId: "smart-window-closed-tabs-summary",
       summaryL10nArgs: { count: tabCount },
       rows,
-      canUndo: !!confirmedData.operationId,
       isExpanded: false,
     };
   }
@@ -845,7 +844,6 @@ export class AIChatContent extends MozLitElement {
       summaryL10nId: "smart-window-restore-success-summary",
       summaryL10nArgs: { count: restoredCount },
       rows,
-      canUndo: false,
       isExpanded: true,
     };
   }

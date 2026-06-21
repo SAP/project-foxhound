@@ -191,6 +191,7 @@ class ChatStore {
           memories_flag_source: m.memoriesFlagSource,
           memories_applied_jsonb: toJSONOrNull(m.memoriesApplied),
           web_search_queries_jsonb: toJSONOrNull(m.webSearchQueries),
+          tool_ui_data_jsonb: toJSONOrNull(m.toolUIData),
         }));
         await this.#conn.executeCached(MESSAGE_INSERT, messages);
       })

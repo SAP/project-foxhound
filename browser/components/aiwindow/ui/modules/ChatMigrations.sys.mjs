@@ -147,6 +147,21 @@ async function applyV7(conn, version) {
   `);
 }
 
+// Add tool_ui_data_jsonb column to the message table
+// so toolUIData rendered proper UI type from ADD_UI_TOOL
+async function applyV8(conn, version) {
+  if (version >= 8) {
+    return;
+  }
+
+  const columns = await getColumns(conn, "message");
+  if (columns.has("tool_ui_data_jsonb")) {
+    return;
+  }
+
+  await conn.execute("ALTER TABLE message ADD COLUMN tool_ui_data_jsonb BLOB");
+}
+
 /**
  * Array of migration functions to run in the order they should be run in.
  *
@@ -159,4 +174,5 @@ export const migrations = [
   applyV5,
   applyV6,
   applyV7,
+  applyV8,
 ];

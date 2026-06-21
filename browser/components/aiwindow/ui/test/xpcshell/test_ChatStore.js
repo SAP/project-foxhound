@@ -1262,3 +1262,133 @@ add_atomic_task(async function test_memoriesToggled_upsert_updatesValue() {
     "memoriesToggled should be false after second upsert"
   );
 });
+
+function makeToolUIData({
+  toolCallId = "tool-call-1",
+  uiType = "website-confirmation",
+  tabs = [{ tabId: "tab-1", label: "Example", href: "https://example.com/" }],
+} = {}) {
+  return {
+    toolCallId,
+    timestamp: "2026-05-13T00:00:00.000Z",
+    updateCount: 0,
+    uiType,
+    title: "Close these tabs?",
+    description: "Select tabs to close",
+    properties: { tabs },
+  };
+}
+
+add_atomic_task(async function test_toolUIData_insert_round_trip() {
+  const conversation = new ChatConversation({});
+  conversation.title = "toolUIData INSERT";
+  conversation.addUserMessage("Close my tabs", "https://example.com/", 0);
+  conversation.addAssistantMessage("text", "Here are the tabs I can close:");
+
+  const assistant = conversation.messages.at(-1);
+  const original = makeToolUIData({
+    tabs: [
+      { tabId: "tab-1", label: "Page 1", href: "https://example.com/1" },
+      { tabId: "tab-2", label: "Page 2", href: "https://example.com/2" },
+    ],
+  });
+  assistant.toolUIData = original;
+
+  await gChatStore.updateConversation(conversation);
+  const reloaded = await gChatStore.findConversationById(conversation.id);
+  const reloadedAssistant = reloaded.messages.find(m => m.id === assistant.id);
+
+  Assert.ok(
+    reloadedAssistant,
+    "Reloaded conversation contains the assistant message"
+  );
+  Assert.deepEqual(
+    reloadedAssistant.toolUIData,
+    original,
+    "toolUIData roundTrips through the INSERT path"
+  );
+});
+
+add_atomic_task(async function test_toolUIData_update_roundTrip() {
+  const conversation = new ChatConversation({});
+  conversation.addUserMessage("Close my tabs", "https://example.com/", 0);
+  conversation.addAssistantMessage("text", "Pending confirmation");
+
+  const assistant = conversation.messages.at(-1);
+  assistant.toolUIData = makeToolUIData({ uiType: "website-confirmation" });
+  await gChatStore.updateConversation(conversation);
+
+  // Simulate ToolUI.handleUpdate mutating the in-memory object after a click
+  assistant.toolUIData = {
+    ...assistant.toolUIData,
+    uiType: "ai-action-result",
+    updateCount: 1,
+    properties: {
+      ...assistant.toolUIData.properties,
+      confirmedData: ["tab-1"],
+    },
+  };
+  await gChatStore.updateConversation(conversation);
+
+  const reloaded = await gChatStore.findConversationById(conversation.id);
+  const reloadedAssistant = reloaded.messages.find(m => m.id === assistant.id);
+
+  Assert.withSoftAssertions(soft => {
+    soft.equal(
+      reloadedAssistant.toolUIData.uiType,
+      "ai-action-result",
+      "uiType reflects the post-confirm mutation"
+    );
+    soft.equal(
+      reloadedAssistant.toolUIData.updateCount,
+      1,
+      "updateCount reflects the post-confirm mutation"
+    );
+    soft.deepEqual(
+      reloadedAssistant.toolUIData.properties.confirmedData,
+      ["tab-1"],
+      "confirmedData persisted through the ON CONFLICT UPDATE branch"
+    );
+  });
+});
+
+add_atomic_task(async function test_toolUIData_null_roundTrip() {
+  const conversation = new ChatConversation({});
+  conversation.addUserMessage("Just a message", "https://example.com/", 0);
+  conversation.addAssistantMessage("text", "Just a reply");
+
+  const assistant = conversation.messages.at(-1);
+  // toolUIData intentionally not set
+  await gChatStore.updateConversation(conversation);
+  const reloaded = await gChatStore.findConversationById(conversation.id);
+  const reloadedAssistant = reloaded.messages.find(m => m.id === assistant.id);
+
+  Assert.strictEqual(
+    reloadedAssistant.toolUIData,
+    null,
+    "Messages without toolUIData reload as null"
+  );
+});
+
+add_atomic_task(async function test_toolUIData_undoDismissed_roundTrip() {
+  const conversation = new ChatConversation({});
+  conversation.addUserMessage("Close my tabs", "https://example.com/", 0);
+  conversation.addAssistantMessage("text", "Closed");
+
+  const assistant = conversation.messages.at(-1);
+  const base = makeToolUIData({ uiType: "ai-action-result" });
+  assistant.toolUIData = {
+    ...base,
+    properties: { ...base.properties, undoDismissed: true },
+  };
+
+  await gChatStore.updateConversation(conversation);
+  const reloaded = await gChatStore.findConversationById(conversation.id);
+  const reloadedAssistant = reloaded.messages.find(m => m.id === assistant.id);
+
+  Assert.strictEqual(
+    reloadedAssistant.toolUIData.properties.undoDismissed,
+    true,
+    "undoDismissed:true survives the ChatStore roundTrip"
+  );
+});
