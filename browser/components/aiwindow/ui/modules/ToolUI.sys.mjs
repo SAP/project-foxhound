@@ -148,6 +148,13 @@ export class ToolUI {
       return null;
     }
 
+    const activeTab = verifiedTabObjects.find(
+      tab => tab === win.gBrowser.selectedTab
+    );
+    if (activeTab) {
+      activeTab.smartWindowActionSource = "close_current_tab";
+    }
+
     const result = await lazy.tabManagementService.closeTabs({
       tabs: verifiedTabObjects,
       window: win,
@@ -181,8 +188,15 @@ export class ToolUI {
    * @private
    */
   static async #handleConfirmationTabSelection(context) {
-    const { updateData, message, conversation, window, originalData, mode } =
-      context;
+    const {
+      updateData,
+      message,
+      conversation,
+      window,
+      originalData,
+      mode,
+      toolCallId,
+    } = context;
     const { selectedTabs = [] } = updateData ?? {};
 
     const result = await this.closeSelectedTabs(selectedTabs, window);
@@ -213,6 +227,21 @@ export class ToolUI {
     };
 
     conversation.updateToolUI(message, enhancedData, UI_TYPES.AI_ACTION_RESULT);
+
+    const confirmationMessage = {
+      description:
+        "User confirmed the requested action. selectedTabs contains the tabs that were acted upon.",
+      selectedTabs: selectedTabs.map(({ url, title }) => ({ url, title })),
+    };
+
+    const pendingAction = conversation.messages.at(-1)?.content?.body?.action;
+    if (pendingAction) {
+      confirmationMessage.action = pendingAction;
+    }
+    conversation.resolvePendingToolConfirmation(
+      confirmationMessage,
+      toolCallId
+    );
     return true;
   }
 
@@ -224,7 +253,14 @@ export class ToolUI {
    * @private
    */
   static #handleCancelTabSelection(context) {
-    const { message, conversation, originalData, mode, updateData } = context;
+    const {
+      message,
+      conversation,
+      originalData,
+      mode,
+      updateData,
+      toolCallId,
+    } = context;
 
     // Use the provided reason or default to user_action for manual cancellations
     const reason = updateData?.reason || "user_action";
@@ -245,6 +281,10 @@ export class ToolUI {
       message,
       originalData,
       UI_TYPES.CANCELLED_COMPONENT
+    );
+    conversation.resolvePendingToolConfirmation(
+      { description: "User cancelled the tab action. No action was taken." },
+      toolCallId
     );
     return true;
   }

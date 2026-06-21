@@ -234,6 +234,95 @@ add_task(async function test_handleUpdate_confirmation_success() {
 });
 
 /**
+ * Test that confirmation resolves the pending tool message body with the
+ * action read from the tool message.
+ */
+add_task(async function test_handleUpdate_confirmation_resolves_tool_action() {
+  const conversation = new ChatConversation({});
+  conversation.addUserMessage("Close my tabs", {});
+  conversation.addAssistantMessage("text", "Confirm?");
+
+  const assistantMessage = conversation.messages.find(
+    m => m.role === 1 && m.content?.type === "text"
+  );
+
+  const originalToolCallId = "test-tool-789";
+  assistantMessage.toolUIData = {
+    toolCallId: originalToolCallId,
+    uiType: "website-confirmation",
+    properties: {
+      tabs: [{ id: "tab1", label: "Test Tab" }],
+    },
+  };
+
+  conversation.addToolCallMessage({
+    tool_call_id: originalToolCallId,
+    name: "manage_tabs",
+    body: { pending: true, action: "close_tabs" },
+  });
+
+  const toolMessage = conversation.messages.at(-1);
+
+  const { tabManagementService } = ChromeUtils.importESModule(
+    "moz-src:///browser/components/aiwindow/ui/modules/TabManagementService.sys.mjs"
+  );
+
+  const originalCloseTabs = tabManagementService.closeTabs;
+  tabManagementService.closeTabs = async function () {
+    return { operationId: "mock-operation-789" };
+  };
+
+  const mockTab = {
+    linkedPanel: "panel-1",
+    linkedBrowser: { currentURI: { spec: "https://example.com" } },
+  };
+  const mockWindow = {
+    gBrowser: { tabs: [mockTab], selectedTab: null },
+  };
+  mockWindow.gBrowser.tabs.find = function (predicate) {
+    return this.filter(predicate)[0];
+  };
+
+  const result = await ToolUI.handleUpdate(
+    {
+      messageId: assistantMessage.id,
+      toolCallId: originalToolCallId,
+      updateType: "confirmation-tab-selection",
+      updateData: {
+        selectedTabs: [
+          {
+            linkedPanel: "panel-1",
+            url: "https://example.com",
+            title: "Test Tab",
+          },
+        ],
+      },
+    },
+    conversation,
+    mockWindow
+  );
+
+  tabManagementService.closeTabs = originalCloseTabs;
+
+  Assert.equal(result, true, "Should return true on successful confirmation");
+  Assert.equal(
+    toolMessage.content.body.action,
+    "close_tabs",
+    "Resolved tool message body should carry the action from the pending tool message"
+  );
+  Assert.equal(
+    toolMessage.content.body.description,
+    "User confirmed the requested action. selectedTabs contains the tabs that were acted upon.",
+    "Resolved tool message body should include the confirmation description"
+  );
+  Assert.deepEqual(
+    toolMessage.content.body.selectedTabs,
+    [{ url: "https://example.com", title: "Test Tab" }],
+    "Resolved tool message body should include the acted-upon tabs"
+  );
+});
+
+/**
  * Test that ToolUI.handleUpdate successfully updates for cancellation
  */
 add_task(async function test_handleUpdate_cancellation_success() {
@@ -1598,5 +1687,66 @@ add_task(async function test_isRestored_flag_preserved() {
     restoredMessage.toolUIData.properties.originalUserPrompt,
     "Close tabs",
     "Original user prompt should be available in restored message"
+  );
+});
+
+/**
+ * Test that closeSelectedTabs tags the active tab with
+ * smartWindowActionSource when it is among the verified tabs.
+ */
+add_task(async function test_closeSelectedTabs_tags_active_tab_source() {
+  const { tabManagementService } = ChromeUtils.importESModule(
+    "moz-src:///browser/components/aiwindow/ui/modules/TabManagementService.sys.mjs"
+  );
+
+  const originalCloseTabs = tabManagementService.closeTabs;
+  tabManagementService.closeTabs = async function () {
+    return { operationId: "op-active" };
+  };
+
+  const activeTab = {
+    linkedPanel: "panel-1",
+    linkedBrowser: { currentURI: { spec: "https://example.com" } },
+  };
+  const otherTab = {
+    linkedPanel: "panel-2",
+    linkedBrowser: { currentURI: { spec: "https://mozilla.org" } },
+  };
+
+  const mockWindow = {
+    gBrowser: {
+      tabs: [activeTab, otherTab],
+      selectedTab: activeTab,
+    },
+  };
+
+  const selectedTabsData = [
+    {
+      linkedPanel: "panel-1",
+      url: "https://example.com",
+      title: "Active",
+    },
+    {
+      linkedPanel: "panel-2",
+      url: "https://mozilla.org",
+      title: "Other",
+    },
+  ];
+
+  try {
+    await ToolUI.closeSelectedTabs(selectedTabsData, mockWindow);
+  } finally {
+    tabManagementService.closeTabs = originalCloseTabs;
+  }
+
+  Assert.equal(
+    activeTab.smartWindowActionSource,
+    "close_current_tab",
+    "Active tab gets tagged with smartWindowActionSource"
+  );
+  Assert.equal(
+    otherTab.smartWindowActionSource,
+    undefined,
+    "Non-active tabs are not tagged"
   );
 });
