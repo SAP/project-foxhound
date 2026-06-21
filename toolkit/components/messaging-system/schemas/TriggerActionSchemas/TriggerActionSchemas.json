@@ -281,6 +281,10 @@
                 "currentTabsOpen": {
                   "type": "integer",
                   "description": "The number of tabs open in the browser"
+                },
+                "actionSource": {
+                  "type": "string",
+                  "description": "Optional source attribution propagated from a tab marker (tab.smartWindowActionSource). Absent from context when no caller has tagged the tab."
                 }
               }
             }

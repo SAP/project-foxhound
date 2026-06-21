@@ -246,6 +246,16 @@ Happens when the user closes n or more tabs in a session
   targeting: "currentTabsOpen >= 4"
 }
 ```
+```js
+// The trigger also includes an optional action context variable
+// when a caller marks the tab.smartWindowActionSource before close.
+// Here, the message triggers when the close was attributed to a specific source
+// (e.g., "close_current_tab" set by a toolcall)
+{
+  trigger: { id: "nthTabClosed" },
+  targeting: "actionSource == 'close_current_tab'"
+}
+```
 
 ### `nthTabOpened`
 

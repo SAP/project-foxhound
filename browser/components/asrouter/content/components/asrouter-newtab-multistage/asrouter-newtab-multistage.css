@@ -1123,9 +1123,26 @@ panel#feature-callout[arrow-position=inline-start-bottom] {
 :root[ai-window] #feature-callout .shadow-arrow {
   filter: var(--smart-window-callout-drop-shadow);
 }
+:root[ai-window] #feature-callout:has(.screen[class*=SMARTWINDOW_]) .shadow-arrow {
+  outline-color: #F90;
+}
 :root[ai-window] #feature-callout .screen[pos=callout] .main-content {
   border-radius: var(--border-radius-medium);
   filter: var(--smart-window-callout-drop-shadow);
+}
+:root[ai-window] #feature-callout .screen[pos=callout][class*=SMARTWINDOW_] .main-content {
+  border: 0;
+}
+:root[ai-window] #feature-callout .screen[pos=callout][class*=SMARTWINDOW_] .main-content::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  padding: 1px;
+  border-radius: inherit;
+  background: linear-gradient(116.61deg, #321BFD -17.87%, #CF30E2 52.93%, #F90 89.02%, #F5C451 109.44%);
+  mask: linear-gradient(#FFF, #FFF) content-box, linear-gradient(#FFF, #FFF);
+  mask-composite: exclude;
+  pointer-events: none;
 }
 
 :root[ai-window][lwt-popup=light] #feature-callout {

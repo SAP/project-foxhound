@@ -322,6 +322,37 @@ add_task(async function test_nthTabOpened() {
   Assert.ok(handlerStub.notCalled, "Not called after uninit");
 });
 
+add_task(async function test_nthTabClosed_with_actionSource_marker() {
+  const handlerStub = sinon.stub();
+  const tabClosedTrigger = ASRouterTriggerListeners.get("nthTabClosed");
+  tabClosedTrigger.uninit();
+  tabClosedTrigger.init(handlerStub);
+
+  const markedTab = await BrowserTestUtils.openNewForegroundTab(gBrowser);
+  markedTab.smartWindowActionSource = "close_current_tab";
+  BrowserTestUtils.removeTab(markedTab);
+
+  Assert.ok(handlerStub.calledOnce, "Handler called once");
+  const [, triggerData] = handlerStub.firstCall.args;
+  Assert.equal(
+    triggerData.context.actionSource,
+    "close_current_tab",
+    "action field populated from tab marker"
+  );
+
+  // with unmarked tab action should be absent
+  const plainTab = await BrowserTestUtils.openNewForegroundTab(gBrowser);
+  BrowserTestUtils.removeTab(plainTab);
+  Assert.ok(handlerStub.calledTwice, "Handler called a second time");
+  const [, secondContext] = handlerStub.secondCall.args;
+  Assert.ok(
+    !("actionSource" in secondContext.context),
+    "actionSource field absent on unmarked close"
+  );
+
+  tabClosedTrigger.uninit();
+});
+
 add_task(async function test_cookieBannerDetected() {
   const handlerStub = sinon.stub();
   const bannerDetectedTrigger = ASRouterTriggerListeners.get(
