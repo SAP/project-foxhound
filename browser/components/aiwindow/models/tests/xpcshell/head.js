@@ -33,6 +33,9 @@ function makeConversation({
     getAllMentionURLs() {
       return new Set();
     },
+    getLatestUserMentionCount() {
+      return 0;
+    },
   };
 }
 const { PlacesUtils } = ChromeUtils.importESModule(

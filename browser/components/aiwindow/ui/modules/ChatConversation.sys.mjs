@@ -75,6 +75,23 @@ export class ChatConversation extends EventEmitter {
   activeBranchTipMessageId;
 
   /**
+   * Transient (not persisted): the submit_type of the most recent user
+   * submission, used to send telemetry to later tool-result events.
+   *
+   * @type {?string}
+   */
+  lastSubmitType = null;
+
+  /**
+   * Transient (not persisted): cached action_type categorization
+   * ("tab_mention", "description", "unsupported") of the most recent browser
+   * action request, used to send telemetry to later tool-result events.
+   *
+   * @type {?string}
+   */
+  lastBrowserActionType = null;
+
+  /**
    * A mapping of a URL to its unique URL token. URL tokens are used as shortened
    * versions of URLs to help the model deal with very long URLs. Very long URLs are
    * problematic since they are hard for a model to repeat back without making mistakes
@@ -990,6 +1007,19 @@ export class ChatConversation extends EventEmitter {
 
   get messageCount() {
     return this.#messages.filter(m => CHAT_ROLES.includes(m.role)).length;
+  }
+
+  /**
+   * Returns the contextMentions count from the most recent user message in
+   * the conversation, or 0 if none.
+   *
+   * @returns {number}
+   */
+  getLatestUserMentionCount() {
+    const lastUserMsg = this.#messages.findLast(
+      m => m?.role === MESSAGE_ROLE.USER
+    );
+    return lastUserMsg?.content?.contextMentions?.length ?? 0;
   }
 
   /**

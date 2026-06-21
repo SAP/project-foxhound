@@ -1356,6 +1356,10 @@ export class AIWindow extends MozLitElement {
       tabs: contextMentions.length,
     });
 
+    if (this.#conversation) {
+      this.#conversation.lastSubmitType = submitType;
+    }
+
     this.#recordChatInteraction();
     this.#fetchAIResponse(trimmed, {
       ...this.#createUserRoleOpts(contextMentions),

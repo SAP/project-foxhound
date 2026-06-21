@@ -24,6 +24,10 @@ import {
   sanitizeUntrustedContent,
   isNewPageUrl,
 } from "moz-src:///browser/components/aiwindow/models/ChatUtils.sys.mjs";
+import {
+  FEATURE_MAJOR_VERSIONS,
+  MODEL_FEATURES,
+} from "moz-src:///browser/components/aiwindow/models/Utils.sys.mjs";
 
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
@@ -36,6 +40,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "moz-src:///browser/components/aiwindow/models/memories/MemoriesManager.sys.mjs",
   SmartWindowNavigationInfo:
     "moz-src:///browser/components/aiwindow/models/SmartWindowNavigationInfo.sys.mjs",
+  ToolUITelemetry:
+    "moz-src:///browser/components/aiwindow/ui/modules/ToolUITelemetry.sys.mjs",
   // @todo Bug 2009194
   // PageDataService:
   //   "moz-src:///browser/components/pagedata/PageDataService.sys.mjs",
@@ -1082,21 +1088,97 @@ export async function worldCupLive(toolParams, conversation) {
 }
 
 /**
+ * Counts open http(s) tabs across all active AI windows. Used for
+ * browser_action_submit telemetry.
+ *
+ * @returns {number}
+ */
+function countOpenAIWindowTabs() {
+  let count = 0;
+  for (const win of lazy.BrowserWindowTracker.orderedWindows) {
+    if (!lazy.AIWindow.isAIWindowActive(win) || win.closed || !win.gBrowser) {
+      continue;
+    }
+    for (const tab of win.gBrowser.tabs) {
+      const url = tab.linkedBrowser?.currentURI?.spec;
+      if (isAllowedURL(url) && !isNewPageUrl(url)) {
+        count += 1;
+      }
+    }
+  }
+  return count;
+}
+
+/**
+ * Determines the telemetry action_type for a manage_tabs invocation.
+ *
+ * @param {ChatConversation} conversation
+ * @param {string} action
+ * @returns {"unsupported" | "tab_mention" | "description"}
+ */
+function getActionType(conversation, action) {
+  if (action !== "close_tabs") {
+    return "unsupported";
+  }
+
+  const mentions = conversation.getLatestUserMentionCount();
+  return mentions > 0 ? "tab_mention" : "description";
+}
+
+/**
  * Tool entrypoint for manage_tabs. Dispatches to a per-action handler
  * based on `action`.
  *
  * @param {object} toolParams
  * @param {ChatConversation} conversation
+ * @param {string} [mode] - Location/mode of the AI Window for telemetry
+ * @param {string} [model] - Identifier of the model that invoked the tool
  * @returns {Promise<{ toolResult: object, uiData: ?object }>}
  *   `toolResult` is appended as the body of the `role: "tool"` message sent
  *   to the model. `uiData` is attached to the assistant message for UI
  *   rendering, or `null` to skip the UI attachment.
  */
-export async function manageTabs(toolParams, conversation) {
+export async function manageTabs(
+  toolParams,
+  conversation,
+  mode = "",
+  model = ""
+) {
   const params = toolParams && typeof toolParams === "object" ? toolParams : {};
   const { action, ask_confirmation = true, url_tokens = [] } = params;
 
+  const actionType = getActionType(conversation, action);
+
+  if (conversation) {
+    conversation.lastBrowserActionType = actionType;
+  }
+
+  const promptVersion = String(FEATURE_MAJOR_VERSIONS[MODEL_FEATURES.CHAT]);
+
+  const baseTelemetryInfo = {
+    location: mode,
+    chat_id: conversation?.id || "",
+    message_seq: conversation?.messageCount ?? 0,
+    model,
+    prompt_version: promptVersion,
+    action_type: actionType,
+  };
+
+  lazy.ToolUITelemetry.recordBrowserActionSubmit({
+    ...baseTelemetryInfo,
+    tabs_open: countOpenAIWindowTabs(),
+    mentions: conversation.getLatestUserMentionCount(),
+    submit_type: conversation?.lastSubmitType || "",
+  });
+
   if (!Array.isArray(url_tokens)) {
+    lazy.ToolUITelemetry.recordBrowserActionComplete({
+      ...baseTelemetryInfo,
+      result: "error",
+      tabs_affected: 0,
+      undo_available: false,
+      error: "invalid_url_tokens",
+    });
     return {
       toolResult: "Error: url_tokens must be an array.",
       uiData: null,
@@ -1108,6 +1190,13 @@ export async function manageTabs(toolParams, conversation) {
   );
 
   if (!validUrls.size) {
+    lazy.ToolUITelemetry.recordBrowserActionComplete({
+      ...baseTelemetryInfo,
+      result: "no_match",
+      tabs_affected: 0,
+      undo_available: false,
+      error: "no_valid_urls",
+    });
     return {
       toolResult: "Error: No valid URLs were provided to manage_tabs.",
       uiData: null,
@@ -1115,9 +1204,19 @@ export async function manageTabs(toolParams, conversation) {
   }
 
   if (action === "close_tabs") {
-    return closeTabsAction({ validUrls, ask_confirmation }, conversation);
+    return closeTabsAction(
+      { validUrls, ask_confirmation, mode, model },
+      conversation
+    );
   }
 
+  lazy.ToolUITelemetry.recordBrowserActionComplete({
+    ...baseTelemetryInfo,
+    result: "error",
+    tabs_affected: 0,
+    undo_available: false,
+    error: "unsupported_action",
+  });
   return {
     toolResult: `Error: Unsupported action for manage_tabs: ${action}`,
     uiData: null,

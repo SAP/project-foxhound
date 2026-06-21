@@ -9,6 +9,10 @@
  */
 
 import { sanitizeUntrustedContent } from "moz-src:///browser/components/aiwindow/models/ChatUtils.sys.mjs";
+import {
+  FEATURE_MAJOR_VERSIONS,
+  MODEL_FEATURES,
+} from "moz-src:///browser/components/aiwindow/models/Utils.sys.mjs";
 
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
@@ -16,6 +20,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "moz-src:///browser/components/aiwindow/ui/modules/AIWindow.sys.mjs",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
   ToolUI: "moz-src:///browser/components/aiwindow/ui/modules/ToolUI.sys.mjs",
+  ToolUITelemetry:
+    "moz-src:///browser/components/aiwindow/ui/modules/ToolUITelemetry.sys.mjs",
 });
 
 /**
@@ -84,17 +90,33 @@ function shouldRequireUserConfirmation(tabs, topAIWin, securityProperties) {
  * Handles the close_tabs action of manage_tabs: resolves URL tokens to
  * open tabs, then either prompts for confirmation or closes them.
  *
- * @param {{ validUrls: Set<string>, ask_confirmation: boolean }} params
+ * @param {{ validUrls: Set<string>, ask_confirmation: boolean, mode?: string, model?: string }} params
  * @param {ChatConversation} conversation
  * @returns {Promise<object>}
  */
 export async function closeTabsAction(
-  { validUrls, ask_confirmation },
+  { validUrls, ask_confirmation, mode = "", model = "" },
   conversation
 ) {
+  const baseTelemetryInfo = {
+    location: mode,
+    chat_id: conversation?.id || "",
+    message_seq: conversation?.messageCount ?? 0,
+    model,
+    prompt_version: String(FEATURE_MAJOR_VERSIONS[MODEL_FEATURES.CHAT]),
+    action_type: conversation?.lastBrowserActionType || "description",
+  };
+
   const { matchedTabs, topAIWin } = findMatchingAIWindowTabs(validUrls);
 
   if (!matchedTabs.length) {
+    lazy.ToolUITelemetry.recordBrowserActionComplete({
+      ...baseTelemetryInfo,
+      result: "no_match",
+      tabs_affected: 0,
+      undo_available: false,
+      error: "no_open_tab_match",
+    });
     return {
       toolResult: "Error: None of the provided URL tokens match an open tab.",
       uiData: null,
@@ -143,6 +165,13 @@ export async function closeTabsAction(
 
   const result = await lazy.ToolUI.closeSelectedTabs(tabs, topAIWin);
   if (!result || !result.operationId) {
+    lazy.ToolUITelemetry.recordBrowserActionComplete({
+      ...baseTelemetryInfo,
+      result: "error",
+      tabs_affected: 0,
+      undo_available: false,
+      error: "close_failed",
+    });
     return { toolResult: "Error: Failed to close tabs.", uiData: null };
   }
 
@@ -157,7 +186,23 @@ export async function closeTabsAction(
     closed: !failedPanels.has(linkedPanel),
   }));
 
-  const failedCount = closedTabs.filter(tab => !tab.closed).length;
+  const closedCount = closedTabs.filter(tab => tab.closed).length;
+  const failedCount = closedTabs.length - closedCount;
+  let telemetryResult = "success";
+  if (failedCount && closedCount === 0) {
+    telemetryResult = "error";
+  } else if (failedCount) {
+    telemetryResult = "partial_success";
+  }
+
+  lazy.ToolUITelemetry.recordBrowserActionComplete({
+    ...baseTelemetryInfo,
+    result: telemetryResult,
+    tabs_affected: closedCount,
+    undo_available: closedCount > 0,
+    error: failedCount ? "some_tabs_failed_to_close" : "",
+  });
+
   return {
     toolResult: {
       description: failedCount

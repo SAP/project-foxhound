@@ -1229,3 +1229,81 @@ smart_window:
         type: string
         description: >
           Error code if Undo was not successful
+
+  browser_action_submit:
+    type: event
+    description: |
+      Recorded when the model invokes a browser action tool (e.g., manage_tabs).
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2037203
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2037203
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    expires: never
+    extra_keys:
+      location: *location
+      chat_id: *chat_id
+      message_seq: *message_seq
+      model: *model
+      prompt_version: &prompt_version
+        type: string
+        description: >
+          Major version of the chat prompt used for this request.
+      submit_type: *submit_type
+      action_type:
+        type: string
+        description: >
+          How the action was triggered: tab_mention, description, or unsupported.
+      tabs_open:
+        type: quantity
+        unit: count
+        description: >
+          Number of tabs open at submit time.
+      mentions:
+        type: quantity
+        unit: count
+        description: >
+          Number of tab mentions in the request.
+
+  browser_action_complete:
+    type: event
+    description: |
+      Recorded when a browser action initiated by the model has completed, errored, or been cancelled.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2037203
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2037203
+    data_sensitivity:
+      - interaction
+    notification_emails: *emails
+    expires: never
+    extra_keys:
+      location: *location
+      chat_id: *chat_id
+      message_seq: *message_seq
+      model: *model
+      prompt_version: *prompt_version
+      action_type:
+        type: string
+        description: >
+          How the action was triggered: tab_mention, description, or unsupported.
+      result:
+        type: string
+        description: >
+          Outcome of the action: success, partial_success, no_match,
+          unclear_target, blocked, cancelled, or error.
+      tabs_affected:
+        type: quantity
+        unit: count
+        description: >
+          Number of tabs actually closed.
+      undo_available:
+        type: boolean
+        description: >
+          Whether an undo path was available after the action completed.
+      error:
+        type: string
+        description: >
+          Error code if the action was unsuccessful.

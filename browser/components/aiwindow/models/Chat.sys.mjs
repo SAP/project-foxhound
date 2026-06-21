@@ -101,7 +101,9 @@ export async function executeToolByName(
     case MANAGE_TABS: {
       const { toolResult, uiData } = await toolFns.manageTabs(
         toolParams,
-        conversation
+        conversation,
+        mode,
+        engineInstance?.model
       );
       if (uiData) {
         conversation.addUIToolToCurrentMessage(toolCallId, uiData);
