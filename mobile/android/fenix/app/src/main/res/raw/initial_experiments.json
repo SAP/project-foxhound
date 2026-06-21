@@ -2,6 +2,108 @@
   "data": [
     {
       "schemaVersion": "1.12.0",
+      "slug": "android-marketing-card-experiment-eu-al-cont-second-p",
+      "id": "android-marketing-card-experiment-eu-al-cont-second-p",
+      "arguments": {},
+      "application": "org.mozilla.firefox",
+      "appName": "fenix",
+      "appId": "org.mozilla.firefox",
+      "channel": "release",
+      "userFacingName": "Android - Marketing Card Experiment EU Al Cont Second P",
+      "userFacingDescription": "Marketing Card Experiment",
+      "isEnrollmentPaused": false,
+      "isRollout": false,
+      "bucketConfig": {
+        "randomizationUnit": "nimbus_id",
+        "namespace": "fenix-juno-onboarding-release-23",
+        "start": 0,
+        "count": 10000,
+        "total": 10000
+      },
+      "featureIds": [
+        "juno-onboarding"
+      ],
+      "probeSets": [],
+      "outcomes": [
+        {
+          "slug": "onboarding",
+          "priority": "primary"
+        }
+      ],
+      "branches": [
+        {
+          "slug": "control",
+          "ratio": 3,
+          "feature": {
+            "featureId": "this-is-included-for-mobile-pre-96-support",
+            "enabled": false,
+            "value": {}
+          },
+          "features": [
+            {
+              "featureId": "juno-onboarding",
+              "enabled": true,
+              "value": {
+                "cards": {
+                  "marketing": {
+                    "extra-data": {
+                      "marketing-data": {
+                        "marketing-card-variant": "default"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "slug": "treatment-a",
+          "ratio": 1,
+          "feature": {
+            "featureId": "this-is-included-for-mobile-pre-96-support",
+            "enabled": false,
+            "value": {}
+          },
+          "features": [
+            {
+              "featureId": "juno-onboarding",
+              "enabled": true,
+              "value": {
+                "cards": {
+                  "marketing": {
+                    "extra-data": {
+                      "marketing-data": {
+                        "marketing-card-variant": "treatment-c"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "targeting": "(('android-marketing-card-experiment-eu-al-cont-second-p' in active_experiments) || ((isFirstRun == 'true') && (app_version|versionCompare('152.0.2') >= 0) && (language in ['en']) && (region in ['AU', 'CA', 'GB', 'NZ'])))",
+      "startDate": "2026-06-19",
+      "enrollmentEndDate": null,
+      "endDate": null,
+      "proposedDuration": 2,
+      "proposedEnrollment": 7,
+      "referenceBranch": "control",
+      "featureValidationOptOut": false,
+      "localizations": null,
+      "locales": null,
+      "publishedDate": "2026-06-19T15:54:11.251442Z",
+      "isFirefoxLabsOptIn": false,
+      "firefoxLabsTitle": "",
+      "firefoxLabsDescription": "",
+      "firefoxLabsDescriptionLinks": null,
+      "firefoxLabsGroup": "",
+      "requiresRestart": false
+    },
+    {
+      "schemaVersion": "1.12.0",
       "slug": "android-marketing-card-removal-eu-removal-release",
       "id": "android-marketing-card-removal-eu-removal-release",
       "arguments": {},
@@ -61,213 +163,6 @@
       "localizations": null,
       "locales": null,
       "publishedDate": "2026-05-22T11:26:14.120723Z",
-      "isFirefoxLabsOptIn": false,
-      "firefoxLabsTitle": "",
-      "firefoxLabsDescription": "",
-      "firefoxLabsDescriptionLinks": null,
-      "firefoxLabsGroup": "",
-      "requiresRestart": false
-    },
-    {
-      "schemaVersion": "1.12.0",
-      "slug": "android-marketing-card-us-experiment-release",
-      "id": "android-marketing-card-us-experiment-release",
-      "arguments": {},
-      "application": "org.mozilla.firefox",
-      "appName": "fenix",
-      "appId": "org.mozilla.firefox",
-      "channel": "release",
-      "userFacingName": "Android - Marketing Card US Experiment Release",
-      "userFacingDescription": "Marketing Card US Experiment",
-      "isEnrollmentPaused": false,
-      "isRollout": false,
-      "bucketConfig": {
-        "randomizationUnit": "nimbus_id",
-        "namespace": "fenix-continuous-onboarding-juno-onboarding-release-1",
-        "start": 5000,
-        "count": 500,
-        "total": 10000
-      },
-      "featureIds": [
-        "continuous-onboarding",
-        "juno-onboarding"
-      ],
-      "probeSets": [],
-      "outcomes": [
-        {
-          "slug": "onboarding",
-          "priority": "primary"
-        }
-      ],
-      "branches": [
-        {
-          "slug": "control",
-          "ratio": 1,
-          "feature": {
-            "featureId": "this-is-included-for-mobile-pre-96-support",
-            "enabled": false,
-            "value": {}
-          },
-          "features": [
-            {
-              "featureId": "continuous-onboarding",
-              "enabled": true,
-              "value": {
-                "enabled": false
-              }
-            },
-            {
-              "featureId": "juno-onboarding",
-              "enabled": true,
-              "value": {
-                "cards": {
-                  "marketing": {
-                    "extra-data": {
-                      "marketing-data": {
-                        "marketing-card-variant": "default"
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          ]
-        },
-        {
-          "slug": "treatment-a",
-          "ratio": 1,
-          "feature": {
-            "featureId": "this-is-included-for-mobile-pre-96-support",
-            "enabled": false,
-            "value": {}
-          },
-          "features": [
-            {
-              "featureId": "continuous-onboarding",
-              "enabled": true,
-              "value": {
-                "enabled": false
-              }
-            },
-            {
-              "featureId": "juno-onboarding",
-              "enabled": true,
-              "value": {
-                "cards": {
-                  "marketing": {
-                    "extra-data": {
-                      "marketing-data": {
-                        "body-line-one-text": "nova_onboarding_marketing_body_6"
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          ]
-        }
-      ],
-      "targeting": "((is_already_enrolled) || ((isFirstRun == 'true') && (app_version|versionCompare('151.0.1') >= 0) && (language in ['en']) && (region in ['US'])))",
-      "startDate": "2026-05-22",
-      "enrollmentEndDate": null,
-      "endDate": null,
-      "proposedDuration": 3,
-      "proposedEnrollment": 14,
-      "referenceBranch": "control",
-      "featureValidationOptOut": false,
-      "localizations": null,
-      "locales": null,
-      "publishedDate": "2026-05-22T11:25:49.736384Z",
-      "isFirefoxLabsOptIn": false,
-      "firefoxLabsTitle": "",
-      "firefoxLabsDescription": "",
-      "firefoxLabsDescriptionLinks": null,
-      "firefoxLabsGroup": "",
-      "requiresRestart": false
-    },
-    {
-      "schemaVersion": "1.12.0",
-      "slug": "android-ui-redesign-toolbar-customization-release-new-users",
-      "id": "android-ui-redesign-toolbar-customization-release-new-users",
-      "arguments": {},
-      "application": "org.mozilla.firefox",
-      "appName": "fenix",
-      "appId": "org.mozilla.firefox",
-      "channel": "release",
-      "userFacingName": "Android UI Redesign Toolbar Customization - Release New Users",
-      "userFacingDescription": "Toolbar Compose + Toolbar Redesign + Tab Tray + Menu + Toolbar Customizations",
-      "isEnrollmentPaused": false,
-      "isRollout": true,
-      "bucketConfig": {
-        "randomizationUnit": "nimbus_id",
-        "namespace": "fenix-composable-toolbar-menu-redesign-tab-management-enhancements-toolbar-redesign-option-release-mobile_new_users-rollout-1",
-        "start": 0,
-        "count": 10000,
-        "total": 10000
-      },
-      "featureIds": [
-        "composable-toolbar",
-        "menu-redesign",
-        "tab-management-enhancements",
-        "toolbar-redesign-option"
-      ],
-      "probeSets": [],
-      "outcomes": [],
-      "branches": [
-        {
-          "slug": "control",
-          "ratio": 1,
-          "feature": {
-            "featureId": "this-is-included-for-mobile-pre-96-support",
-            "enabled": false,
-            "value": {}
-          },
-          "features": [
-            {
-              "featureId": "composable-toolbar",
-              "enabled": true,
-              "value": {
-                "enabled": true
-              }
-            },
-            {
-              "featureId": "menu-redesign",
-              "enabled": true,
-              "value": {
-                "enabled": true,
-                "report-site-issue": false
-              }
-            },
-            {
-              "featureId": "tab-management-enhancements",
-              "enabled": true,
-              "value": {
-                "enabled": true,
-                "opening_animation_enabled": false
-              }
-            },
-            {
-              "featureId": "toolbar-redesign-option",
-              "enabled": true,
-              "value": {
-                "show-options": true,
-                "show-customization": true
-              }
-            }
-          ]
-        }
-      ],
-      "targeting": "(app_version|versionCompare('148.*') <= 0) && ((is_already_enrolled) || ((days_since_install < 7) && (app_version|versionCompare('147.!') >= 0)))",
-      "startDate": "2026-02-24",
-      "enrollmentEndDate": null,
-      "endDate": null,
-      "proposedDuration": 28,
-      "proposedEnrollment": 7,
-      "referenceBranch": "control",
-      "featureValidationOptOut": false,
-      "localizations": null,
-      "locales": null,
-      "publishedDate": "2026-02-24T16:31:05.138517Z",
       "isFirefoxLabsOptIn": false,
       "firefoxLabsTitle": "",
       "firefoxLabsDescription": "",
@@ -535,194 +430,6 @@
       "localizations": null,
       "locales": null,
       "publishedDate": "2026-04-28T16:08:18.762345Z",
-      "isFirefoxLabsOptIn": false,
-      "firefoxLabsTitle": "",
-      "firefoxLabsDescription": "",
-      "firefoxLabsDescriptionLinks": null,
-      "firefoxLabsGroup": "",
-      "requiresRestart": false
-    },
-    {
-      "schemaVersion": "1.12.0",
-      "slug": "setup-checklist-all-users",
-      "id": "setup-checklist-all-users",
-      "arguments": {},
-      "application": "org.mozilla.firefox_beta",
-      "appName": "fenix",
-      "appId": "org.mozilla.firefox_beta",
-      "channel": "beta",
-      "userFacingName": "Setup checklist (all users)",
-      "userFacingDescription": "Android Setup Checklist",
-      "isEnrollmentPaused": true,
-      "isRollout": false,
-      "bucketConfig": {
-        "randomizationUnit": "nimbus_id",
-        "namespace": "fenix-setup-checklist-beta-1",
-        "start": 5000,
-        "count": 5000,
-        "total": 10000
-      },
-      "featureIds": [
-        "setup-checklist"
-      ],
-      "probeSets": [],
-      "outcomes": [
-        {
-          "slug": "onboarding",
-          "priority": "primary"
-        }
-      ],
-      "branches": [
-        {
-          "slug": "control",
-          "ratio": 1,
-          "feature": {
-            "featureId": "this-is-included-for-mobile-pre-96-support",
-            "enabled": false,
-            "value": {}
-          },
-          "features": [
-            {
-              "featureId": "setup-checklist",
-              "enabled": true,
-              "value": {
-                "enabled": false,
-                "setup-checklist-type": "collection-1"
-              }
-            }
-          ]
-        },
-        {
-          "slug": "treatment-a",
-          "ratio": 1,
-          "feature": {
-            "featureId": "this-is-included-for-mobile-pre-96-support",
-            "enabled": false,
-            "value": {}
-          },
-          "features": [
-            {
-              "featureId": "setup-checklist",
-              "enabled": true,
-              "value": {
-                "enabled": true,
-                "setup-checklist-type": "collection-1"
-              }
-            }
-          ]
-        },
-        {
-          "slug": "treatment-b",
-          "ratio": 1,
-          "feature": {
-            "featureId": "this-is-included-for-mobile-pre-96-support",
-            "enabled": false,
-            "value": {}
-          },
-          "features": [
-            {
-              "featureId": "setup-checklist",
-              "enabled": true,
-              "value": {
-                "enabled": true,
-                "setup-checklist-type": "collection-2"
-              }
-            }
-          ]
-        }
-      ],
-      "targeting": "((android_sdk_version|versionCompare('26') >= 0)) && (app_version|versionCompare('139.!') >= 0)",
-      "startDate": "2025-07-24",
-      "enrollmentEndDate": "2025-08-18",
-      "endDate": null,
-      "proposedDuration": 28,
-      "proposedEnrollment": 7,
-      "referenceBranch": "control",
-      "featureValidationOptOut": false,
-      "localizations": null,
-      "locales": null,
-      "publishedDate": "2025-07-24T14:49:39.587775Z",
-      "isFirefoxLabsOptIn": false,
-      "firefoxLabsTitle": null,
-      "firefoxLabsDescription": null,
-      "firefoxLabsDescriptionLinks": null,
-      "firefoxLabsGroup": null,
-      "requiresRestart": false
-    },
-    {
-      "schemaVersion": "1.12.0",
-      "slug": "shake-to-summarize-android-mistral-worldwide-english-release-experiment",
-      "id": "shake-to-summarize-android-mistral-worldwide-english-release-experiment",
-      "arguments": {},
-      "application": "org.mozilla.firefox",
-      "appName": "fenix",
-      "appId": "org.mozilla.firefox",
-      "channel": "release",
-      "userFacingName": "Shake To Summarize - Android - Mistral Worldwide English - Release Experiment",
-      "userFacingDescription": "Shake to Summarize feature experiment",
-      "isEnrollmentPaused": true,
-      "isRollout": false,
-      "bucketConfig": {
-        "randomizationUnit": "nimbus_id",
-        "namespace": "fenix-shake-to-summarize-release-1",
-        "start": 0,
-        "count": 2000,
-        "total": 10000
-      },
-      "featureIds": [
-        "shake-to-summarize"
-      ],
-      "probeSets": [],
-      "outcomes": [],
-      "branches": [
-        {
-          "slug": "control",
-          "ratio": 1,
-          "feature": {
-            "featureId": "this-is-included-for-mobile-pre-96-support",
-            "enabled": false,
-            "value": {}
-          },
-          "features": [
-            {
-              "featureId": "shake-to-summarize",
-              "enabled": true,
-              "value": {
-                "enabled": false
-              }
-            }
-          ]
-        },
-        {
-          "slug": "treatment-a",
-          "ratio": 1,
-          "feature": {
-            "featureId": "this-is-included-for-mobile-pre-96-support",
-            "enabled": false,
-            "value": {}
-          },
-          "features": [
-            {
-              "featureId": "shake-to-summarize",
-              "enabled": true,
-              "value": {
-                "enabled": true
-              }
-            }
-          ]
-        }
-      ],
-      "targeting": "((is_already_enrolled) || ((app_version|versionCompare('151.!') >= 0) && (language in ['en']))) && (user_disabled_ai == false)",
-      "startDate": "2026-04-29",
-      "enrollmentEndDate": "2026-05-29",
-      "endDate": null,
-      "proposedDuration": 14,
-      "proposedEnrollment": 14,
-      "referenceBranch": "control",
-      "featureValidationOptOut": false,
-      "localizations": null,
-      "locales": null,
-      "publishedDate": "2026-04-29T23:09:53.601842Z",
       "isFirefoxLabsOptIn": false,
       "firefoxLabsTitle": "",
       "firefoxLabsDescription": "",

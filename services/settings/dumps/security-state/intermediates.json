@@ -19153,24 +19153,6 @@
       "last_modified": 1666727871059
     },
     {
-      "schema": 1666727439208,
-      "derHash": "EpdlWLaOjh6qeaYpqOTRft75P1rDDebfsM3uOJ1W0VY=",
-      "subject": "CN=TuringSign RSA Secure CA,O=Turing Crypto GmbH,C=DE",
-      "subjectDN": "ME0xCzAJBgNVBAYTAkRFMRswGQYDVQQKExJUdXJpbmcgQ3J5cHRvIEdtYkgxITAfBgNVBAMTGFR1cmluZ1NpZ24gUlNBIFNlY3VyZSBDQQ==",
-      "whitelist": false,
-      "attachment": {
-        "hash": "2f15e1f6218dde794713d0b2b8cfc8bd6eaad84e6e30aeda4ccb44a17decc213",
-        "size": 2028,
-        "filename": "LjNGvuYlXy4cly5bwppVDU4T8q5pCHAHEEAG--Nx1WA=.pem",
-        "location": "security-state-staging/intermediates/34baea23-ff0b-4e43-a267-0e4a95aa4599.pem",
-        "mimetype": "application/x-pem-file"
-      },
-      "pubKeyHash": "LjNGvuYlXy4cly5bwppVDU4T8q5pCHAHEEAG++Nx1WA=",
-      "crlite_enrolled": false,
-      "id": "c8b18f59-94dd-41d5-a00b-f89d1a5d798a",
-      "last_modified": 1666727870976
-    },
-    {
       "schema": 1666727383209,
       "derHash": "RnJ7kMWl9zN1CC2bG8nxe0RfUCCpXjff3x7yCyh8URU=",
       "subject": "CN=University of Ioannina TLS RSA SubCA R1,O=Hellenic Academic and Research Institutions CA,C=GR",
@@ -19313,24 +19295,6 @@
       "crlite_enrolled": false,
       "id": "757bad34-1d42-4e5d-b9b3-c0a53e84ea95",
       "last_modified": 1666727870796
-    },
-    {
-      "schema": 1666727386764,
-      "derHash": "GTe5v2YvtXhAe3erh9jWYrFjJ8+SM0DQ9y2VGVKxnIA=",
-      "subject": "CN=TuringSign ECC Secure CA,O=Turing Crypto GmbH,C=DE",
-      "subjectDN": "ME0xCzAJBgNVBAYTAkRFMRswGQYDVQQKExJUdXJpbmcgQ3J5cHRvIEdtYkgxITAfBgNVBAMTGFR1cmluZ1NpZ24gRUNDIFNlY3VyZSBDQQ==",
-      "whitelist": false,
-      "attachment": {
-        "hash": "0c5cf83ed5b3664d80db1c28c2aa11c8a0e114bee2267c442ec1ed894a803551",
-        "size": 1406,
-        "filename": "Qg8WXvoy1Rxl-vs4yqRTbwJDijUK-I6ahTBJYsotkfo=.pem",
-        "location": "security-state-staging/intermediates/698e3a37-1d12-44d8-b154-08b235a7e128.pem",
-        "mimetype": "application/x-pem-file"
-      },
-      "pubKeyHash": "Qg8WXvoy1Rxl+vs4yqRTbwJDijUK+I6ahTBJYsotkfo=",
-      "crlite_enrolled": false,
-      "id": "caa4bf78-66e4-42e9-862f-1ed6e684e693",
-      "last_modified": 1666727870783
     },
     {
       "schema": 1666727433713,
@@ -29377,5 +29341,5 @@
       "last_modified": 1559865884636
     }
   ],
-  "timestamp": 1781668623276
+  "timestamp": 1782053829054
 }
