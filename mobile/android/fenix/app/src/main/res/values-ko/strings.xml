@@ -713,8 +713,23 @@
     %1$s is replaced by an active link, using nova_onboarding_marketing_body_link_text as text (“How we use the data”).
   -->
   <string name="nova_onboarding_marketing_body_6" tools:ignore="BrandUsage,UnusedResources">여러분이 Firefox를 사용하는 플랫폼에 대해 Mozilla가 알릴 수 있도록 하여 더 많은 사람들에게 다가갈 수 있도록 도와주세요. %1$s</string>
+  <!--
+    Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
+    “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
+    %1$s is replaced by an active link, using nova_onboarding_marketing_body_link_text_1 as text (“Learn More”).
+  -->
+  <string name="nova_onboarding_marketing_body_7" tools:ignore="BrandUsage">Firefox를 사용하는 플랫폼의 출처를 Mozilla에 알려주시면 더 많은 사람들에게 도움을 주실 수 있습니다. %1$s</string>
+  <!-- Marketing onboarding additional body text. 'Firefox' is intentionally hardcoded. -->
+  <string name="nova_onboarding_marketing_body_line_two" tools:ignore="BrandUsage">Firefox는 자랑스럽게도 독립적이며 기술 독점으로부터 개방 웹을 지키기 위해 노력합니다.</string>
+  <!--
+    Marketing onboarding additional body text. 'Firefox' is intentionally hardcoded.
+    “Allowing” refers to the main button “Allow and Continue”; the ask for the user is to allow communicating back to the platform.
+  -->
+  <string name="nova_onboarding_marketing_body_line_three" tools:ignore="BrandUsage">Firefox의 승리를 도울 수 있도록 허용해 주세요.</string>
   <!-- Marketing onboarding body link text. -->
   <string name="nova_onboarding_marketing_body_link_text">저희가 데이터를 사용하는 방법</string>
+  <!-- Marketing onboarding body link text. -->
+  <string name="nova_onboarding_marketing_body_link_text_1">더 알아보기</string>
   <!-- Marketing onboarding primary button text. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage">Firefox 도움말</string>
   <!-- Marketing onboarding primary button text. -->
@@ -2045,6 +2060,10 @@
   <!-- The error message of the URL text field when an invalid URL has been entered. -->
   <string name="webcompat_reporter_url_error_invalid">올바른 URL을 입력하세요</string>
   <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
+  <string name="webcompat_reporter_label_whats_broken_3">작동하지 않는 것은 무엇입니까?</string>
+  <!-- Content description for the icon button that clears the selected broken site reason in the WebCompat Reporter. -->
+  <string name="webcompat_reporter_clear_reason_content_description">선택한 이유 지우기</string>
+  <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_label_whats_broken_2">어떤 문제인가요?</string>
   <!-- The placeholder text for the dropdown where a user selects a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_choose_reason_2">이유 선택</string>
@@ -2102,6 +2121,10 @@
   <string name="webcompat_reporter_reason_account2">로그인 또는 등록할 수 없음</string>
   <!-- Broken site reason text for site asked to turn off ad blocker -->
   <string name="webcompat_reporter_reason_turn_off_adblocker">사이트가 광고 차단기를 끄도록 요청함</string>
+  <!-- Broken site reason text for browser isn’t supported or blocked -->
+  <string name="webcompat_reporter_reason_notsupported_2">지원되지 않거나 차단된 브라우저</string>
+  <!-- Broken site reason text for the site being deceptive -->
+  <string name="webcompat_reporter_reason_site_is_deceptive">의심스러운 사이트</string>
   <!-- Broken site reason text for browser isn’t supported or blocked -->
   <string name="webcompat_reporter_reason_notsupported">지원되지 않거나 차단된 브라우저</string>
   <!-- Broken site reason text for something else -->
@@ -2695,7 +2718,7 @@
     <item quantity="other">추적기 %d개 차단됨</item>
   </plurals>
   <!-- Text shown on the trackers blocked card when no trackers have been blocked yet -->
-  <string name="trackers_blocked_empty">보호되고 있습니다</string>
+  <string name="trackers_blocked_empty">보호 중</string>
   <!-- Text shown below the trackers blocked card with typing animation -->
   <string name="help_catch_trackers">추적기 잡기에 도와주세요</string>
   <!-- Preference for enhanced tracking protection for the standard protection settings -->
@@ -3902,7 +3925,7 @@
     Description text for the protection panel banner when privacy dashboard is enabled.
     and there are no trackers blocked.
   -->
-  <string name="protection_panel_banner_protected_no_blocked_trackers_description">보호되고 있습니다.</string>
+  <string name="protection_panel_banner_protected_no_blocked_trackers_description">보호 중입니다.</string>
   <!-- Description text for the protection panel banner when tracking protection is enabled. -->
   <string name="protection_panel_banner_protected_description">보호 중입니다. 문제가 발견되면 알려드리겠습니다.</string>
   <!-- Label text for the Enhanced Tracking Protection toggle. -->
@@ -4710,6 +4733,28 @@
   <string name="privacy_notice_updated_homepage_message_privacy_notice" tools:ignore="UnusedResources">개인정보처리방침</string>
   <!-- The second active link used in privacy_notice_updated_homepage_message -->
   <string name="privacy_notice_updated_homepage_message_learn_more" tools:ignore="UnusedResources">더 알아보기</string>
+  <!-- Google Lens prototype related strings -->
+  <string name="preferences_debug_settings_google_lens_integration">Google 렌즈 통합 사용함</string>
+  <!-- Lens image search button content description -->
+  <string name="lens_search_content_description">이미지로 검색</string>
+  <!-- Content description for the gallery picker button in the Lens camera screen -->
+  <string name="content_description_gallery">갤러리에서 선택하여 Google 렌즈로 보내기</string>
+  <!-- Content description for the shutter button in the Lens camera screen -->
+  <string name="content_description_take_photo">사진을 찍어 Google 렌즈로 보내기</string>
+  <!-- Image context menu entry that sends the long-pressed image to Google Lens -->
+  <string name="context_menu_open_image_with_google_lens">Google 렌즈로 검색</string>
+  <!-- Toast shown when the user denies the camera permission requested by the Lens camera screen -->
+  <string name="lens_camera_permission_denied">권한 거부됨</string>
+  <!-- Title for the Google Lens AI feature toggle -->
+  <string name="ai_controls_google_lens_title">Google 렌즈</string>
+  <!-- Description for the Google Lens AI feature toggle -->
+  <string name="ai_controls_google_lens_description">시각적 검색을 위해 이미지와 사진을 Google에 보냅니다.</string>
+  <!-- Content description for the Google Lens half of the camera mode toggle -->
+  <string name="lens_camera_mode_lens">Google 렌즈</string>
+  <!-- Content description for the QR scanner half of the camera mode toggle -->
+  <string name="lens_camera_mode_qr">QR 스캐너</string>
+  <!-- Toast shown when the user picks an image from the gallery in QR mode but no QR code is found in it -->
+  <string name="lens_camera_qr_no_code_found">이미지에서 QR 코드를 찾을 수 없음</string>
   <!--
     Firefox Labs
 

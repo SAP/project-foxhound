@@ -713,8 +713,23 @@
     %1$s is replaced by an active link, using nova_onboarding_marketing_body_link_text as text (“How we use the data”).
   -->
   <string name="nova_onboarding_marketing_body_6" tools:ignore="BrandUsage,UnusedResources">ਤੁਸੀਂ Mozilla ਨੂੰ ਪਲੇਟਫਾਰਮ ਉੱਤੇ ਤੁਹਾਡੇ Firefox ਵਰਤਣ ਬਾਰੇ ਜਾਣਕਾਰੀ ਦੇ ਕੇ ਸਾਨੂੰ ਲੋਕਾਂ ਤੱਕ ਅੱਪੜਨ ਲਈ ਮਦਦ ਕਰ ਸਕਦੇ ਹੋ। %1$s</string>
+  <!--
+    Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
+    “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
+    %1$s is replaced by an active link, using nova_onboarding_marketing_body_link_text_1 as text (“Learn More”).
+  -->
+  <string name="nova_onboarding_marketing_body_7" tools:ignore="BrandUsage">ਤੁਸੀਂ Mozilla ਨੂੰ ਪਲੇਟਫਾਰਮ ਉੱਤੇ ਤੁਹਾਡੇ Firefox ਵਰਤਣ ਬਾਰੇ ਜਾਣਕਾਰੀ ਦੇ ਕੇ ਸਾਨੂੰ ਲੋਕਾਂ ਤੱਕ ਅੱਪੜਨ ਲਈ ਮਦਦ ਕਰ ਸਕਦੇ ਹੋ। %1$s</string>
+  <!-- Marketing onboarding additional body text. 'Firefox' is intentionally hardcoded. -->
+  <string name="nova_onboarding_marketing_body_line_two" tools:ignore="BrandUsage">Firefox ਬੜੇ ਮਾਣ ਨਾਲ ਆਜ਼ਾਦ ਹੈ ਅਤੇ ਆਜ਼ਾਦ ਵੈੱਬ ਨੂੰ ਏਕਾਅਧਿਕਾਰ ਤੋਂ ਬਣਾਉਣ ਵਿਰੁੱਧ ਡਟ ਕੇ ਖੜ੍ਹਾ ਹੈ।</string>
+  <!--
+    Marketing onboarding additional body text. 'Firefox' is intentionally hardcoded.
+    “Allowing” refers to the main button “Allow and Continue”; the ask for the user is to allow communicating back to the platform.
+  -->
+  <string name="nova_onboarding_marketing_body_line_three" tools:ignore="BrandUsage">Firefox ਨੂੰ ਜਿੱਤਣ ਲਈ ਮਦਦ ਕਰਨ ਵਾਸਤੇ ਵਿਚਾਰ ਕਰੋ</string>
   <!-- Marketing onboarding body link text. -->
   <string name="nova_onboarding_marketing_body_link_text">ਅਸੀਂ ਤੁਹਾਡੇ ਡਾਟੇ ਨੂੰ ਕਿਵੇਂ ਵਰਤਦੇ ਹਾਂ</string>
+  <!-- Marketing onboarding body link text. -->
+  <string name="nova_onboarding_marketing_body_link_text_1">ਹੋਰ ਜਾਣੋ</string>
   <!-- Marketing onboarding primary button text. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage">Firefox ਦੀ ਮਦਦ ਕਰੋ</string>
   <!-- Marketing onboarding primary button text. -->
@@ -1121,6 +1136,8 @@
   <string name="customize_toggle_pocket_sponsored">ਸਪਾਂਸਰ ਕੀਤੀਆਂ ਕਹਾਣੀਆਂ</string>
   <!-- Title for the opening wallpaper settings screen -->
   <string name="customize_wallpapers">ਵਾਲਪੇਪਰ</string>
+  <!-- Label for the menu item that opens the wallpaper settings screen. -->
+  <string name="browser_menu_change_wallpaper">ਵਾਲਪੇਪਰ ਨੂੰ ਬਦਲੋ</string>
   <!-- Title for the customize home screen section with sponsored shortcuts. -->
   <string name="customize_toggle_contile">ਸਪਾਂਸਰ ਕੀਤੇ ਸ਼ਾਰਟਕੱਟ</string>
   <!-- Title for the customize home screen section that toggles the Homepage sports widget. -->
@@ -2050,6 +2067,10 @@
   <!-- The error message of the URL text field when an invalid URL has been entered. -->
   <string name="webcompat_reporter_url_error_invalid">ਵਾਜਬ URL ਦਿਓ ਜੀ</string>
   <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
+  <string name="webcompat_reporter_label_whats_broken_3">ਕੀ ਕੰਮ ਨਹੀਂ ਕਰ ਰਿਹਾ ਹੈ?</string>
+  <!-- Content description for the icon button that clears the selected broken site reason in the WebCompat Reporter. -->
+  <string name="webcompat_reporter_clear_reason_content_description">ਚੁਣੇ ਕਾਰਨ ਨੂੰ ਮਿਟਾਓ</string>
+  <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_label_whats_broken_2">ਕੀ ਖ਼ਰਾਬ ਹੈ?</string>
   <!-- The placeholder text for the dropdown where a user selects a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_choose_reason_2">ਕਾਰਨ ਨੂੰ ਚੁਣੋ</string>
@@ -2083,6 +2104,12 @@
   <string name="webcompat_reporter_preview_bottom_sheet_header">ਰਿਪਰੋਟ ਦੀ ਝਲਕ</string>
   <!-- Label for the “Send” button shown in the WebCompat Report preview panel, which the user taps to submit the report. -->
   <string name="webcompat_reporter_preview_bottom_sheet_send">ਭੇਜੋ</string>
+  <!-- Title for the Edit URL confirmation dialog in the WebCompatReporter -->
+  <string name="webcompat_reporter_edit_url_dialog_title">ਵੈੱਬਸਾਈਟ URL ਨੂੰ ਸੋਧੋ</string>
+  <!-- Text shown on the save button for the Edit URL confirmation dialog in the WebCompatReporter. -->
+  <string name="webcompat_reporter_edit_url_dialog_save">ਸੰਭਾਲੋ</string>
+  <!-- Text shown on the dismiss button for the Edit URL confirmation dialog in the WebCompatReporter. -->
+  <string name="webcompat_reporter_edit_url_dialog_dismiss">ਖ਼ਾਰਜ ਕਰੋ</string>
   <!--
     These reason strings are dropdown options on a WebCompat reporter form, indicating what is broken on the site.
 
@@ -2101,6 +2128,10 @@
   <string name="webcompat_reporter_reason_account2">ਸਾਈਨ ਇਨ ਜਾਂ ਰਜਿਸਟਰ ਨਹੀਂ ਕੀਤਾ ਜਾ ਸਕਦਾ</string>
   <!-- Broken site reason text for site asked to turn off ad blocker -->
   <string name="webcompat_reporter_reason_turn_off_adblocker">ਸਾਈਟ ਨੇ ਇਸ਼ਤਿਹਾਰ ਰੋਕੂ ਬੰਦ ਕਰਨ ਲਈ ਕਿਹਾ ਹੈ</string>
+  <!-- Broken site reason text for browser isn’t supported or blocked -->
+  <string name="webcompat_reporter_reason_notsupported_2">ਬਰਾਊਜ਼ਰ ਸਹਾਇਕ ਨਹੀਂ ਹੈ ਜਾਂ ਪਾਬੰਦੀ ਲਾਈ ਹੈ</string>
+  <!-- Broken site reason text for the site being deceptive -->
+  <string name="webcompat_reporter_reason_site_is_deceptive">ਇਹ ਸਾਈਟ ਧੋਖਾਧੜੀ ਹੈ</string>
   <!-- Broken site reason text for browser isn’t supported or blocked -->
   <string name="webcompat_reporter_reason_notsupported">ਬਰਾਊਜ਼ਰ ਸਹਾਇਕ ਨਹੀਂ ਹੈ ਜਾਂ ਪਾਬੰਦੀ ਲਾਈ ਹੈ</string>
   <!-- Broken site reason text for something else -->
@@ -3178,6 +3209,14 @@
   <string name="ip_protection_onboarding_body">ਆਪਣੇ ਟਿਕਾਣੇ ਨੂੰ ਲੁਕਾ ਕੇ %1$s, ਪਬਲਿਕ Wi-Fi ਉੱਤੇ ਵੀ। ਹਰ ਮਹੀਨੇ %2$d GB ਮੁਫ਼ਤ ਲਵੋ।</string>
   <!-- Used as text for a link in ip_protection_onboarding_body. Make sure to adapt capitalization if the link is in the middle of the sentence. -->
   <string name="ip_protection_onboarding_body_link">ਵਧੀਕ ਸੁਰੱਖਿਆ ਨਾਲ ਬਰਾਊਜ਼ ਕਰੋ</string>
+  <!--
+    The body of the VPN onboarding card for a promotion that provides unlimited data bandwidth for a certain time.
+    %1$s is a localized date (for example "Jun 9") indicating the end of the promotional period.
+    %2$s is a link using ip_protection_onboarding_body_link_promo (“Learn more”) as text. It links to a support article about VPN on Firefox.
+  -->
+  <string name="ip_protection_onboarding_body_promo">ਆਪਣੀ ਬਰਾਊਜ਼ਿੰਗ ਨੂੰ ਵੱਧ ਪ੍ਰਾਈਵੇਟ ਬਣਾਉਣ ਅਤੇ ਟੋਹ ਲੈਣ ਨੂੰ ਔਖਾ ਬਣਾਉਣ ਵਾਸਤੇ ਇਸ ਨੂੰ ਚਾਲੂ ਕਰੋ। ਇਸ ਨੂੰ ਹੁਣੇ ਚਾਲੂ ਕਰੋ ਅਤੇ %1$s ਤੱਕ ਬੇਅੰਤ ਬੈਂਡਵਿਦਥ ਨਾਲ ਅਜ਼ਮਾਓ। %2$s</string>
+  <!-- Used as text for a link in ip_protection_onboarding_body. Make sure to adapt capitalization if the link is in the middle of the sentence. -->
+  <string name="ip_protection_onboarding_body_link_promo">ਹੋਰ ਜਾਣੋ</string>
   <!-- Label for the dismiss button on the onboarding bottom sheet. -->
   <string name="ip_protection_onboarding_not_now_button">ਹੁਣੇ ਨਹੀਂ</string>
   <!-- Snackbar (in-app pop-up notification) text to signal the browser VPN connection error -->
@@ -3187,6 +3226,8 @@
     %1$d is the total monthly allowance in GB (for example "50").
   -->
   <string name="ip_protection_data_limit_reached_snackbar">VPN ਦੇ %1$d GB ਨੂੰ ਵਰਤਿਆ ਗਿਆ ਹੈ। ਪਹੁੰਚ ਅਗਲੇ ਮਹੀਨੇ ਮੁੜ-ਸੈੱਟ ਹੋਵੇਗੀ।</string>
+  <!-- Snackbar (in-app pop-up notification) action button text that takes the user to the VPN settings screen. -->
+  <string name="ip_protection_data_limit_reached_snackbar_action">ਸੈਟਿੰਗਾਂ</string>
   <!--
     Autofill
 
@@ -3493,6 +3534,8 @@
   <string name="homepage_shortcuts_add_website">ਵੈੱਬਸਾਈਟ ਨੂੰ ਜੋੜੋ</string>
   <!-- Title text for the "Enter a Website URL" dialog for adding a shortcut. -->
   <string name="homepage_shortcuts_add_website_title">ਇੱਕ ਵੈੱਬਸਾਈਟ URL ਦਿਓ</string>
+  <!-- Title for the "Popular sites" section in the "Add to homepage" bottom sheet. -->
+  <string name="homepage_shortcuts_popular_sites">ਹਰਮਨਪਿਆਰੀਆਂ ਸਾਈਟਾਂ</string>
   <!-- Title text displayed in the dialog when shortcuts limit is reached. -->
   <string name="shortcut_max_limit_title">ਸ਼ਾਰਟਕੱਟ ਦੀ ਲਿਮਟ ਅੱਪੜੀ</string>
   <!-- Content description text displayed in the dialog when shortcut limit is reached. -->
@@ -3918,6 +3961,62 @@
   <string name="protection_panel_privacy_and_security_settings_2">ਪਰਦੇਦਾਰੀ ਸੈਟਿੰਗਾਂ</string>
   <!-- Title text for the protection panel permissions section. -->
   <string name="protection_panel_permissions_title">ਇਜਾਜ਼ਤਾਂ</string>
+  <plurals name="trackers_blocked_panel_total_num_trackers_blocked_2">
+    <!--
+      Text for displaying the total number of trackers blocked in the trackers blocked panel.
+      %1$d is a placeholder for the number of trackers blocked.
+    -->
+    <item quantity="one">ਇਸ ਸਾਈਟ ਤੋਂ %1$d ਟਰੈਕਰ ਉੱਤੇ ਪਾਬੰਦੀ ਲਾਈ</item>
+    <item quantity="other">ਇਸ ਸਾਈਟ ਤੋਂ %1$d ਟਰੈਕਰਾਂ ਉੱਤੇ ਪਾਬੰਦੀ ਲਾਈ</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_social_media_trackers">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked social media trackers.
+      %1$d is a placeholder for the number of social media trackers blocked.
+    -->
+    <item quantity="one">%1$d ਸਮਾਜਿਕ ਮੀਡਿਆ ਟਰੈਕਰ</item>
+    <item quantity="other">%1$d ਸਮਾਜਿਕ ਮੀਡਿਆ ਟਰੈਕਰ</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_cross_site_cookies">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked cross-site tracking cookies.
+      %1$d is a placeholder for the number of cross-site tracking cookies blocked.
+    -->
+    <item quantity="one">%1$d ਅੰਤਰ-ਸਾਈਟ ਟਰੈਕਿੰਗ ਕੂਕੀ</item>
+    <item quantity="other">%1$d ਅੰਤਰ-ਸਾਈਟ ਟਰੈਕਿੰਗ ਕੂਕੀਜ਼</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_cryptominers">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked cryptomining scripts.
+      %1$d is a placeholder for the number of cryptominers blocked.
+    -->
+    <item quantity="one">%1$d ਕ੍ਰਿਪਟੋ-ਮਾਈਨਰ</item>
+    <item quantity="other">%1$d ਕ੍ਰਿਪਟੋ-ਮਾਈਨਰ</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_fingerprinters">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked fingerprinter scripts.
+      %1$d is a placeholder for the number of fingerprinters blocked.
+    -->
+    <item quantity="one">%1$d ਫਿੰਗਰ-ਪਰਿੰਟਰ</item>
+    <item quantity="other">%1$d ਫਿੰਗਰ-ਪਰਿੰਟਰ</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_trackers_2">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked generic tracking scripts.
+      %1$d is a placeholder for the number of trackers blocked.
+    -->
+    <item quantity="one">%1$d ਟਰੈਕਿੰਗ ਸਮੱਗਰੀ</item>
+    <item quantity="other">%1$d ਟਰੈਕਿੰਗ ਸਮੱਗਰੀਆਂ</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_trackers_blocked_this_week_2">
+    <!--
+      Text for displaying the number of trackers blocked this week in the trackers blocked panel.
+      %1$d is a placeholder for the number of trackers blocked this week.
+    -->
+    <item quantity="one">ਇਸ ਹਫ਼ਤੇ %1$d ਟਰੈਕਰ ਉੱਤੇ ਪਾਬੰਦੀ ਲਾਈ</item>
+    <item quantity="other">ਇਸ ਹਫ਼ਤੇ %1$d ਟਰੈਕਰਾਂ ਉੱਤੇ ਪਾਬੰਦੀ ਲਾਈ</item>
+  </plurals>
   <!--
     Text for displaying the total number of trackers blocked in the trackers blocked panel.
     %d is a placeholder for the number of trackers blocked.
@@ -4651,6 +4750,28 @@
   <string name="privacy_notice_updated_homepage_message_privacy_notice" tools:ignore="UnusedResources">ਪਰਦੇਦਾਰੀ ਸੂਚਨਾ</string>
   <!-- The second active link used in privacy_notice_updated_homepage_message -->
   <string name="privacy_notice_updated_homepage_message_learn_more" tools:ignore="UnusedResources">ਹੋਰ ਜਾਣੋ</string>
+  <!-- Google Lens prototype related strings -->
+  <string name="preferences_debug_settings_google_lens_integration">Google Lens ਐਂਟੀਗਰੇਸ਼ਨ ਨੂੰ ਸਮਰੱਥ ਕਰੋ</string>
+  <!-- Lens image search button content description -->
+  <string name="lens_search_content_description">ਚਿੱਤਰ ਨਾਲ ਖੋਜ</string>
+  <!-- Content description for the gallery picker button in the Lens camera screen -->
+  <string name="content_description_gallery">Google Lens ਨੂੰ ਭੇਜਣ ਲਈ ਗੈਲਰੀ ਵਿੱਚੋਂ ਚੁਣੋ</string>
+  <!-- Content description for the shutter button in the Lens camera screen -->
+  <string name="content_description_take_photo">ਫ਼ੋਟੋ ਖਿੱਚੋਂ ਅਤੇ Google Lens ਨੂੰ ਭੇਜੋ</string>
+  <!-- Image context menu entry that sends the long-pressed image to Google Lens -->
+  <string name="context_menu_open_image_with_google_lens">Google Lens ਨਾਲ ਖੋਜੋ</string>
+  <!-- Toast shown when the user denies the camera permission requested by the Lens camera screen -->
+  <string name="lens_camera_permission_denied">ਇਜਾਜ਼ਤ ਤੋਂ ਇਨਕਾਰ ਕੀਤਾ</string>
+  <!-- Title for the Google Lens AI feature toggle -->
+  <string name="ai_controls_google_lens_title">Google Lens</string>
+  <!-- Description for the Google Lens AI feature toggle -->
+  <string name="ai_controls_google_lens_description">ਦਿੱਖ ਖੋਜ ਲਈ Google ਨੂੰ ਚਿੱਤਰ ਅਤੇ ਫ਼ੋਟੋ ਭੇਜਦਾ ਹੈ।</string>
+  <!-- Content description for the Google Lens half of the camera mode toggle -->
+  <string name="lens_camera_mode_lens">Google Lens</string>
+  <!-- Content description for the QR scanner half of the camera mode toggle -->
+  <string name="lens_camera_mode_qr">QR ਸਕੈਨਰ</string>
+  <!-- Toast shown when the user picks an image from the gallery in QR mode but no QR code is found in it -->
+  <string name="lens_camera_qr_no_code_found">ਚਿੱਤਰ ਵਿੱਚ ਕੋਈ QR ਕੋਡ ਨਹੀਂ ਮਿਲਿਆ</string>
   <!--
     Firefox Labs
 

@@ -40,4 +40,12 @@
   <string name="mozac_protections_dashboard_empty_title">%1$s は閲覧中にトラッカーをブロックします。</string>
   <!-- Subtitle shown when no trackers have been blocked yet -->
   <string name="mozac_protections_dashboard_empty_subtitle">ブロックしたトラッカーがここに表示されます。</string>
+  <plurals name="mozac_protections_dashboard_total_blocked_since_2">
+    <!--
+      Footer line shown in the dashboard summarizing total trackers blocked
+      since a specific date. %1$d is the trackers count number (e.g. 123).
+      %2$s is the formatted date (e.g. "February 23, 2026").
+    -->
+    <item quantity="other">%2$s 以降、%1$d 個のトラッカーがブロックされました</item>
+  </plurals>
 </resources>

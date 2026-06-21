@@ -1121,6 +1121,8 @@
   <string name="customize_toggle_pocket_sponsored">Χορηγούμενα άρθρα</string>
   <!-- Title for the opening wallpaper settings screen -->
   <string name="customize_wallpapers">Ταπετσαρίες</string>
+  <!-- Label for the menu item that opens the wallpaper settings screen. -->
+  <string name="browser_menu_change_wallpaper">Αλλαγή ταπετσαρίας</string>
   <!-- Title for the customize home screen section with sponsored shortcuts. -->
   <string name="customize_toggle_contile">Χορηγούμενες συντομεύσεις</string>
   <!-- Title for the customize home screen section that toggles the Homepage sports widget. -->
@@ -2083,6 +2085,10 @@
   <string name="webcompat_reporter_preview_bottom_sheet_header">Προεπισκόπηση αναφοράς</string>
   <!-- Label for the “Send” button shown in the WebCompat Report preview panel, which the user taps to submit the report. -->
   <string name="webcompat_reporter_preview_bottom_sheet_send">Αποστολή</string>
+  <!-- Text shown on the save button for the Edit URL confirmation dialog in the WebCompatReporter. -->
+  <string name="webcompat_reporter_edit_url_dialog_save">Αποθήκευση</string>
+  <!-- Text shown on the dismiss button for the Edit URL confirmation dialog in the WebCompatReporter. -->
+  <string name="webcompat_reporter_edit_url_dialog_dismiss">Απόρριψη</string>
   <!--
     These reason strings are dropdown options on a WebCompat reporter form, indicating what is broken on the site.
 
@@ -3178,6 +3184,8 @@
   <string name="ip_protection_onboarding_body">%1$s αποκρύπτοντας την τοποθεσία σας, ακόμα και σε δημόσια Wi-Fi. Λάβετε δωρεάν %2$d GB κάθε μήνα.</string>
   <!-- Used as text for a link in ip_protection_onboarding_body. Make sure to adapt capitalization if the link is in the middle of the sentence. -->
   <string name="ip_protection_onboarding_body_link">Περιηγηθείτε με επιπλέον προστασία</string>
+  <!-- Used as text for a link in ip_protection_onboarding_body. Make sure to adapt capitalization if the link is in the middle of the sentence. -->
+  <string name="ip_protection_onboarding_body_link_promo">Μάθετε περισσότερα</string>
   <!-- Label for the dismiss button on the onboarding bottom sheet. -->
   <string name="ip_protection_onboarding_not_now_button">Όχι τώρα</string>
   <!-- Snackbar (in-app pop-up notification) text to signal the browser VPN connection error -->
@@ -3187,6 +3195,8 @@
     %1$d is the total monthly allowance in GB (for example "50").
   -->
   <string name="ip_protection_data_limit_reached_snackbar">Έχουν χρησιμοποιηθεί %1$d GB δεδομένων VPN. Θα γίνει επαναφορά της πρόσβασης τον επόμενο μήνα.</string>
+  <!-- Snackbar (in-app pop-up notification) action button text that takes the user to the VPN settings screen. -->
+  <string name="ip_protection_data_limit_reached_snackbar_action">Ρυθμίσεις</string>
   <!--
     Autofill
 
@@ -3493,6 +3503,8 @@
   <string name="homepage_shortcuts_add_website">Προσθήκη ιστοτόπου</string>
   <!-- Title text for the "Enter a Website URL" dialog for adding a shortcut. -->
   <string name="homepage_shortcuts_add_website_title">Εισαγάγετε μια διεύθυνση URL ιστότοπου</string>
+  <!-- Title for the "Popular sites" section in the "Add to homepage" bottom sheet. -->
+  <string name="homepage_shortcuts_popular_sites">Δημοφιλείς ιστότοποι</string>
   <!-- Title text displayed in the dialog when shortcuts limit is reached. -->
   <string name="shortcut_max_limit_title">Έχετε φτάσει το όριο συντομεύσεων</string>
   <!-- Content description text displayed in the dialog when shortcut limit is reached. -->
@@ -3918,6 +3930,38 @@
   <string name="protection_panel_privacy_and_security_settings_2">Ρυθμίσεις απορρήτου</string>
   <!-- Title text for the protection panel permissions section. -->
   <string name="protection_panel_permissions_title">Δικαιώματα</string>
+  <plurals name="trackers_blocked_panel_total_num_trackers_blocked_2">
+    <!--
+      Text for displaying the total number of trackers blocked in the trackers blocked panel.
+      %1$d is a placeholder for the number of trackers blocked.
+    -->
+    <item quantity="one">%1$d αποκλεισμένος ιχνηλάτης σε αυτόν τον ιστότοπο</item>
+    <item quantity="other">%1$d αποκλεισμένοι ιχνηλάτες σε αυτόν τον ιστότοπο</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_social_media_trackers">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked social media trackers.
+      %1$d is a placeholder for the number of social media trackers blocked.
+    -->
+    <item quantity="one">%1$d ιχνηλάτης κοινωνικής δικτύωσης</item>
+    <item quantity="other">%1$d ιχνηλάτες κοινωνικής δικτύωσης</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_fingerprinters">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked fingerprinter scripts.
+      %1$d is a placeholder for the number of fingerprinters blocked.
+    -->
+    <item quantity="one">%1$d fingerprinter</item>
+    <item quantity="other">%1$d fingerprinter</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_trackers_2">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked generic tracking scripts.
+      %1$d is a placeholder for the number of trackers blocked.
+    -->
+    <item quantity="one">%1$d περιεχόμενο καταγραφής</item>
+    <item quantity="other">%1$d περιεχόμενα καταγραφής</item>
+  </plurals>
   <!--
     Text for displaying the total number of trackers blocked in the trackers blocked panel.
     %d is a placeholder for the number of trackers blocked.
@@ -4651,6 +4695,16 @@
   <string name="privacy_notice_updated_homepage_message_privacy_notice" tools:ignore="UnusedResources">Σημείωση απορρήτου</string>
   <!-- The second active link used in privacy_notice_updated_homepage_message -->
   <string name="privacy_notice_updated_homepage_message_learn_more" tools:ignore="UnusedResources">Μάθετε περισσότερα</string>
+  <!-- Lens image search button content description -->
+  <string name="lens_search_content_description">Αναζήτηση με εικόνα</string>
+  <!-- Image context menu entry that sends the long-pressed image to Google Lens -->
+  <string name="context_menu_open_image_with_google_lens">Αναζήτηση με Google Lens</string>
+  <!-- Title for the Google Lens AI feature toggle -->
+  <string name="ai_controls_google_lens_title">Google Lens</string>
+  <!-- Content description for the Google Lens half of the camera mode toggle -->
+  <string name="lens_camera_mode_lens">Google Lens</string>
+  <!-- Content description for the QR scanner half of the camera mode toggle -->
+  <string name="lens_camera_mode_qr">Σάρωση QR</string>
   <!--
     Firefox Labs
 

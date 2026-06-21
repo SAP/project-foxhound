@@ -7,16 +7,64 @@
 -->
 
 <resources xmlns:tools="http://schemas.android.com/tools">
+  <!-- App name for private browsing mode. %s is the name of the app (for example "Firefox"). -->
+  <string name="app_name_private_5">%s Príobháideach</string>
+  <!-- App name for private browsing mode. %s is the name of the app (for example "Firefox"). -->
+  <string name="app_name_private_4">%s (Príobháideach)</string>
   <!--
     Home Fragment
 
     Content description (not visible, for screen readers etc.): "Three dot" menu button.
   -->
   <string name="content_description_menu">Tuilleadh roghanna</string>
+  <!-- Content description (not visible, for screen readers etc.): "Private Browsing" menu button. -->
+  <string name="content_description_private_browsing">Brabhsáil Phríobháideach</string>
+  <!-- Content description (not visible, for screen readers etc.): "Normal Browsing" menu button. -->
+  <string name="content_description_normal_browsing">Gnáthbhrabhsáil</string>
   <!-- Placeholder text shown in the search bar before a user enters text for the default engine -->
   <string name="search_hint">Cuardaigh nó cuir seoladh isteach</string>
+  <!-- Shorter placeholder text shown in the search bar when an additional action (voice search) is rendered alongside the hint. -->
+  <string name="search_hint_short">Cuardaigh</string>
+  <!-- Placeholder text shown in the search bar before a user enters text for a general engine -->
+  <string name="search_hint_general_engine">Cuardaigh an gréasán</string>
+  <!-- Placeholder text shown in search bar when using history search -->
+  <string name="history_search_hint">Stair chuardaigh</string>
+  <!-- Placeholder text shown in search bar when using bookmarks search -->
+  <string name="bookmark_search_hint">Cuardaigh leabharmharcanna</string>
+  <!-- Placeholder text shown in search bar when using tabs search -->
+  <string name="tab_search_hint">Cuardaigh sna cluaisíní</string>
+  <!-- Placeholder text shown in the search bar when using application search engines -->
+  <string name="application_search_hint">Cuir téarmaí cuardaigh isteach</string>
+  <!-- The header text displayed on the private tabs page when no private tabs are open -->
+  <string name="tab_manager_empty_private_tabs_page_header">Brabhsáil Phríobháideach</string>
+  <!-- Tab tray multi select title in app bar. %1$d is the number of tabs selected -->
+  <string name="tab_tray_multi_select_title">%1$d roghnaithe</string>
+  <!-- Tab tray multi select title in app bar when no tabs are selected -->
+  <string name="tab_tray_multi_select_title_empty">Roghnaigh cluaisíní</string>
+  <!-- Label of button in create collection dialog for creating a new collection -->
+  <string name="tab_tray_add_new_collection">Cuir bailiúchán nua leis</string>
+  <!-- Label of editable text in create collection dialog for naming a new collection -->
+  <string name="tab_tray_add_new_collection_name">Ainm</string>
+  <!-- Label of button in save to collection dialog for selecting a current collection -->
+  <string name="tab_tray_select_collection">Roghnaigh bailiúchán</string>
+  <!-- The action text displayed on the synced tabs page when the user is not logged into an account, prompting the user to sign into their account. When clicked, it takes the user to the account sign-in flow. -->
+  <string name="tab_manager_empty_synced_tabs_page_sign_in_cta">Logáil isteach</string>
+  <!--
+    Home - Bookmarks
+
+    Title for the home screen section with bookmarks.
+  -->
+  <string name="home_bookmarks_title">Leabharmharcanna</string>
+  <!-- Content description for the button which navigates the user to show all of their bookmarks. -->
+  <string name="home_bookmarks_show_all_content_description">Taispeáin gach leabharmharc</string>
+  <!-- Text for the menu button to remove a recently saved bookmark from the user's home screen -->
+  <string name="home_bookmarks_menu_item_remove">Bain</string>
+  <!-- About content. %1$s is the name of the app (for example "Firefox"). -->
+  <string name="about_content">Is é Mozilla a tháirgeann %1$s.</string>
   <!-- Private Browsing -->
   <string name="private_browsing_common_myths">Gnáthmhiotais maidir le brabhsáil phríobháideach</string>
+  <!-- Text to be announced by the accessibility service to inform the user that the private browsing mode is currently active. -->
+  <string name="private_browsing_a11y_session_announcement">Seisiún brabhsála príobháidí</string>
   <!-- Private browsing erase action "contextual feature recommendation" (CFR) -->
 
   <!--
@@ -39,16 +87,34 @@
   <string name="browser_menu_refresh">Athnuaigh</string>
   <!-- Content description (not visible, for screen readers etc.): Stop loading current website -->
   <string name="browser_menu_stop">Stad</string>
+  <!-- Browser menu button that opens the extensions manager -->
+  <string name="browser_menu_extensions">Eisínteachtaí</string>
+  <!-- Browser menu button that opens the extensions manager -->
+  <string name="browser_menu_manage_extensions">Bainistigh eisínteachtaí</string>
+  <!-- Browser menu group that contains additional settings in collapsed state -->
+  <string name="browser_menu_more_settings">Tuilleadh</string>
+  <!-- Browser menu description that is shown when one or more extensions are disabled due to extension errors -->
+  <string name="browser_menu_extensions_disabled_description">As feidhm go sealadach</string>
+  <!-- Browser menu button that opens account settings -->
+  <string name="browser_menu_account_settings">Socruithe cuntais</string>
   <!-- Browser menu button that opens the settings menu -->
   <string name="browser_menu_settings">Socruithe</string>
+  <!-- Browser menu button that opens a user's library -->
+  <string name="browser_menu_library">Leabharlann</string>
   <!-- Browser menu toggle that requests a desktop site -->
   <string name="browser_menu_desktop_site">Suíomh deisce</string>
   <!-- Browser menu toggle that adds a shortcut to the site on the device home screen. -->
   <string name="browser_menu_add_to_homescreen">Cuir leis an scáileán Baile é</string>
+  <!-- Content description (not visible, for screen readers etc.) for the Resync tabs button -->
+  <string name="resync_button_content_description">Athshioncronú</string>
   <!-- Browser menu button that opens the find in page menu -->
   <string name="browser_menu_find_in_page">Aimsigh sa leathanach</string>
+  <!-- Browser menu button that opens the translations dialog, which has options to translate the current browser page. -->
+  <string name="browser_menu_translations">Aistrigh an leathanach seo</string>
   <!-- Browser menu button that open a share menu to share the current site -->
   <string name="browser_menu_share">Comhroinn</string>
+  <!-- Browser menu button that goes to the homepage screen -->
+  <string name="browser_menu_homepage">Leathanach Baile</string>
   <!--
     Browser menu button shown in custom tabs that opens the current tab in Fenix
     %1$s is the name of the app (for example "Firefox").
@@ -63,6 +129,34 @@
   <string name="browser_menu_read">Amharc léitheoireachta</string>
   <!-- Browser menu button to open the current page in an external app -->
   <string name="browser_menu_open_app_link">Oscail in Aip</string>
+  <!-- Browser menu label to sign in to sync on the device using Mozilla accounts -->
+  <string name="browser_menu_sign_in">Logáil isteach</string>
+  <!-- Browser menu caption label for the "Sign back in to sync" browser menu item described in `browser_menu_sign_back_in_to_sync` when there is an error in syncing -->
+  <string name="browser_menu_syncing_paused_caption">Cuireadh sioncronú ar sos</string>
+  <!-- Browser menu label that the saves the currently visited page as a PDF -->
+  <string name="browser_menu_save_as_pdf_2">Sábháil mar PDF</string>
+  <!-- Browser menu label for navigating to the translation feature, which provides language translation options the current visited page -->
+  <string name="browser_menu_translate_page_2">Aistrigh an leathanach seo</string>
+  <!-- Browser menu label that is displayed when the current page has been translated by the translation feature. -->
+  <string name="browser_menu_translated">Aistrithe</string>
+  <!--
+    Page summaries
+
+    Toolbar title for the Page summaries settings fragment
+  -->
+  <string name="preferences_page_summaries">Achoimrí leathanaigh</string>
+  <!--
+    AI Controls settings
+
+    Title for the AI controls settings screen
+  -->
+  <string name="preferences_ai_controls">Rialtáin IS</string>
+  <!-- Headline text for the AI controls banner. %s is the name of the app (for example "Firefox"). -->
+  <string name="ai_controls_banner_headline">Is leatsa an rogha le %s</string>
+  <!-- Link text for learning more about AI controls -->
+  <string name="ai_controls_learn_more">Tuilleadh eolais</string>
+  <!-- Title for the block AI enhancements toggle -->
+  <string name="ai_controls_block_ai_title">Cuir bac ar ghnéithe IS</string>
   <!--
     Locale Settings Fragment
 
@@ -667,6 +761,10 @@
   <string name="preference_accessibility_force_enable_zoom">Zúmáil ar gach suíomh</string>
   <!-- Summary for Accessibility Force Enable Zoom Preference -->
   <string name="preference_accessibility_force_enable_zoom_summary">Cumasaigh chun pinseáil agus zúmáil a cheadú, fiú ar shuímh a chuireann cosc ar na gothaí seo.</string>
+  <!-- Used as text for a link in ip_protection_onboarding_body. Make sure to adapt capitalization if the link is in the middle of the sentence. -->
+  <string name="ip_protection_onboarding_body_link_promo">Tuilleadh eolais</string>
+  <!-- Snackbar (in-app pop-up notification) action button text that takes the user to the VPN settings screen. -->
+  <string name="ip_protection_data_limit_reached_snackbar_action">Socruithe</string>
   <!-- Title of the Add search engine screen -->
   <string name="search_engine_add_custom_search_engine_title">Cuir inneall cuardaigh leis</string>
   <!-- Title of the Edit search engine screen -->
@@ -704,6 +802,8 @@
     the certificate authority that verified the ticket
   -->
   <string name="certificate_info_verified_by">Fíoraithe ag: %1$s</string>
+  <!-- Title for the "Popular sites" section in the "Add to homepage" bottom sheet. -->
+  <string name="homepage_shortcuts_popular_sites">Suíomhanna ardéilimh</string>
   <!-- Translations feature -->
 
   <!-- TextField Design System Component -->

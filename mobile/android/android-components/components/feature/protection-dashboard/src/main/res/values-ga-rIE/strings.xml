@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this file,
+  You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources>
+  <plurals name="mozac_protections_dashboard_total_blocked_since_2">
+    <!--
+      Footer line shown in the dashboard summarizing total trackers blocked
+      since a specific date. %1$d is the trackers count number (e.g. 123).
+      %2$s is the formatted date (e.g. "February 23, 2026").
+    -->
+    <item quantity="one">%1$d rianaitheoir blocáilte ó %2$s</item>
+    <item quantity="two">%1$d rianaitheoir blocáilte ó %2$s</item>
+    <item quantity="few">%1$d rianaitheoir blocáilte ó %2$s</item>
+    <item quantity="many">%1$d rianaitheoir blocáilte ó %2$s</item>
+    <item quantity="other">%1$d rianaitheoir blocáilte ó %2$s</item>
+  </plurals>
+</resources>

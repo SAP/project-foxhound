@@ -75,6 +75,16 @@
   <string name="mozac_summarize_settings_shake_to_summarize">Барои баровардани хулоса, дастгоҳро ҷунбонед</string>
   <!-- Description for the shake to summarize toggle in settings -->
   <string name="mozac_summarize_settings_shake_to_summarize_description">Барои баровардани хулоса ба саҳифа, дастгоҳи худро ба ду тараф ҷунбонед.</string>
+  <!-- Label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity">Ҳассосияти ларзиш</string>
+  <!-- Description for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_description">Барои баровардани хулоса, сатҳи сахтии ларзишро танзим кунед.</string>
+  <!-- Low option label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_low">Паст</string>
+  <!-- Medium option label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_medium">Миёна</string>
+  <!-- High option label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_high">Баланд</string>
   <!-- Message for summary by model, %1$s is the name of the model that is being displayed -->
   <string name="mozac_feature_summarize_summary_model">Хулоса аз ҷониби «%1$s»</string>
   <!-- Disclaimer message -->

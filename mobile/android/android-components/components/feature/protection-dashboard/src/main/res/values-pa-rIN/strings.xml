@@ -42,4 +42,13 @@
   <string name="mozac_protections_dashboard_empty_title">ਜਦੋਂ ਤੁਸੀਂ ਬਰਾਊਜ਼ ਕਰਦੇ ਹੋ ਤਾਂ %1$s ਨੇ ਟਰੈਕਰਾਂ ਉੱਤੇ ਪਾਬੰਦੀ ਲਾਈ ਹੈ।</string>
   <!-- Subtitle shown when no trackers have been blocked yet -->
   <string name="mozac_protections_dashboard_empty_subtitle">ਤੁਸੀਂ ਉਹਨਾਂ ਨੂੰ ਇੱਥੇ ਵੇਖੋਗੇ।</string>
+  <plurals name="mozac_protections_dashboard_total_blocked_since_2">
+    <!--
+      Footer line shown in the dashboard summarizing total trackers blocked
+      since a specific date. %1$d is the trackers count number (e.g. 123).
+      %2$s is the formatted date (e.g. "February 23, 2026").
+    -->
+    <item quantity="one">%2$s ਤੋਂ ਹੁਣ ਤੱਕ %1$d ਟਰੈਕਰ ਉੱਤੇ ਪਾਬੰਦੀ ਲਾਈ</item>
+    <item quantity="other">%2$s ਤੋਂ ਹੁਣ ਤੱਕ %1$d ਟਰੈਕਰਾਂ ਉੱਤੇ ਪਾਬੰਦੀ ਲਾਈ</item>
+  </plurals>
 </resources>

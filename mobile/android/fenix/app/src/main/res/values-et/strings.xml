@@ -31,6 +31,10 @@
   <string name="tab_search_hint">Otsi kaartidest</string>
   <!-- Placeholder text shown in the search bar when using application search engines -->
   <string name="application_search_hint">Sisesta otsitav fraas</string>
+  <!-- The header text displayed on the private tabs page when no private tabs are open -->
+  <string name="tab_manager_empty_private_tabs_page_header">Privaatne veebilehitsemine</string>
+  <!-- The supplementary text displayed on the private tabs page when no private tabs are open. %1$s is the name of the app (for example "Firefox") -->
+  <string name="tab_manager_empty_private_tabs_page_description">%1$s ei mäleta ajalugu ega küpsiseid, aga uued järjehoidjad salvestatakse.</string>
   <!-- Tab tray multi select title in app bar. %1$d is the number of tabs selected -->
   <string name="tab_tray_multi_select_title">%1$d kaarti valitud</string>
   <!-- Label of button in create collection dialog for creating a new collection -->
@@ -55,6 +59,8 @@
   <string name="about_content">%1$s on Mozilla poolt toodetud.</string>
   <!-- Private Browsing -->
   <string name="private_browsing_common_myths">Levinumad müüdid privaatse veebilehitsemise kohta</string>
+  <!-- Text to be announced by the accessibility service to inform the user that the private browsing mode is currently active. -->
+  <string name="private_browsing_a11y_session_announcement">Privaatse veebilehitsemise seanss</string>
   <!--
     True Private Browsing Mode
 
@@ -165,6 +171,13 @@
   <string name="browser_menu_stop">Peata</string>
   <!-- Browser menu button that opens the extensions manager -->
   <string name="browser_menu_extensions">Lisad</string>
+  <!-- Browser menu group that contains additional settings in collapsed state -->
+  <string name="browser_menu_more_settings">Rohkem</string>
+  <!--
+    Content description (not visible, for screen readers etc.): Label for plus icon used to add extension.
+    %1$s is the name of the extension (for example: ClearURLs).
+  -->
+  <string name="browser_menu_extension_plus_icon_content_description_2">Lisa %1$s</string>
   <!-- Browser menu button that opens account settings -->
   <string name="browser_menu_account_settings">Konto andmed</string>
   <!-- Browser menu button that opens the settings menu -->
@@ -207,6 +220,14 @@
   <string name="browser_menu_new_private_tab">Uus privaatne kaart</string>
   <!-- Browser menu label that navigates to the Password screen -->
   <string name="browser_menu_passwords">Paroolid</string>
+  <!-- Browser menu label that bookmarks the currently visited page -->
+  <string name="browser_menu_bookmark_this_page_2">Lisa leht järjehoidjatesse</string>
+  <!-- Browser menu label that the saves the currently visited page as a PDF -->
+  <string name="browser_menu_save_as_pdf_2">Salvesta PDFina</string>
+  <!-- Browser menu label for navigating to the translation feature, which provides language translation options the current visited page -->
+  <string name="browser_menu_translate_page_2">Tõlgi leht</string>
+  <!-- Browser menu label for the print feature -->
+  <string name="browser_menu_print_2">Prindi</string>
   <!--
     Browser Toolbar
 
@@ -432,6 +453,10 @@
   <string name="notifications_allowed_summary">Lubatud</string>
   <!-- Summary for notification preference indicating notifications are not allowed -->
   <string name="notifications_not_allowed_summary">Keelatud</string>
+  <!-- The title of the required permissions section from addon's permissions screen. -->
+  <string name="addons_permissions_heading_required_permissions">Nõutud õigused:</string>
+  <!-- The title of the required data collection permissions section from addon's permissions screen. -->
+  <string name="addons_permissions_heading_required_data_collection">Nõutud andmete kogumine:</string>
   <!-- Button caption to confirm the add-on collection configuration -->
   <string name="customize_addon_collection_ok">Olgu</string>
   <!-- Button caption to abort the add-on collection configuration -->
@@ -563,6 +588,10 @@
   <string name="preference_top_toolbar">Üleval</string>
   <!-- Preference for using bottom toolbar -->
   <string name="preference_bottom_toolbar">All</string>
+  <!-- Preference for using simple toolbar -->
+  <string name="preference_simple_toolbar">Lihtne</string>
+  <!-- Preference for using expanded toolbar -->
+  <string name="preference_expanded_toolbar">Laiendatud</string>
   <!--
     Theme Preferences
 
@@ -775,6 +804,8 @@
     %1$d is the number of downloads selected
   -->
   <string name="download_multi_select_title">%1$d allalaadimist valitud</string>
+  <!-- Title for the dialog that is shown when there is not enough storage space to download a file. -->
+  <string name="download_file_has_not_enough_storage_dialog_title">Ei ole piisavalt ruumi</string>
   <!-- Text for the button to delete a single downloaded file item -->
   <string name="download_delete_item">Kustuta</string>
   <!-- Text for the button to share the download URL -->
@@ -985,6 +1016,8 @@
   <string name="studies_on">Sees</string>
   <!-- Summary of studies data on quit preference if it is set to off -->
   <string name="studies_off">Väljas</string>
+  <!-- Toggle if desktop site is turned off -->
+  <string name="browser_feature_desktop_site_off">Väljas</string>
   <!-- Category header of a preference that allows a user to alter settings related to web permissions. -->
   <string name="preferences_category_permissions">Õigused</string>
   <!-- Category header of a preference that allows a user to alter settings related to web content. -->
@@ -1476,6 +1509,8 @@
   <string name="saved_login_clear_username">Tühjenda kasutajanimi</string>
   <!-- Content Description (for screenreaders etc) read for the button to clear the hostname field while creating a login -->
   <string name="saved_login_clear_hostname">Tühjenda sait</string>
+  <!-- Delete text for the login detail menu delete button -->
+  <string name="login_detail_menu_delete_button">Kustuta</string>
   <!-- Content Description (for screenreaders etc) read for the button to open a site in logins -->
   <string name="saved_login_open_site">Ava sait brauseris</string>
   <!-- Content Description (for screenreaders etc) read for the button to reveal a password in logins -->
@@ -1484,6 +1519,8 @@
   <string name="saved_login_hide_password">Varja parool</string>
   <!-- Message displayed in biometric prompt displayed for authentication before allowing users to view their passwords -->
   <string name="logins_biometric_prompt_message_2">Salvestatud paroolide vaatamiseks ava lukk</string>
+  <!-- Title of warning dialog if users have no device authentication set up -->
+  <string name="logins_warning_dialog_title_2">Kaitse salvestatud paroole</string>
   <!-- Negative button to ignore warning dialog if users have no device authentication set up -->
   <string name="logins_warning_dialog_later">Hiljem</string>
   <!-- Positive button to send users to set up a pin of warning dialog if users have no device authentication set up -->
@@ -1498,6 +1535,8 @@
   <string name="saved_logins_sort_strategy_alphabetically">Nimi (A-Y)</string>
   <!-- Saved logins sorting strategy menu item -by last used- (if selected, it will sort saved logins by last used) -->
   <string name="saved_logins_sort_strategy_last_used">Viimati kasutatud</string>
+  <!-- Badge label shown in the menu item when the browser VPN is off -->
+  <string name="preferences_ip_protection_off">Väljas</string>
   <!--
     Autofill
 
@@ -1807,6 +1846,8 @@
   <string name="translations_bottom_sheet_negative_button_restore">Kuva algset</string>
   <!-- Button text on the translations dialog to begin a translation of the website. -->
   <string name="translations_bottom_sheet_positive_button">Tõlgi</string>
+  <!-- Default dropdown option when initially selecting a language from the translations dialog language selection dropdown. -->
+  <string name="translations_bottom_sheet_default_dropdown_selection">Vali keel</string>
   <!-- Snackbar title shown if the user closes the Translation Request dialogue and a translation is in progress. -->
   <string name="translation_in_progress_snackbar">Tõlkimine…</string>
   <!--
@@ -1911,10 +1952,14 @@
   <string name="download_language_file_dialog_positive_button_text_all_languages">Laadi alla ja tõlgi</string>
   <!-- Button text on the data saving mode warning dialog used by the translations feature to allow users to cancel the action and not perform a download of the language file. -->
   <string name="download_language_file_dialog_negative_button_text">Loobu</string>
+  <!-- Toggle if Enhanced Tracking Protection is turned off -->
+  <string name="protection_panel_etp_toggle_off">Väljas</string>
   <!-- Title text for the protection panel permissions section. -->
   <string name="protection_panel_permissions_title">Õigused</string>
   <!-- Button text on the clear site data dialog to allow users to cancel the action and not clear the site data. -->
   <string name="clear_site_data_dialog_negative_button_text">Loobu</string>
+  <!-- The continue button label -->
+  <string name="micro_survey_continue_button_label" tools:ignore="UnusedResources">Jätka</string>
   <!-- TextField Design System Component -->
 
   <!-- Label for the primary action button to unlock private tabs -->

@@ -3195,6 +3195,14 @@
   <string name="ip_protection_onboarding_body">%1$s prin ascunderea locației, chiar și în rețele publice Wi-Fi. Obține %2$d GB gratuit în fiecare lună.</string>
   <!-- Used as text for a link in ip_protection_onboarding_body. Make sure to adapt capitalization if the link is in the middle of the sentence. -->
   <string name="ip_protection_onboarding_body_link">Navighează cu protecție suplimentară</string>
+  <!--
+    The body of the VPN onboarding card for a promotion that provides unlimited data bandwidth for a certain time.
+    %1$s is a localized date (for example "Jun 9") indicating the end of the promotional period.
+    %2$s is a link using ip_protection_onboarding_body_link_promo (“Learn more”) as text. It links to a support article about VPN on Firefox.
+  -->
+  <string name="ip_protection_onboarding_body_promo">Pornește-l pentru a face navigarea mai privată și mai greu de urmărit. Încearcă-l acum pentru a obține lățime de bandă nelimitată prin %1$s. %2$s</string>
+  <!-- Used as text for a link in ip_protection_onboarding_body. Make sure to adapt capitalization if the link is in the middle of the sentence. -->
+  <string name="ip_protection_onboarding_body_link_promo">Află mai multe</string>
   <!-- Label for the dismiss button on the onboarding bottom sheet. -->
   <string name="ip_protection_onboarding_not_now_button">Nu acum</string>
   <!-- Snackbar (in-app pop-up notification) text to signal the browser VPN connection error -->
@@ -3204,6 +3212,8 @@
     %1$d is the total monthly allowance in GB (for example "50").
   -->
   <string name="ip_protection_data_limit_reached_snackbar">%1$d GB de date VPN utilizate. Accesul va fi resetat luna viitoare.</string>
+  <!-- Snackbar (in-app pop-up notification) action button text that takes the user to the VPN settings screen. -->
+  <string name="ip_protection_data_limit_reached_snackbar_action">Setări</string>
   <!--
     Autofill
 
@@ -3510,6 +3520,8 @@
   <string name="homepage_shortcuts_add_website">Adaugă site web</string>
   <!-- Title text for the "Enter a Website URL" dialog for adding a shortcut. -->
   <string name="homepage_shortcuts_add_website_title">Introdu adresa URL a unui site web</string>
+  <!-- Title for the "Popular sites" section in the "Add to homepage" bottom sheet. -->
+  <string name="homepage_shortcuts_popular_sites">Site-uri populare</string>
   <!-- Title text displayed in the dialog when shortcuts limit is reached. -->
   <string name="shortcut_max_limit_title">Limita de comenzi rapide a fost atinsă</string>
   <!-- Content description text displayed in the dialog when shortcut limit is reached. -->
@@ -3936,6 +3948,33 @@
   <string name="protection_panel_privacy_and_security_settings_2">Setări de confidențialitate</string>
   <!-- Title text for the protection panel permissions section. -->
   <string name="protection_panel_permissions_title">Permisiuni</string>
+  <plurals name="trackers_blocked_panel_total_num_trackers_blocked_2">
+    <!--
+      Text for displaying the total number of trackers blocked in the trackers blocked panel.
+      %1$d is a placeholder for the number of trackers blocked.
+    -->
+    <item quantity="one">%1$d element de urmărire blocat pe acest site</item>
+    <item quantity="few">%1$d elemente de urmărire blocate pe acest site</item>
+    <item quantity="other">%1$d de elemente de urmărire blocate pe acest site</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_social_media_trackers">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked social media trackers.
+      %1$d is a placeholder for the number of social media trackers blocked.
+    -->
+    <item quantity="one">%1$d element de urmărire ale rețelelor de socializare</item>
+    <item quantity="few">%1$d elemente de urmărire ale rețelelor de socializare</item>
+    <item quantity="other">%1$d de elemente de urmărire ale rețelelor de socializare</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_cross_site_cookies">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked cross-site tracking cookies.
+      %1$d is a placeholder for the number of cross-site tracking cookies blocked.
+    -->
+    <item quantity="one">%1$d cookie de urmărire intersite-uri</item>
+    <item quantity="few">%1$d cookie-uri de urmărire intersite-uri</item>
+    <item quantity="other">%1$d de cookie-uri de urmărire intersite-uri</item>
+  </plurals>
   <plurals name="trackers_blocked_panel_num_cryptominers">
     <!--
       Text for displaying in the trackers blocked panel the total number of blocked cryptomining scripts.
@@ -3944,6 +3983,15 @@
     <item quantity="one">%1$d criptominer</item>
     <item quantity="few">%1$d criptomineri</item>
     <item quantity="other">%1$d de criptomineri</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_fingerprinters">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked fingerprinter scripts.
+      %1$d is a placeholder for the number of fingerprinters blocked.
+    -->
+    <item quantity="one">%1$d detector de amprente digitale</item>
+    <item quantity="few">%1$d detectoare de amprente digitale</item>
+    <item quantity="other">%1$d de detectoare de amprente digitale</item>
   </plurals>
   <plurals name="trackers_blocked_panel_num_trackers_2">
     <!--

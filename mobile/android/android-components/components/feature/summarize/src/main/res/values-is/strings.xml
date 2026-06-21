@@ -19,14 +19,24 @@
   <string name="mozac_summarize_shake_consent_off_device_negative_button">Ekki núna</string>
   <!-- Title for the on-device shake summarization and download consent screen -->
   <string name="mozac_summarize_shake_consent_on_device_title">Gera samantekt efnis á þessari síðu</string>
+  <!-- Message for the on-device shake summarization and download consent screen. %s will be replaced by app name. -->
+  <string name="mozac_summarize_shake_consent_on_device_message">Eftir fljótlegt eins-skiptis niðurhal getur %s tekið saman efni af síðum þegar þú hristir tækið.</string>
   <!-- Button text for the on-device shake summarization and download consent screen approving shake and download consent -->
   <string name="mozac_summarize_shake_consent_on_device_button_positive">Sæktu til að fá samantekt efnis</string>
   <!-- Button text for the on-device shake summarization and download consent screen denying shake and download consent -->
   <string name="mozac_summarize_shake_consent_on_device_negative_button">Ekki núna</string>
+  <!-- Title for the download consent screen -->
+  <string name="mozac_summarize_download_consent_title">Setja upp einkasamantektir</string>
+  <!-- Message for the consent to download when using an on-device model. %s will be replaced by app name. -->
+  <string name="mozac_summarize_download_nano_consent_message">Eftir eins-skiptis niðurhal getur %s tekið saman efni af síðum með þig við stjórnvölinn.</string>
   <!-- Button text for the consent to download an on-device model approving download consent -->
   <string name="mozac_summarize_download_consent_button_positive">Sæktu til að fá samantekt efnis</string>
   <!-- Button text for the consent to download an on-device model denying download consent -->
   <string name="mozac_summarize_download_consent_button_negative">Hætta við</string>
+  <!-- Title for the download in progress screen -->
+  <string name="mozac_summarize_download_progress_title">Setja upp samantektir</string>
+  <!-- Message to describe that a download is in progress using an on-device, private model -->
+  <string name="mozac_summarize_download_progress_message">Eins-skiptis niðurhal fyrir einkasamantektir.</string>
   <!-- Caption to describe the progress of the download. %1$.2f is bytes downloaded, %2$.2f is total bytes required for download to complete. -->
   <string name="mozac_summarize_download_progress_caption">%1$.2f MB / %2$.2f MB</string>
   <!-- Button text shown while a download is in progress to cancel the download -->

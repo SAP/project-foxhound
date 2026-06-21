@@ -3042,6 +3042,10 @@
   <string name="preferences_ip_protection_off">تاقاق</string>
   <!-- Badge label shown in the menu item when the browser VPN has an error -->
   <string name="ip_protection_menu_error">خاتالىق</string>
+  <!-- Label for the "connecting" state of the button that starts the browser VPN authentication or authorization flow on the settings screen -->
+  <string name="ip_protection_connecting">باغلىنىۋاتىدۇ…</string>
+  <!-- Used as text for a link in ip_protection_onboarding_body. Make sure to adapt capitalization if the link is in the middle of the sentence. -->
+  <string name="ip_protection_onboarding_body_link_promo">تەپسىلاتى</string>
   <!-- Label for the dismiss button on the onboarding bottom sheet. -->
   <string name="ip_protection_onboarding_not_now_button">ھازىر ئەمەس</string>
   <!--
@@ -3344,8 +3348,14 @@
   <string name="homepage_shortcuts_show_all_content_description">ھەممە تېزلەتمىنى كۆرسىتىدۇ</string>
   <!-- Label for the "Add shortcut" button displayed as a tile. -->
   <string name="homepage_shortcuts_add_shortcut">تېزلەتمىگە قوش</string>
+  <!-- Title for the "Add to homepage" bottom sheet. -->
+  <string name="homepage_shortcuts_add_to_homepage">باش بەتكە قوش</string>
+  <!-- Label for the "Add website" button in the "Add to homepage" bottom sheet. -->
+  <string name="homepage_shortcuts_add_website">تور بېكەت قوش</string>
   <!-- Title text for the "Enter a Website URL" dialog for adding a shortcut. -->
   <string name="homepage_shortcuts_add_website_title">تور بېكەت ئۇلانمىسى كىرگۈزۈلىدۇ</string>
+  <!-- Title for the "Popular sites" section in the "Add to homepage" bottom sheet. -->
+  <string name="homepage_shortcuts_popular_sites">ئالقىشلىق تور بېكەت</string>
   <!-- Title text displayed in the dialog when shortcuts limit is reached. -->
   <string name="shortcut_max_limit_title">تېزلەتمە چېكىگە يەتتى</string>
   <!-- Content description text displayed in the dialog when shortcut limit is reached. -->
@@ -3572,6 +3582,8 @@
   <string name="translation_settings_download_language">تىل چۈشۈر</string>
   <!-- Toggle switch title and description for the translation settings control. -->
   <string name="translation_settings_control_title">تەرجىمە</string>
+  <!-- Description for the translation settings toggle switch. -->
+  <string name="translation_settings_control_description">تەرجىمە ئۈسكۈنىڭىزدە شەخسىي پېتى تۇرىدۇ.</string>
   <!-- Clickable text for the translations settings item that links to a website. -->
   <string name="translation_settings_control_learn_more">تەپسىلاتى</string>
   <!--
@@ -3731,6 +3743,19 @@
     %s is the name of the app (for example "Firefox").
   -->
   <string name="protection_panel_banner_protected_title">%s قوغداۋاتىدۇ</string>
+  <plurals name="protection_panel_banner_protected_blocked_trackers_description">
+    <!--
+      Description text for the protection panel banner when privacy dashboard is enabled.
+      %1$d is the number of trackers blocked.
+    -->
+    <item quantity="one">بۇ تور بېكەتتە %1$d ئىزلىغۇچ توسۇلغان.</item>
+    <item quantity="other">بۇ تور بېكەتتە %1$d ئىزلىغۇچ توسۇلغان.</item>
+  </plurals>
+  <!--
+    Description text for the protection panel banner when privacy dashboard is enabled.
+    and there are no trackers blocked.
+  -->
+  <string name="protection_panel_banner_protected_no_blocked_trackers_description">قوغدالدىڭىز.</string>
   <!-- Description text for the protection panel banner when tracking protection is enabled. -->
   <string name="protection_panel_banner_protected_description">قوغدالدىڭىز. ئەگەر بىرەر نەرسە بايقىساق، سىزگە بىلدۈرىمىز.</string>
   <!-- Label text for the Enhanced Tracking Protection toggle. -->

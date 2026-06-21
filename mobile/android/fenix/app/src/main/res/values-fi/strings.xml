@@ -1121,6 +1121,8 @@
   <string name="customize_toggle_pocket_sponsored">Sponsoroidut tarinat</string>
   <!-- Title for the opening wallpaper settings screen -->
   <string name="customize_wallpapers">Taustakuvat</string>
+  <!-- Label for the menu item that opens the wallpaper settings screen. -->
+  <string name="browser_menu_change_wallpaper">Vaihda taustakuva</string>
   <!-- Title for the customize home screen section with sponsored shortcuts. -->
   <string name="customize_toggle_contile">Sponsoroidut pikavalinnat</string>
   <!-- Title for the customize home screen section that toggles the Homepage sports widget. -->
@@ -2083,6 +2085,12 @@
   <string name="webcompat_reporter_preview_bottom_sheet_header">Raportin esikatselu</string>
   <!-- Label for the “Send” button shown in the WebCompat Report preview panel, which the user taps to submit the report. -->
   <string name="webcompat_reporter_preview_bottom_sheet_send">Lähetä</string>
+  <!-- Title for the Edit URL confirmation dialog in the WebCompatReporter -->
+  <string name="webcompat_reporter_edit_url_dialog_title">Muokkaa verkkosivuston osoitetta</string>
+  <!-- Text shown on the save button for the Edit URL confirmation dialog in the WebCompatReporter. -->
+  <string name="webcompat_reporter_edit_url_dialog_save">Tallenna</string>
+  <!-- Text shown on the dismiss button for the Edit URL confirmation dialog in the WebCompatReporter. -->
+  <string name="webcompat_reporter_edit_url_dialog_dismiss">Hylkää</string>
   <!--
     These reason strings are dropdown options on a WebCompat reporter form, indicating what is broken on the site.
 
@@ -3178,6 +3186,8 @@
   <string name="ip_protection_onboarding_body">%1$s piilottamalla sijaintisi, jopa julkisessa Wi-Fi-verkossa. Saat %2$d Gt ilmaiseksi joka kuukausi.</string>
   <!-- Used as text for a link in ip_protection_onboarding_body. Make sure to adapt capitalization if the link is in the middle of the sentence. -->
   <string name="ip_protection_onboarding_body_link">Selaa lisäsuojauksella</string>
+  <!-- Used as text for a link in ip_protection_onboarding_body. Make sure to adapt capitalization if the link is in the middle of the sentence. -->
+  <string name="ip_protection_onboarding_body_link_promo">Lue lisää</string>
   <!-- Label for the dismiss button on the onboarding bottom sheet. -->
   <string name="ip_protection_onboarding_not_now_button">Ei nyt</string>
   <!-- Snackbar (in-app pop-up notification) text to signal the browser VPN connection error -->
@@ -3187,6 +3197,8 @@
     %1$d is the total monthly allowance in GB (for example "50").
   -->
   <string name="ip_protection_data_limit_reached_snackbar">%1$d Gt VPN-dataa käytetty. Käyttöoikeus nollataan ensi kuussa.</string>
+  <!-- Snackbar (in-app pop-up notification) action button text that takes the user to the VPN settings screen. -->
+  <string name="ip_protection_data_limit_reached_snackbar_action">Asetukset</string>
   <!--
     Autofill
 
@@ -3493,6 +3505,8 @@
   <string name="homepage_shortcuts_add_website">Lisää verkkosivusto</string>
   <!-- Title text for the "Enter a Website URL" dialog for adding a shortcut. -->
   <string name="homepage_shortcuts_add_website_title">Anna verkkosivuston osoite</string>
+  <!-- Title for the "Popular sites" section in the "Add to homepage" bottom sheet. -->
+  <string name="homepage_shortcuts_popular_sites">Suositut sivustot</string>
   <!-- Title text displayed in the dialog when shortcuts limit is reached. -->
   <string name="shortcut_max_limit_title">Pikavalintojen raja tuli vastaan</string>
   <!-- Content description text displayed in the dialog when shortcut limit is reached. -->

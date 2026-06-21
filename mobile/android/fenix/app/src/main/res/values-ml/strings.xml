@@ -892,6 +892,8 @@
   <string name="preference_downloads_folder_permission_lost" tools:ignore="UnusedResources">ഈ അറ ഉപയോഗിക്കാൻ താങ്ങൾക്കനുവാദമില്ല. മറ്റൊരെണ്ണം തിരഞ്ഞെടുത്തുനോക്കു്.</string>
   <!-- Preference title for choosing an app to handle downloads -->
   <string name="preferences_choose_app_for_downloads">മറ്റൊരു പ്രയോഗംവഴി ഇറക്കിവയ്ക്കലുകൾ കൈകാര്യം ചെയ്യുക</string>
+  <!-- Preference category for deleting or removing downloads -->
+  <string name="preferences_category_delete_or_remove_downloads">ഇറക്കിവയ്ക്കലുകൾ മായ്ക്കുക അല്ലെങ്കിൽ മാറ്റുക</string>
   <string name="preferences_downloads_delete_from_device">ഉപകരണത്തിൽ നിന്നു മായ്ക്കുക</string>
   <string name="preferences_downloads_delete_from_device_description">താങ്ങളുടെ ഉപകരണത്തിൽ നിന്നും നാൾവഴിയിൽ നിന്നും ഈ ഫയൽ മായ്ക്കപ്പെടും</string>
   <string name="preferences_downloads_remove_from_download_history">ഇറക്കിവയ്ക്കൽ നാൾവഴിയിൽ നിന്നു മായ്ക്കുക</string>
@@ -945,6 +947,12 @@
   <string name="customize_addon_collection_user_hint">ശേഖരണ ഉടമ (ഉപയോക്തൃ ഐഡി)</string>
   <!-- Toast shown after confirming the custom extension collection configuration -->
   <string name="toast_customize_extension_collection_done">വിപുലീകരണപ്പിരിവു പുതുച്ചു. മാറ്റങ്ങൾ നടപ്പിലാക്കാൻ പ്രയോഗത്തിൽനിന്നു പുറത്തുകടക്കുന്നു…</string>
+  <!--
+    Customize Home
+
+    Title for the customize home screen section with privacy report.
+  -->
+  <string name="customize_toggle_privacy_report">സ്വകാര്യത അറിയിപ്പു്</string>
   <!-- Header text for jumping back into the recent tab in customize the home screen -->
   <string name="customize_toggle_jump_back_in">തിരികെ കയറുക</string>
   <!-- Title for the customize home screen section with bookmarks. -->
@@ -1493,6 +1501,8 @@
   <string name="tab_manager_open_tab_search">ടാബുതിരയൽ തുറക്കുക</string>
   <!-- Title for introducing tab groups via an onboarding card shown in the tab manager. -->
   <string name="tab_group_onboarding_item_title">പുതിയ ടാബുകൂട്ടം ഉണ്ടാക്കുക</string>
+  <!-- Description for tab groups onboarding shown in the tab manager when in list view. -->
+  <string name="tab_group_onboarding_list_item_description">ടാബുകൂട്ടം പടയ്ക്കാൻ ഒന്നിന്മേൽ ടാബുകൾ തിരഞ്ഞെടുക്കുക.</string>
   <!--
     Tab Group
 
@@ -1525,6 +1535,8 @@
   </plurals>
   <!-- Title for the Delete tab group confirmation dialog. -->
   <string name="delete_tab_group_confirmation_dialog_title">ടാബുകൂട്ടം മായ്ക്കണോ?</string>
+  <!-- Text shown in the body of the Delete tab group confirmation dialog. -->
+  <string name="delete_tab_group_confirmation_dialog_body">ഈ നടപടി ടാബുകൂട്ടത്തെ എന്നെന്നേക്കുമായി മായ്ക്കും.</string>
   <!-- Text shown on the confirm button in the Delete tab group confirmation dialog. -->
   <string name="delete_tab_group_confirmation_dialog_confirm">കൂട്ടം മായ്ക്കുക</string>
   <!-- Text shown on the cancel button in the Delete tab group confirmation dialog. -->
@@ -2415,6 +2427,8 @@
     <item quantity="one">%d പിന്തുടൎച്ചയന്ത്രങ്ങൾ തടഞ്ഞു</item>
     <item quantity="other">%d പിന്തുടൎച്ചയന്ത്രങ്ങൾ തടഞ്ഞു</item>
   </plurals>
+  <!-- Text shown on the trackers blocked card when no trackers have been blocked yet -->
+  <string name="trackers_blocked_empty">നിങ്ങൾക്കു പരിരക്ഷയുണ്ടു്</string>
   <!-- Text shown below the trackers blocked card with typing animation -->
   <string name="help_catch_trackers">പിന്തുടൎച്ചയന്ത്രങ്ങളെ പിടികൂടാൻ ഞങ്ങളെ തുണയ്ക്കുക</string>
   <!-- Preference for enhanced tracking protection for the standard protection settings -->
@@ -2774,8 +2788,35 @@
   <string name="preferences_email_masks_manage_title">ഇതപാൽ പൊയ്മുഖങ്ങൾ കൈകാര്യം ചെയ്യുക</string>
   <!-- The message displayed when there was an error with the email mask or Firefox Account services. -->
   <string name="email_masks_error_retrieving_masks">ഇ-തപാൽ പൊയ്മുഖങ്ങൾ നിലവിൽ ലഭ്യമല്ല. കുറച്ചു മിനിറ്റുകൾക്കുള്ളിൽ വീണ്ടും ശ്രമിക്കുക.</string>
+  <!--
+    Firefox browser VPN (a browser-only proxy, distinct from the Mozilla VPN service)
+
+    Title for the browser VPN entry in the settings list
+  -->
+  <string name="preferences_ip_protection_title_2">ഉൾപ്പണിഞ്ഞ വി.പി.എൻ</string>
+  <!-- Label for the BETA badge for the browser VPN entry in the settings list -->
+  <string name="preferences_ip_protection_beta_badge_label">ബീറ്റ</string>
+  <!-- Title for the browser VPN settings screen (displayed in the app bar) -->
+  <string name="ip_protection_title">വി.പി.എൻ</string>
+  <!-- Label for the browser VPN toggle on the settings screen -->
+  <string name="ip_protection_toggle_label">വി.പി.എൻ</string>
+  <!-- Content description for the browser VPN settings screen top bar back button -->
+  <string name="ip_protection_navigate_back_button_content_description">തിരിച്ചു്</string>
+  <!-- Headline for the browser VPN promo card. %s is the name of the app (for example "Firefox"). -->
+  <string name="ip_protection_promo_headline">%s-യുടെ ഉൾപ്പണിഞ്ഞ വി.പി.എൻ</string>
   <!-- Link text that opens additional information about the browser VPN -->
   <string name="ip_protection_learn_more">കൂടുതലറിയുക</string>
+  <!--
+    Data usage shown on the browser VPN settings screen.
+    %1$.1f is the data remaining in GB (for example "8.3").
+    %2$.1f is the total monthly allowance in GB (for example "50.0").
+  -->
+  <string name="ip_protection_data_limit_value">%2$.1f ജി.ബി യിൽ %1$.1f-ജി.ബി മിച്ചം</string>
+  <!--
+    Text shown below the data usage bar describing when the monthly allowance resets.
+    %1$.0f is the total monthly data allowance in GB (for example "50").
+  -->
+  <string name="ip_protection_data_reset_info">ഓരോ മാസവും ഇതു %1$.0f-ജിബി ആയിപ്പുതുക്കും.</string>
   <!-- Header for the browser VPN `location` section -->
   <string name="ip_protection_location_section">ഇടം</string>
   <!-- Label for the recommended automatic location option on the browser VPN settings screen -->
@@ -2790,13 +2831,19 @@
   <string name="ip_protection_menu_paused">നിറുത്തി</string>
   <!-- Badge label shown in the menu item when the browser VPN has an error -->
   <string name="ip_protection_menu_error">പിഴവു്</string>
+  <!-- Content description for the chevron button that opens the browser VPN settings screen -->
+  <string name="ip_protection_navigate_settings">വി.പി.എൻ ക്രമീകരണങ്ങൾ</string>
   <!--
     Subtitle shown below the VPN label in menus when the monthly data allowance is exhausted.
     %1$d is the total monthly allowance in GB (for example "50").
   -->
   <string name="ip_protection_menu_limit_reached">%1$d ജി.ബി അതിരെത്തി</string>
+  <!-- Label shown next to the browser protection icon in the address bar when the browser VPN is active -->
+  <string name="ip_protection_toolbar_pill_label">വി.പി.എൻ തുടങ്ങിവച്ചതു്</string>
   <!-- Label for the button that starts the browser VPN authentication or authorization flow on the settings screen -->
   <string name="ip_protection_get_started">തുടങ്ങാം</string>
+  <!-- Label for the "connecting" state of the button that starts the browser VPN authentication or authorization flow on the settings screen -->
+  <string name="ip_protection_connecting">ബന്ധപ്പെടുന്നു…</string>
   <!-- Used as text for a link in ip_protection_onboarding_body. Make sure to adapt capitalization if the link is in the middle of the sentence. -->
   <string name="ip_protection_onboarding_body_link">ഇനിയും പരിരക്ഷണയോടെ തിരയുക</string>
   <!-- Used as text for a link in ip_protection_onboarding_body. Make sure to adapt capitalization if the link is in the middle of the sentence. -->
@@ -3101,6 +3148,10 @@
   <string name="homepage_shortcuts_show_all_content_description">എല്ലാ കുറുക്കുവഴികൾ കാണിക്കുക</string>
   <!-- Label for the "Add shortcut" button displayed as a tile. -->
   <string name="homepage_shortcuts_add_shortcut">കുറുക്കുവഴി ചേൎക്കുക</string>
+  <!-- Title for the "Add to homepage" bottom sheet. -->
+  <string name="homepage_shortcuts_add_to_homepage">ആമുഖത്താളിലേക്കു ചേൎക്കുക</string>
+  <!-- Label for the "Add website" button in the "Add to homepage" bottom sheet. -->
+  <string name="homepage_shortcuts_add_website">വെബ്ബിടം ചേൎക്കുക</string>
   <!-- Title text for the "Enter a Website URL" dialog for adding a shortcut. -->
   <string name="homepage_shortcuts_add_website_title">വെബ്ബിടവിലാസം നല്കുക</string>
   <!-- Title for the "Popular sites" section in the "Add to homepage" bottom sheet. -->
@@ -3267,6 +3318,8 @@
   <string name="translation_error_could_not_translate_warning_text">വിവർത്തനം ചെയ്യുമ്പോൾ ഒരു കുഴപ്പമുണ്ടായി. ദയവായി വീണ്ടും ശ്രമിച്ചു് നോക്കുക.</string>
   <!-- The title of the warning card informs the user that the list of languages cannot be loaded. -->
   <string name="translation_error_could_not_load_languages_warning_text">ഭാഷാകൾ ലഭ്യമാക്കാൻ കഴിഞ്ഞില്ല. താങ്ങളുടെ ഗോളാന്തരവല സമ്പർക്കം പരിശോധിച്ച് വീണ്ടും ശ്രമിക്കുക.</string>
+  <!-- The title of the warning card informs the user that translations from a language are not supported yet. %1$s is the name of the source language. -->
+  <string name="translation_error_language_not_supported_warning_text_2">%1$s-ൽ നിന്നുള്ള മൊഴിമാറ്റങ്ങൾ ഞങ്ങൾ നിലവിൽ പിന്താങ്ങുന്നില്ല.</string>
   <!-- Snackbar title shown if the user closes the Translation Request dialogue and a translation is in progress. -->
   <string name="translation_in_progress_snackbar">വിവർത്തനം ചെയ്യുന്നു…</string>
   <!--
@@ -3320,6 +3373,12 @@
   <string name="translation_settings_automatic_never_translate_sites">ഒരിക്കലും ഈ വെബ്സ്ഥാനങ്ങളുടെ വിവർത്തനം ചെയ്യരുതു്</string>
   <!-- Button text for the button that will take the user to the download languages dialog. On the download languages dialog, the user can manage which languages they would like to download for translations. -->
   <string name="translation_settings_download_language">ഭാഷാകൾ ഇറക്കിവയ്ക്കുക</string>
+  <!-- Toggle switch title and description for the translation settings control. -->
+  <string name="translation_settings_control_title">മൊഴിമാറ്റങ്ങൾ</string>
+  <!-- Description for the translation settings toggle switch. -->
+  <string name="translation_settings_control_description">എല്ലാ മൊഴിമാറ്റങ്ങളും താങ്ങളുടെ ഉപകരണത്തിൽ സ്വകാര്യമായി തുടരും.</string>
+  <!-- Clickable text for the translations settings item that links to a website. -->
+  <string name="translation_settings_control_learn_more">കൂടുതലറിയുക</string>
   <!--
     Automatic translation preference screen
 
@@ -3475,6 +3534,11 @@
     %s is the name of the app (for example "Firefox").
   -->
   <string name="protection_panel_banner_protected_title">%s കാവൽ നിൽക്കുന്നു</string>
+  <!--
+    Description text for the protection panel banner when privacy dashboard is enabled.
+    and there are no trackers blocked.
+  -->
+  <string name="protection_panel_banner_protected_no_blocked_trackers_description">നിങ്ങൾക്കു പരിരക്ഷയുണ്ടു്.</string>
   <!-- Description text for the protection panel banner when tracking protection is enabled. -->
   <string name="protection_panel_banner_protected_description">താങ്ങൾ സംരക്ഷിക്കപ്പെട്ടിരിക്കുന്നു. ഞങ്ങൾ എന്തെങ്കിലും കണ്ടെത്തിയാൽ താങ്ങളെ അറിയിക്കാം.</string>
   <!-- Label text for the Enhanced Tracking Protection toggle. -->
@@ -3500,6 +3564,54 @@
   <string name="protection_panel_privacy_and_security_settings_2">സ്വകാര്യത ക്രമീകരണങ്ങൾ</string>
   <!-- Title text for the protection panel permissions section. -->
   <string name="protection_panel_permissions_title">അനുമതികൾ</string>
+  <plurals name="trackers_blocked_panel_total_num_trackers_blocked_2">
+    <!--
+      Text for displaying the total number of trackers blocked in the trackers blocked panel.
+      %1$d is a placeholder for the number of trackers blocked.
+    -->
+    <item quantity="one">%1$d പിന്തുടൎച്ചയന്ത്രങ്ങൾ ഈ വെബ്ബിടത്തിൽ തടഞ്ഞു</item>
+    <item quantity="other">%1$d പിന്തുടൎച്ചയന്ത്രങ്ങൾ ഈ വെബ്ബിടത്തിൽ തടഞ്ഞു</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_social_media_trackers">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked social media trackers.
+      %1$d is a placeholder for the number of social media trackers blocked.
+    -->
+    <item quantity="one">%1$d സമൂഹമാധ്യമ പിന്തുടൎച്ചയന്ത്രം</item>
+    <item quantity="other">%1$dസമൂഹമാധ്യമ പിന്തുടൎച്ചയന്ത്രങ്ങൾ</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_cross_site_cookies">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked cross-site tracking cookies.
+      %1$d is a placeholder for the number of cross-site tracking cookies blocked.
+    -->
+    <item quantity="one">%1$d വെബ്ബിടകുറുകെ പിന്തുടൎച്ച കുക്കികൾ</item>
+    <item quantity="other">%1$d വെബ്ബിടകുറുകെ പിന്തുടൎച്ച കുക്കികൾ</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_fingerprinters">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked fingerprinter scripts.
+      %1$d is a placeholder for the number of fingerprinters blocked.
+    -->
+    <item quantity="one">%1$d വിരലടയാളപ്പിന്തുടൎച്ചയന്ത്രം</item>
+    <item quantity="other">%1$d വിരലടയാളപ്പിന്തുടൎച്ചയന്ത്രങ്ങൾ</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_trackers_2">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked generic tracking scripts.
+      %1$d is a placeholder for the number of trackers blocked.
+    -->
+    <item quantity="one">%1$d പിന്തുടരുന്ന ഉള്ളടക്കം</item>
+    <item quantity="other">%1$d പിന്തുടരുന്ന ഉള്ളടക്കം</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_trackers_blocked_this_week_2">
+    <!--
+      Text for displaying the number of trackers blocked this week in the trackers blocked panel.
+      %1$d is a placeholder for the number of trackers blocked this week.
+    -->
+    <item quantity="one">ഈ ആഴ്ച %1$d പിന്തുടൎച്ചയന്ത്രങ്ങളെ തടഞ്ഞു</item>
+    <item quantity="other">ഈ ആഴ്ച %1$d പിന്തുടൎച്ചയന്ത്രങ്ങളെ തടഞ്ഞു</item>
+  </plurals>
   <!--
     Text for displaying the total number of trackers blocked in the trackers blocked panel.
     %d is a placeholder for the number of trackers blocked.
@@ -3922,6 +4034,12 @@
   <string name="terms_of_use_prompt_body_line_two_alternative" tools:ignore="UnusedResources">%1$s-ൽ താങ്ങൾക്കു കൂടുതലറിയാം.</string>
   <!-- Link text for terms_of_use_prompt_body_line_two_alternative that links to a site with more information about the Terms of Use -->
   <string name="terms_of_use_prompt_body_line_two_alternative_link" tools:ignore="UnusedResources">ഇവിടെ</string>
+  <!-- Sports widget button label to see match results. -->
+  <string name="sports_widget_see_results" tools:ignore="UnusedResources">ഫലങ്ങൾ കാണുക</string>
+  <!-- Sports widget button label to view details of a soccer match results. -->
+  <string name="sports_widget_view_match_details" tools:ignore="UnusedResources">കളി വിവരങ്ങൾ കാണുക</string>
+  <!-- Sports widget section header for related soccer matches in the same group. -->
+  <string name="sports_widget_related_matches" tools:ignore="UnusedResources">ബന്ധപ്പെട്ട പൊരുത്തങ്ങൾ</string>
   <!-- Sports widget menu item to remove the widget from the homepage. -->
   <string name="sports_widget_remove">മാറ്റുക</string>
   <!-- Sports widget button label that dismisses the step of choosing a team to follow. -->
@@ -3930,6 +4048,8 @@
   <string name="sports_widget_close_content_description">അടയ്ക്കുക</string>
   <!-- Content description (for accessibility, not displayed) for the overflow (more options) menu button on the sports widget card. -->
   <string name="sports_widget_more_options_content_description">കൂടുതൽ സാധ്യതകൾ</string>
+  <!-- Title shown on the sports widget immediately after the user has followed a team. %s is the selected team (e.g., "USA"). -->
+  <string name="sports_widget_team_followed_title">പിന്തുടരുന്നു: %s</string>
   <!-- Sports widget match status label shown during first half of a match. -->
   <string name="sports_widget_first_half" tools:ignore="UnusedResources">ഒന്നാമ്പകുതി</string>
   <!-- Sports widget match status label shown during second half of a match. -->
@@ -3940,4 +4060,6 @@
   <string name="privacy_notice_updated_homepage_message_privacy_notice" tools:ignore="UnusedResources">സ്വകാര്യത അറിയിപ്പു്</string>
   <!-- The second active link used in privacy_notice_updated_homepage_message -->
   <string name="privacy_notice_updated_homepage_message_learn_more" tools:ignore="UnusedResources">കൂടുതല്‍ അറിയുക</string>
+  <!-- The text on the dialog on the Firefox Labs screen for the negative button when toggling "on" and "off" experimental features. This is used to cancel the action and return to the previous screen. -->
+  <string name="firefox_labs_dialog_cancel_button">റദ്ദാക്കുക</string>
 </resources>

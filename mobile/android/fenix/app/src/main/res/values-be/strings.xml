@@ -23,6 +23,8 @@
   <string name="content_description_normal_browsing">Звычайны прагляд</string>
   <!-- Placeholder text shown in the search bar before a user enters text for the default engine -->
   <string name="search_hint">Увядзіце запыт або адрас</string>
+  <!-- Shorter placeholder text shown in the search bar when an additional action (voice search) is rendered alongside the hint. -->
+  <string name="search_hint_short">Пошук</string>
   <!-- Placeholder text shown in the search bar before a user enters text for a general engine -->
   <string name="search_hint_general_engine">Пошук у інтэрнэце</string>
   <!-- Placeholder text shown in search bar when using history search -->
@@ -939,6 +941,8 @@
   <string name="customize_toggle_pocket_sponsored">Артыкулы ад спонсараў</string>
   <!-- Title for the opening wallpaper settings screen -->
   <string name="customize_wallpapers">Шпалеры</string>
+  <!-- Label for the menu item that opens the wallpaper settings screen. -->
+  <string name="browser_menu_change_wallpaper">Змяніць шпалеры</string>
   <!-- Title for the customize home screen section with sponsored shortcuts. -->
   <string name="customize_toggle_contile">Спонсарскія цэтлікі</string>
   <!-- Title for the customize home screen section that toggles the Homepage sports widget. -->
@@ -1433,6 +1437,10 @@
   <string name="delete_tab_group_confirmation_dialog_confirm">Выдаліць групу</string>
   <!-- Text shown on the cancel button in the Delete tab group confirmation dialog. -->
   <string name="delete_tab_group_confirmation_dialog_cancel">Скасаваць</string>
+  <!-- Text shown on the confirm button in the Close last tab and delete tab group confirmation dialog. -->
+  <string name="close_tab_and_delete_group_confirmation_dialog_confirm">Выдаліць групу</string>
+  <!-- Text shown on the cancel button in the Close last tab and delete tab group confirmation dialog. -->
+  <string name="close_tab_and_delete_group_confirmation_dialog_cancel">Скасаваць</string>
   <!--
     Color labels for tab groups, used for accessibility and selection UI.
 
@@ -1445,6 +1453,10 @@
   <string name="tab_group_color_red">Чырвоны</string>
   <!-- Tab group color: Pink -->
   <string name="tab_group_color_pink">Ружовы</string>
+  <!-- Tab group color: Purple -->
+  <string name="tab_group_color_purple">Фіялетавы</string>
+  <!-- Tab group color: Blue -->
+  <string name="tab_group_color_blue">Блакітны</string>
   <!--
     History
 
@@ -1553,6 +1565,7 @@
   <string name="download_rename_dialog_cancel_button">Скасаваць</string>
   <string name="download_rename_error_dismiss_button">OK</string>
   <string name="change_file_extension_cancel_button">Скасаваць</string>
+  <string name="change_file_extension_confirm_button">Так, змяніць</string>
   <!-- Text for the header of in progress downloads -->
   <string name="download_header_in_progress">У працэсе</string>
   <!--
@@ -1641,6 +1654,10 @@
   <string name="webcompat_reporter_preview_bottom_sheet_header">Папярэдні прагляд справаздачы</string>
   <!-- Label for the “Send” button shown in the WebCompat Report preview panel, which the user taps to submit the report. -->
   <string name="webcompat_reporter_preview_bottom_sheet_send">Даслаць</string>
+  <!-- Text shown on the save button for the Edit URL confirmation dialog in the WebCompatReporter. -->
+  <string name="webcompat_reporter_edit_url_dialog_save">Захаваць</string>
+  <!-- Text shown on the dismiss button for the Edit URL confirmation dialog in the WebCompatReporter. -->
+  <string name="webcompat_reporter_edit_url_dialog_dismiss">Адхіліць</string>
   <!--
     These reason strings are dropdown options on a WebCompat reporter form, indicating what is broken on the site.
 
@@ -2160,6 +2177,28 @@
   <string name="preference_enhanced_tracking_protection_explanation_2">%s абараняе вас ад многіх найбольш распаўсюджаных трэкераў, якія сочаць за тым, што вы робіце ў інтэрнэце.</string>
   <!-- Text displayed that links to website about enhanced tracking protection -->
   <string name="preference_enhanced_tracking_protection_explanation_learn_more">Даведацца больш</string>
+  <plurals name="trackers_blocked_count_2">
+    <!--
+      Trackers blocked card on homepage
+
+      Text shown on the trackers blocked card. %d is the number of trackers blocked.
+    -->
+    <item quantity="one">%d трэкер заблакаваны</item>
+    <item quantity="few">%d трэкеры заблакавана</item>
+    <item quantity="other">%d трэкераў заблакавана</item>
+  </plurals>
+  <plurals name="trackers_blocked_count">
+    <!--
+      Trackers blocked card on homepage
+
+      Text shown on the trackers blocked card. %d is the number of trackers blocked.
+    -->
+    <item quantity="one">%d трэкер заблакаваны</item>
+    <item quantity="few">%d трэкеры заблакавана</item>
+    <item quantity="other">%d трэкераў заблакавана</item>
+  </plurals>
+  <!-- Text shown on the trackers blocked card when no trackers have been blocked yet -->
+  <string name="trackers_blocked_empty">Вы абаронены</string>
   <!-- Preference for enhanced tracking protection for the standard protection settings -->
   <string name="preference_enhanced_tracking_protection_standard_default_1">Стандартная (прадвызначана)</string>
   <!-- Preference description for enhanced tracking protection for the standard protection settings -->
@@ -2470,6 +2509,39 @@
   <string name="saved_logins_sort_strategy_last_used">Апошняе выкарыстанне</string>
   <!-- Content description (not visible, for screen readers etc.) -->
   <string name="saved_logins_menu_dropdown_chevron_icon_content_description_2">Меню сартавання пароляў</string>
+  <!-- Label for the BETA badge for the browser VPN entry in the settings list -->
+  <string name="preferences_ip_protection_beta_badge_label">БЭТА</string>
+  <!-- Label for the browser VPN toggle on the settings screen -->
+  <string name="ip_protection_toggle_label">VPN</string>
+  <!-- Headline for the browser VPN promo card. %s is the name of the app (for example "Firefox"). -->
+  <string name="ip_protection_promo_headline">Убудаваны VPN %s</string>
+  <!-- Link text that opens additional information about the browser VPN -->
+  <string name="ip_protection_learn_more">Падрабязней</string>
+  <!-- Label for the monthly data allowance section on the browser VPN settings screen -->
+  <string name="ip_protection_data_limit_label">Штомесячны ліміт дадзеных</string>
+  <!--
+    Data usage shown on the browser VPN settings screen.
+    %1$.1f is the data remaining in GB (for example "8.3").
+    %2$.1f is the total monthly allowance in GB (for example "50.0").
+  -->
+  <string name="ip_protection_data_limit_value">Засталося %1$.1f ГБ з %2$.1f ГБ</string>
+  <!-- Header for the browser VPN `location` section -->
+  <string name="ip_protection_location_section">Месцазнаходжанне</string>
+  <!-- Badge label shown in the menu item when the browser VPN is active -->
+  <string name="preferences_ip_protection_on">Укл.</string>
+  <!-- Badge label shown in the menu item when the browser VPN is off -->
+  <string name="preferences_ip_protection_off">Выкл.</string>
+  <!-- Badge label shown in the menu item when the browser VPN has an error -->
+  <string name="ip_protection_menu_error">Памылка</string>
+  <!-- Badge label shown in the menu item when the user is eligible to use the browser VPN but should authenticate or authorize it first. -->
+  <string name="ip_protection_menu_auth_required">Паспрабаваць</string>
+  <!--
+    Subtitle shown below the VPN label in menus when the monthly data allowance is exhausted.
+    %1$d is the total monthly allowance in GB (for example "50").
+  -->
+  <string name="ip_protection_menu_limit_reached">Дасягнуты ліміт %1$d ГБ</string>
+  <!-- Label shown next to the browser protection icon in the address bar when the browser VPN is active -->
+  <string name="ip_protection_toolbar_pill_label">VPN уключаны</string>
   <!--
     Autofill
 
@@ -3235,6 +3307,8 @@
   <string name="certificate_warning_homepage_card_hca1_title" tools:ignore="BrandUsage,UnusedResources">Абнавіце свой браўзер Firefox</string>
   <!-- Push notification title about old Firefox version. "Update" is a noun. -->
   <string name="certificate_warning_push_notification_update_recommended_title" tools:ignore="UnusedResources">Рэкамендуецца абнавіць</string>
+  <!-- Push notification title about old Firefox version. Note: The word "Firefox" should NOT be translated. -->
+  <string name="certificate_warning_push_notification_pnw2_title" tools:ignore="BrandUsage,UnusedResources">Вы карыстаецеся састарэлай версіяй Firefox</string>
   <!-- TextField Design System Component -->
 
   <!-- Title for the setup checklist feature when the state is 'completed' -->

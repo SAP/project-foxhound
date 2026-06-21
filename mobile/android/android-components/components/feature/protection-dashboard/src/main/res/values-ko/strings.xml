@@ -8,7 +8,7 @@
 
 <resources>
   <!-- Title shown in the protection dashboard indicating the user is protected -->
-  <string name="mozac_protections_dashboard_youre_protected">보호되고 있습니다</string>
+  <string name="mozac_protections_dashboard_youre_protected">보호 중</string>
   <plurals name="mozac_protections_dashboard_trackers_blocked_this_week">
     <!--
       Label shown below the tracker count in the dashboard. The count is displayed separately

@@ -672,6 +672,8 @@
   <string name="nova_onboarding_marketing_body_link_text">Kako uporabljamo te podatke</string>
   <!-- Marketing onboarding primary button text. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage">Pomagaj Firefoxu</string>
+  <!-- Marketing onboarding primary button text. -->
+  <string name="nova_onboarding_marketing_primary_button_text_2">Dovoli in nadaljuj</string>
   <!-- Marketing onboarding secondary button text. -->
   <string name="nova_onboarding_marketing_secondary_button_text">Ne, hvala</string>
   <!-- Notifications onboarding title. 'Firefox' is intentionally hardcoded. -->
@@ -1072,6 +1074,8 @@
   <string name="customize_toggle_pocket_sponsored">Sponzorirane zgodbe</string>
   <!-- Title for the opening wallpaper settings screen -->
   <string name="customize_wallpapers">Ozadja</string>
+  <!-- Label for the menu item that opens the wallpaper settings screen. -->
+  <string name="browser_menu_change_wallpaper">Zamenjaj ozadje</string>
   <!-- Title for the customize home screen section with sponsored shortcuts. -->
   <string name="customize_toggle_contile">Sponzorirane bližnjice</string>
   <!-- Title for the customize home screen section that toggles the Homepage sports widget. -->
@@ -1578,6 +1582,8 @@
   <string name="tab_manager_search_bar_placeholder">Iskanje po zavihkih</string>
   <!-- Text shown in the menu to view recently closed tabs -->
   <string name="tab_tray_menu_recently_closed">Nedavno zaprti zavihki</string>
+  <!-- Text shown in the menu to select all tabs. -->
+  <string name="tab_tray_menu_select_all_tabs">Izberi vse</string>
   <!-- Text shown in the menu to view account settings -->
   <string name="tab_tray_menu_account_settings">Nastavitve računa</string>
   <!-- Text shown in the menu to view tab settings -->
@@ -1640,6 +1646,14 @@
   <string name="pwa_site_controls_title_private">%1$s (zasebni način)</string>
   <!-- Content description (not visible, for screen readers etc.) for the button to open the Tab Search feature to search through tabs. -->
   <string name="tab_manager_open_tab_search">Odpri iskanje zavihkov</string>
+  <!-- Title for introducing tab groups via an onboarding card shown in the tab manager. -->
+  <string name="tab_group_onboarding_item_title">Ustvarite skupino zavihkov</string>
+  <!-- Description for tab groups onboarding shown in the tab manager when in grid view. -->
+  <string name="tab_group_onboarding_grid_item_description">Za združitev v skupino povlecite en zavihek na drugega.</string>
+  <!-- Description for tab groups onboarding shown in the tab manager when in list view. -->
+  <string name="tab_group_onboarding_list_item_description">Za ustvaritev skupine izberite več zavihkov.</string>
+  <!-- Content description (accessibility label) for button to dismiss the tab group onboarding item. -->
+  <string name="tab_group_onboarding_item_dismiss_content_description">Zapri informativno ploščo o skupinah zavihkov</string>
   <!-- The description displayed on the tab groups page when no tab groups are open -->
   <string name="tab_manager_empty_tab_groups_page_description">Izberite zavihke, iz katerih želite ustvariti skupino. Vanjo bodo shranjeni in pripravljeni na trenutek, ko jih boste potrebovali.</string>
   <!--
@@ -1986,6 +2000,10 @@
   <!-- The error message of the URL text field when an invalid URL has been entered. -->
   <string name="webcompat_reporter_url_error_invalid">Vnesite veljaven naslov URL</string>
   <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
+  <string name="webcompat_reporter_label_whats_broken_3">Kaj ne deluje?</string>
+  <!-- Content description for the icon button that clears the selected broken site reason in the WebCompat Reporter. -->
+  <string name="webcompat_reporter_clear_reason_content_description">Prekliči izbrani razlog</string>
+  <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_label_whats_broken_2">Kaj je narobe?</string>
   <!-- The placeholder text for the dropdown where a user selects a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_choose_reason_2">Izberite razlog</string>
@@ -2019,6 +2037,12 @@
   <string name="webcompat_reporter_preview_bottom_sheet_header">Predogled prijave</string>
   <!-- Label for the “Send” button shown in the WebCompat Report preview panel, which the user taps to submit the report. -->
   <string name="webcompat_reporter_preview_bottom_sheet_send">Pošlji</string>
+  <!-- Title for the Edit URL confirmation dialog in the WebCompatReporter -->
+  <string name="webcompat_reporter_edit_url_dialog_title">Urejanje naslova spletne strani</string>
+  <!-- Text shown on the save button for the Edit URL confirmation dialog in the WebCompatReporter. -->
+  <string name="webcompat_reporter_edit_url_dialog_save">Shrani</string>
+  <!-- Text shown on the dismiss button for the Edit URL confirmation dialog in the WebCompatReporter. -->
+  <string name="webcompat_reporter_edit_url_dialog_dismiss">Zapri</string>
   <!--
     These reason strings are dropdown options on a WebCompat reporter form, indicating what is broken on the site.
 
@@ -2037,6 +2061,8 @@
   <string name="webcompat_reporter_reason_account2">Ne morem se prijaviti ali registrirati</string>
   <!-- Broken site reason text for site asked to turn off ad blocker -->
   <string name="webcompat_reporter_reason_turn_off_adblocker">Stran je prosila, naj izklopim blokiranje oglasov</string>
+  <!-- Broken site reason text for browser isn’t supported or blocked -->
+  <string name="webcompat_reporter_reason_notsupported_2">Brskalnik ni podprt ali je blokiran</string>
   <!-- Broken site reason text for browser isn’t supported or blocked -->
   <string name="webcompat_reporter_reason_notsupported">Brskalnik ni podprt ali je blokiran</string>
   <!-- Broken site reason text for something else -->
@@ -3045,6 +3071,8 @@
   <string name="ip_protection_title">VPN</string>
   <!-- Label for the browser VPN toggle on the settings screen -->
   <string name="ip_protection_toggle_label">VPN</string>
+  <!-- Content description for the browser VPN settings screen top bar back button -->
+  <string name="ip_protection_navigate_back_button_content_description">Pojdi nazaj</string>
   <!-- Headline for the browser VPN promo card. %s is the name of the app (for example "Firefox"). -->
   <string name="ip_protection_promo_headline">%sov vgrajeni VPN</string>
   <!-- Link text that opens additional information about the browser VPN -->
@@ -3079,10 +3107,14 @@
   <string name="ip_protection_onboarding_card_headline">Preizkusite %sov vgrajeni VPN</string>
   <!-- Used as text for a link in ip_protection_onboarding_body. Make sure to adapt capitalization if the link is in the middle of the sentence. -->
   <string name="ip_protection_onboarding_body_link">Brskajte z dodatno zaščito</string>
+  <!-- Used as text for a link in ip_protection_onboarding_body. Make sure to adapt capitalization if the link is in the middle of the sentence. -->
+  <string name="ip_protection_onboarding_body_link_promo">Več o tem</string>
   <!-- Label for the dismiss button on the onboarding bottom sheet. -->
   <string name="ip_protection_onboarding_not_now_button">Ne zdaj</string>
   <!-- Snackbar (in-app pop-up notification) text to signal the browser VPN connection error -->
   <string name="ip_protection_connection_error_snackbar">Povezava z VPN ni uspela. Poskusite znova čez nekaj minut.</string>
+  <!-- Snackbar (in-app pop-up notification) action button text that takes the user to the VPN settings screen. -->
+  <string name="ip_protection_data_limit_reached_snackbar_action">Nastavitve</string>
   <!--
     Autofill
 
@@ -3389,6 +3421,8 @@
   <string name="homepage_shortcuts_add_website">Dodaj spletno stran</string>
   <!-- Title text for the "Enter a Website URL" dialog for adding a shortcut. -->
   <string name="homepage_shortcuts_add_website_title">Vnesite naslov spletnega mesta</string>
+  <!-- Title for the "Popular sites" section in the "Add to homepage" bottom sheet. -->
+  <string name="homepage_shortcuts_popular_sites">Priljubljene strani</string>
   <!-- Title text displayed in the dialog when shortcuts limit is reached. -->
   <string name="shortcut_max_limit_title">Doseženo je največje število bližnjic</string>
   <!-- Content description text displayed in the dialog when shortcut limit is reached. -->
@@ -3806,6 +3840,56 @@
   <string name="protection_panel_privacy_and_security_settings_2">Nastavitve zasebnosti</string>
   <!-- Title text for the protection panel permissions section. -->
   <string name="protection_panel_permissions_title">Dovoljenja</string>
+  <plurals name="trackers_blocked_panel_num_social_media_trackers">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked social media trackers.
+      %1$d is a placeholder for the number of social media trackers blocked.
+    -->
+    <item quantity="one">%1$d sledilec družbenega omrežja</item>
+    <item quantity="two">%1$d sledilca družbenih omrežij</item>
+    <item quantity="few">%1$d sledilci družbenih omrežij</item>
+    <item quantity="other">%1$d sledilcev družbenih omrežij</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_cross_site_cookies">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked cross-site tracking cookies.
+      %1$d is a placeholder for the number of cross-site tracking cookies blocked.
+    -->
+    <item quantity="one">%1$d piškotek za sledenje med spletnimi mesti</item>
+    <item quantity="two">%1$d piškotka za sledenje med spletnimi mesti</item>
+    <item quantity="few">%1$d piškotki za sledenje med spletnimi mesti</item>
+    <item quantity="other">%1$d piškotkov za sledenje med spletnimi mesti</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_cryptominers">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked cryptomining scripts.
+      %1$d is a placeholder for the number of cryptominers blocked.
+    -->
+    <item quantity="one">%1$d kriptorudar</item>
+    <item quantity="two">%1$d kriptorudarja</item>
+    <item quantity="few">%1$d kriptorudarji</item>
+    <item quantity="other">%1$d kriptorudarjev</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_fingerprinters">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked fingerprinter scripts.
+      %1$d is a placeholder for the number of fingerprinters blocked.
+    -->
+    <item quantity="one">%1$d sledilec prstnih odtisov</item>
+    <item quantity="two">%1$d sledilca prstnih odtisov</item>
+    <item quantity="few">%1$d sledilci prstnih odtisov</item>
+    <item quantity="other">%1$d sledilcev prstnih odtisov</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_trackers_blocked_this_week_2">
+    <!--
+      Text for displaying the number of trackers blocked this week in the trackers blocked panel.
+      %1$d is a placeholder for the number of trackers blocked this week.
+    -->
+    <item quantity="one">%1$d blokiran sledilec ta teden</item>
+    <item quantity="two">%1$d blokirana sledilca ta teden</item>
+    <item quantity="few">%1$d blokirani sledilci ta teden</item>
+    <item quantity="other">%1$d blokiranih sledilcev ta teden</item>
+  </plurals>
   <!--
     Text for displaying the total number of trackers blocked in the trackers blocked panel.
     %d is a placeholder for the number of trackers blocked.
@@ -4354,6 +4438,8 @@
   <string name="sports_widget_final">Finale</string>
   <!-- Round name shown on the sports widget for the bronze final stage in the soccer tournament. -->
   <string name="sports_widget_bronze_final">Tekma za tretje mesto</string>
+  <!-- Sports widget error card message shown when match data fails to load. -->
+  <string name="sports_widget_error_load_failed" tools:ignore="UnusedResources">Podatki o tekmah ta trenutek niso na voljo. Poskusite osvežiti čez nekaj minut.</string>
   <!-- Sports widget action label to refresh match data after an error. -->
   <string name="sports_widget_error_refresh">Osveži</string>
   <!-- Sports widget group stage label for group A in the soccer tournament. -->
@@ -4484,6 +4570,8 @@
   <string name="privacy_notice_updated_homepage_message_privacy_notice" tools:ignore="UnusedResources">obvestilo o zasebnosti</string>
   <!-- The second active link used in privacy_notice_updated_homepage_message -->
   <string name="privacy_notice_updated_homepage_message_learn_more" tools:ignore="UnusedResources">Več o tem</string>
+  <!-- The title used in a confirmation dialog on the Firefox Labs screen when toggling "on" or "off" an experimental feature that requires a restart. -->
+  <string name="firefox_labs_feature_dialog_title">Zahtevan je ponoven zagon</string>
   <!-- The text on the dialog on the Firefox Labs screen for the positive button when toggling "on" and "off" experimental features. This prompts the user to confirm that they want to restart the app. -->
   <string name="firefox_labs_dialog_restart_button">Ponovno zaženi</string>
   <!-- The text on the dialog on the Firefox Labs screen for the negative button when toggling "on" and "off" experimental features. This is used to cancel the action and return to the previous screen. -->

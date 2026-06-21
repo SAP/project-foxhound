@@ -50,4 +50,17 @@
   <string name="mozac_protections_dashboard_empty_title">Mae %1$s yn rhwystro tracwyr wrth i chi bori.</string>
   <!-- Subtitle shown when no trackers have been blocked yet -->
   <string name="mozac_protections_dashboard_empty_subtitle">Byddwch yn eu gweld yma.</string>
+  <plurals name="mozac_protections_dashboard_total_blocked_since_2">
+    <!--
+      Footer line shown in the dashboard summarizing total trackers blocked
+      since a specific date. %1$d is the trackers count number (e.g. 123).
+      %2$s is the formatted date (e.g. "February 23, 2026").
+    -->
+    <item quantity="zero">%1$d tracwyr wedi\'u rhwystro ers %2$s</item>
+    <item quantity="one">%1$d traciwr wedi\' rwystro ers %2$s</item>
+    <item quantity="two">%1$d draciwr wedi\'u rhwystro ers %2$s</item>
+    <item quantity="few">%1$d traciwr wedi\'u rhwystro ers %2$s</item>
+    <item quantity="many">%1$d thraciwr wedi\'u rhwystro ers %2$s</item>
+    <item quantity="other">%1$d traciwr wedi\'u rhwystro ers %2$s</item>
+  </plurals>
 </resources>

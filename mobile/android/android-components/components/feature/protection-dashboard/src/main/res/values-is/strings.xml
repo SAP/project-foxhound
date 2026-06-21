@@ -42,4 +42,13 @@
   <string name="mozac_protections_dashboard_empty_title">%1$s lokar fyrir rakningar á meðan þú vafrar.</string>
   <!-- Subtitle shown when no trackers have been blocked yet -->
   <string name="mozac_protections_dashboard_empty_subtitle">Þú munt sjá þetta hér.</string>
+  <plurals name="mozac_protections_dashboard_total_blocked_since_2">
+    <!--
+      Footer line shown in the dashboard summarizing total trackers blocked
+      since a specific date. %1$d is the trackers count number (e.g. 123).
+      %2$s is the formatted date (e.g. "February 23, 2026").
+    -->
+    <item quantity="one">Lokað á %1$d rekjara síðan %2$s</item>
+    <item quantity="other">Lokað á %1$d rekjara síðan %2$s</item>
+  </plurals>
 </resources>

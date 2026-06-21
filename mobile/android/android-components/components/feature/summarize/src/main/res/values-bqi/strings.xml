@@ -19,6 +19,8 @@
   <string name="mozac_summarize_shake_consent_off_device_negative_button">سکو ن</string>
   <!-- Title for the on-device shake summarization and download consent screen -->
   <string name="mozac_summarize_shake_consent_on_device_title">خولاسه ای بلگه</string>
+  <!-- Button text for the on-device shake summarization and download consent screen approving shake and download consent -->
+  <string name="mozac_summarize_shake_consent_on_device_button_positive">سی خولاسه کردن دانلود کۊنین</string>
   <!-- Button text for the on-device shake summarization and download consent screen denying shake and download consent -->
   <string name="mozac_summarize_shake_consent_on_device_negative_button">سکو ن</string>
   <!-- Button text for the consent to download an on-device model denying download consent -->
