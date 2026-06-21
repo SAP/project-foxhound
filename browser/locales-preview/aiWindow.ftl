@@ -274,8 +274,8 @@ smart-window-confirm-close-tabs =
 
 # Shown after the Smart Window closes the user's current tab in response to a
 # natural language prompt action, anchored to the toolbar menu button.
-smartwindow-close-tab-callout-title = Tab closed!
-smartwindow-close-tab-callout-subtitle = Get back to this and your other closed tabs in History.
+smartwindow-close-tab-callout-title = Tab closed
+smartwindow-close-tab-callout-subtitle = Reopen tabs from History anytime.
 
 ## Smart Window new tab promo
 

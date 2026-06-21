@@ -798,14 +798,12 @@ export class AIChatContent extends MozLitElement {
   #getCloseTabsData(confirmedData) {
     const selectedTabs = confirmedData.selectedTabs || [];
     const tabCount = selectedTabs.length;
-    const label = tabCount === 1 ? "Closed 1 tab" : `Closed ${tabCount} tabs`; // place holder
-    const summary = `Successfully closed ${tabCount} tab${tabCount !== 1 ? "s" : ""}`; // place holder
 
     // Format rows to show the closed tabs
     const rows = [];
     if (selectedTabs.length) {
       rows.push({
-        label: "Closed tabs", // place holder
+        labelL10nId: "smart-window-closed-tabs-row-label",
         items: selectedTabs.map(tab => ({
           url: tab.url,
           label: tab.title,
@@ -814,39 +812,39 @@ export class AIChatContent extends MozLitElement {
     }
 
     return {
-      label,
+      labelL10nId: "smart-window-closed-tabs-label",
+      labelL10nArgs: { count: tabCount },
+      summaryL10nId: "smart-window-closed-tabs-summary",
+      summaryL10nArgs: { count: tabCount },
       rows,
-      summary,
       canUndo: !!confirmedData.operationId,
       isExpanded: false,
     };
   }
 
   #getRestoreTabsData(originalClosedTabs) {
-    const actionResultLabel = "Closed and reopened tabs"; // place holder
-    const closeRowLabel = "Closed tabs"; // place holder
-    const summary = "Place holder success message"; // place holder
-    const restoreRowLabel = "Restored tabs"; // place holder
-
+    const restoredCount = originalClosedTabs.length;
     // Format rows to show both closed and restored tabs
     const rows = [
       {
-        label: closeRowLabel,
+        labelL10nId: "smart-window-closed-tabs-row-label",
         items: originalClosedTabs.map(({ url, title }) => ({
           url,
           label: title,
         })),
       },
       {
-        label: restoreRowLabel,
+        labelL10nId: "smart-window-restored-row-label",
+        labelL10nArgs: { count: restoredCount },
         // Design opted out of showing items here.
       },
     ];
 
     return {
-      label: actionResultLabel,
+      labelL10nId: "smart-window-closed-and-restored-label",
+      summaryL10nId: "smart-window-restore-success-summary",
+      summaryL10nArgs: { count: restoredCount },
       rows,
-      summary,
       canUndo: false,
       isExpanded: true,
     };
