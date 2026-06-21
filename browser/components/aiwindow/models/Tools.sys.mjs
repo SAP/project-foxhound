@@ -13,6 +13,7 @@
  */
 
 import { searchBrowsingHistory as implSearchBrowsingHistory } from "moz-src:///browser/components/aiwindow/models/SearchBrowsingHistory.sys.mjs";
+import { closeTabsAction } from "moz-src:///browser/components/aiwindow/models/ManageTabs.sys.mjs";
 import { WCSMerinoClient } from "moz-src:///browser/components/aiwindow/models/WCSMerinoClient.sys.mjs";
 import { PageExtractorParent } from "resource://gre/actors/PageExtractorParent.sys.mjs";
 import {
@@ -92,6 +93,7 @@ export const GET_PAGE_CONTENT = "get_page_content";
 export const RUN_SEARCH = "run_search";
 export const GET_USER_MEMORIES = "get_user_memories";
 export const GET_NAVIGATION_INFO = "get_navigation_info";
+export const MANAGE_TABS = "manage_tabs";
 export const WORLD_CUP_MATCHES = "world_cup_matches";
 export const WORLD_CUP_LIVE = "world_cup_live";
 
@@ -107,6 +109,7 @@ export const TOOLS = [
   RUN_SEARCH,
   GET_USER_MEMORIES,
   GET_NAVIGATION_INFO,
+  MANAGE_TABS,
   WORLD_CUP_MATCHES,
   WORLD_CUP_LIVE,
 ];
@@ -311,6 +314,46 @@ export const toolsConfig = [
               "Omit to include all live matches.",
           },
         },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: MANAGE_TABS,
+      description:
+        "Perform a management action on a list of selected open tabs. You can " +
+        "set ask_confirmation to true to request user confirmation and allow " +
+        "them to confirm the selected list before the action is finalized.",
+      parameters: {
+        type: "object",
+        properties: {
+          action: {
+            type: "string",
+            description: "The action to be performed on the tabs.",
+            enum: ["close_tabs"],
+          },
+          ask_confirmation: {
+            type: "boolean",
+            description:
+              "Whether to show the user the list of tabs and require their confirmation " +
+              "before executing the action. Default to true. Only set to false when " +
+              "the user's request unambiguously identifies the specific tabs to act on, " +
+              "and the action does not close all (or nearly all) of the user's open tabs. " +
+              "When in doubt, set to true.",
+          },
+          url_tokens: {
+            type: "array",
+            items: {
+              type: "string",
+              description: "A URL token corresponding to an open tab",
+            },
+            minItems: 1,
+            description:
+              "List of URL tokens identifying the tabs the action should be taken on.",
+          },
+        },
+        required: ["action", "ask_confirmation", "url_tokens"],
       },
     },
   },
@@ -1038,6 +1081,49 @@ export async function worldCupLive(toolParams, conversation) {
   return trimmed;
 }
 
+/**
+ * Tool entrypoint for manage_tabs. Dispatches to a per-action handler
+ * based on `action`.
+ *
+ * @param {object} toolParams
+ * @param {ChatConversation} conversation
+ * @returns {Promise<{ toolResult: object, uiData: ?object }>}
+ *   `toolResult` is appended as the body of the `role: "tool"` message sent
+ *   to the model. `uiData` is attached to the assistant message for UI
+ *   rendering, or `null` to skip the UI attachment.
+ */
+export async function manageTabs(toolParams, conversation) {
+  const params = toolParams && typeof toolParams === "object" ? toolParams : {};
+  const { action, ask_confirmation = true, url_tokens = [] } = params;
+
+  if (!Array.isArray(url_tokens)) {
+    return {
+      toolResult: "Error: url_tokens must be an array.",
+      uiData: null,
+    };
+  }
+
+  const validUrls = new Set(
+    url_tokens.filter(u => typeof u === "string" && isAllowedURL(u))
+  );
+
+  if (!validUrls.size) {
+    return {
+      toolResult: "Error: No valid URLs were provided to manage_tabs.",
+      uiData: null,
+    };
+  }
+
+  if (action === "close_tabs") {
+    return closeTabsAction({ validUrls, ask_confirmation }, conversation);
+  }
+
+  return {
+    toolResult: `Error: Unsupported action for manage_tabs: ${action}`,
+    uiData: null,
+  };
+}
+
 export const toolFns = {
   getOpenTabs,
   searchBrowsingHistory,
@@ -1045,4 +1131,5 @@ export const toolFns = {
   getNavigationInfo,
   worldCupMatches,
   worldCupLive,
+  manageTabs,
 };

@@ -11,6 +11,8 @@ firefox-appdir = "browser"
 
 ["test_ConversationSuggestions.js"]
 
+["test_ManageTabs.js"]
+
 ["test_Memories.js"]
 
 ["test_MemoriesChatSource.js"]
@@ -46,6 +48,8 @@ firefox-appdir = "browser"
 ["test_Tools_GetPageContent.js"]
 
 ["test_Tools_GetUserMemories.js"]
+
+["test_Tools_ManageTabs.js"]
 
 ["test_Tools_RunSearch.js"]
 

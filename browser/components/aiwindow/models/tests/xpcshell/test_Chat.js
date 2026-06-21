@@ -76,6 +76,11 @@ add_task(async function test_Chat_real_tools_are_registered() {
     "function",
     "RunSearch.runSearch should be a function"
   );
+  Assert.strictEqual(
+    typeof toolFns.manageTabs,
+    "function",
+    "manageTabs should be a function"
+  );
 });
 
 add_task(
