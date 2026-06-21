@@ -323,13 +323,13 @@ features:
     defaults:
       - channel: developer
         value:
-          enabled: true
+          enabled: false
       - channel: nightly
         value:
-          enabled: true
+          enabled: false
       - channel: beta
         value:
-          enabled: true
+          enabled: false
 
   setup-checklist:
     description: A feature on the home page that allows the user to track onboarding setup progress.
