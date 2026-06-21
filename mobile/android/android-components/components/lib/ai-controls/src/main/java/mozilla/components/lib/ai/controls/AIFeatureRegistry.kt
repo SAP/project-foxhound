@@ -6,6 +6,7 @@ package mozilla.components.lib.ai.controls
 
 import android.content.Context
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import mozilla.components.concept.ai.controls.AIControllableFeature
@@ -38,7 +39,7 @@ internal class DefaultAIFeatureRegistry(
             "AI feature with id=${feature.id} is already registered"
         }
 
-        scope.launch {
+        scope.launch(Dispatchers.IO) {
             if (feature.featureState.first() is AIFeatureState.Unknown) {
                 val aiFeaturesBlocked = storage.isBlocked.first()
                 feature.set(!aiFeaturesBlocked)
