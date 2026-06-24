@@ -23,6 +23,9 @@
 const { AboutNewTabResourceMapping } = ChromeUtils.importESModule(
   "resource:///modules/AboutNewTabResourceMapping.sys.mjs"
 );
+const { sinon } = ChromeUtils.importESModule(
+  "resource://testing-common/Sinon.sys.mjs"
+);
 
 const TOPIC_LANGPACK_STARTUP = "webextension-langpack-startup";
 const TOPIC_LANGPACK_SHUTDOWN = "webextension-langpack-shutdown";
@@ -197,4 +200,43 @@ add_task(async function test_shutdown_observer_removes_shadow() {
     !AboutNewTabResourceMapping._langpackShadowSources.has(FAKE_LANGPACK_ID),
     "Internal tracking removes the langpack id after shutdown notification"
   );
+});
+
+/**
+ * Re-entrancy guard test. observe() handlers call L10nRegistry methods,
+ * which in production can synchronously fire intl:app-locales-changed
+ * (and intl:l10n-sources-changed) again — without the guard, those
+ * broadcasts re-enter observe and can proliferate catastrophically on
+ * installations with downloaded langpacks. See Bug 2049845.
+ */
+add_task(async function test_observe_reentrancy_guard() {
+  const sandbox = sinon.createSandbox();
+  try {
+    // Simulate the production cascade: an L10nRegistry mutation inside
+    // the handler fires intl:app-locales-changed synchronously. If the
+    // guard works, this inner notification's observe() call is a no-op
+    // and the stub is called exactly once. Without the guard this
+    // would recurse and overflow the stack.
+    const updateFluentStub = sandbox
+      .stub(AboutNewTabResourceMapping, "_updateFluentSourcesRegistration")
+      .callsFake(() => {
+        Services.obs.notifyObservers(null, "intl:app-locales-changed");
+      });
+    sandbox.stub(AboutNewTabResourceMapping, "_updateLangpackShadows");
+
+    AboutNewTabResourceMapping.observe(null, "intl:app-locales-changed", null);
+
+    Assert.equal(
+      updateFluentStub.callCount,
+      1,
+      "Re-entrant observe() call during the handler is coalesced away"
+    );
+    Assert.equal(
+      AboutNewTabResourceMapping._inObserveHandler,
+      false,
+      "_inObserveHandler is reset after the outer call returns"
+    );
+  } finally {
+    sandbox.restore();
+  }
 });

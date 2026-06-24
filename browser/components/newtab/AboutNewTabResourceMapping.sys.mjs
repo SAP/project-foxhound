@@ -94,6 +94,7 @@ export var AboutNewTabResourceMapping = {
   _updateAddonStateDeferredTask: null,
   _supportedLocales: null,
   _langpackShadowSources: null,
+  _inObserveHandler: false,
 
   /**
    * Returns the version string for whichever version of New Tab is currently
@@ -396,8 +397,24 @@ export var AboutNewTabResourceMapping = {
       // built because the rest of the app sources are en-US only, and the
       // (locale, langpack) bundle would only contain the langpack's older
       // newtab.ftl. See Bug 2046945.
+      //
+      // Batch the registration into a single registerSources call so we
+      // emit one intl:l10n-sources-changed / intl:app-locales-changed
+      // broadcast for the whole set of active langpacks rather than one
+      // per langpack. Profiles in Bug 2049845 showed the per-langpack
+      // path multiplying observer cascades at startup on installations
+      // with multiple langpacks (Flatpak/Snap/MSIX).
+      const shadowSources = [];
       for (const langpackId of lazy.Langpack.activeLangpackIds) {
-        this._registerLangpackShadow(langpackId);
+        if (this._langpackShadowSources.has(langpackId)) {
+          continue;
+        }
+        const sourceName = `${FLUENT_SOURCE_NAME}-${langpackId}`;
+        shadowSources.push(this._buildNewtabFileSource(sourceName, langpackId));
+        this._langpackShadowSources.add(langpackId);
+      }
+      if (shadowSources.length) {
+        L10nRegistry.getInstance().registerSources(shadowSources);
       }
     } catch (e) {
       // TODO: consider if we should collect this in telemetry.
@@ -552,33 +569,54 @@ export var AboutNewTabResourceMapping = {
   },
 
   observe(subject, topic, _data) {
-    switch (topic) {
-      case TOPIC_LOCALES_CHANGED: {
-        this._updateFluentSourcesRegistration();
-        this._updateLangpackShadows();
-        break;
-      }
-      case TOPIC_LANGPACK_STARTUP: {
-        const langpackId = subject?.wrappedJSObject?.langpack?.langpackId;
-        if (langpackId) {
-          this._registerLangpackShadow(langpackId);
+    // The TOPIC_LOCALES_CHANGED, TOPIC_LANGPACK_STARTUP, and
+    // TOPIC_LANGPACK_SHUTDOWN handlers all call L10nRegistry.{register,
+    // update,remove}Sources, and each of those calls fires
+    // intl:l10n-sources-changed (and, because LocaleService::
+    // SetAvailableLocales compares as an order-sensitive nsTArray against
+    // an array built from a Rust HashSet, spuriously fires
+    // intl:app-locales-changed too). Without this guard, those broadcasts can
+    // re-enter observe synchronously and the resulting cascade can pump
+    // unbounded source mutations through the registry at startup,
+    // exploding memory on installations with downloaded langpacks
+    // (Flatpak/Snap/MSIX). The first invocation does its work; any
+    // synchronous re-entries during that work are coalesced away. See
+    // Bug 2049845.
+    if (this._inObserveHandler) {
+      return;
+    }
+    this._inObserveHandler = true;
+    try {
+      switch (topic) {
+        case TOPIC_LOCALES_CHANGED: {
+          this._updateFluentSourcesRegistration();
+          this._updateLangpackShadows();
+          break;
         }
-        break;
-      }
-      case TOPIC_LANGPACK_SHUTDOWN: {
-        const langpackId = subject?.wrappedJSObject?.langpack?.langpackId;
-        if (langpackId) {
-          this._unregisterLangpackShadow(langpackId);
+        case TOPIC_LANGPACK_STARTUP: {
+          const langpackId = subject?.wrappedJSObject?.langpack?.langpackId;
+          if (langpackId) {
+            this._registerLangpackShadow(langpackId);
+          }
+          break;
         }
-        break;
+        case TOPIC_LANGPACK_SHUTDOWN: {
+          const langpackId = subject?.wrappedJSObject?.langpack?.langpackId;
+          if (langpackId) {
+            this._unregisterLangpackShadow(langpackId);
+          }
+          break;
+        }
+        case TOPIC_SHUTDOWN: {
+          Services.obs.removeObserver(this, TOPIC_LOCALES_CHANGED);
+          Services.obs.removeObserver(this, TOPIC_SHUTDOWN);
+          Services.obs.removeObserver(this, TOPIC_LANGPACK_STARTUP);
+          Services.obs.removeObserver(this, TOPIC_LANGPACK_SHUTDOWN);
+          break;
+        }
       }
-      case TOPIC_SHUTDOWN: {
-        Services.obs.removeObserver(this, TOPIC_LOCALES_CHANGED);
-        Services.obs.removeObserver(this, TOPIC_SHUTDOWN);
-        Services.obs.removeObserver(this, TOPIC_LANGPACK_STARTUP);
-        Services.obs.removeObserver(this, TOPIC_LANGPACK_SHUTDOWN);
-        break;
-      }
+    } finally {
+      this._inObserveHandler = false;
     }
   },
 
