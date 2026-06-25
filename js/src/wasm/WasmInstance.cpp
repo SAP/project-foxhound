@@ -3895,6 +3895,8 @@ static bool WasmCall(JSContext* cx, unsigned argc, Value* vp) {
 
 bool Instance::getExportedFunction(JSContext* cx, uint32_t funcIndex,
                                    MutableHandleFunction result) {
+  MOZ_RELEASE_ASSERT(realm() == cx->realm());
+
   uint32_t funcExportIndex = codeMeta().findFuncExportIndex(funcIndex);
   FuncExportInstanceData& instanceData =
       funcExportInstanceData(funcExportIndex);
