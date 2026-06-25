@@ -751,17 +751,12 @@ if (project.hasProperty("coverage")) {
 }
 
 // Work around generated SafeArgs code hitting USELESS_CAST warnings with Kotlin 2.3+
-// https://issuetracker.google.com/issues/458082829
-def safeArgsSrc = layout.buildDirectory
-    .dir("generated/java")
-    .map { dir -> fileTree(dir) { include "generateSafeArgs*/**/*.kt" } }
-
-tasks.register("suppressUselessCastInSafeArgs") {
-    inputs.files(safeArgsSrc)
-    outputs.upToDateWhen { false }
-
+// (https://issuetracker.google.com/issues/458082829). Suppress as generateSafeArgs' own
+// final action, not a separate finalizedBy task: finalizedBy isn't ordered before the
+// Kotlin compile that consumes the output, so it races and fails under -Werror.
+tasks.matching { it.name.startsWith("generateSafeArgs") }.configureEach {
     doLast {
-        safeArgsSrc.get().each { File f ->
+        outputs.files.asFileTree.matching { include "**/*.kt" }.each { File f ->
             if (!f.text.contains('@file:Suppress("USELESS_CAST")')) {
                 f.text =
 """@file:Suppress("USELESS_CAST")
@@ -770,10 +765,6 @@ ${f.text}"""
             }
         }
     }
-}
-
-tasks.matching { it.name.startsWith("generateSafeArgs") }.configureEach {
-    finalizedBy tasks.named("suppressUselessCastInSafeArgs")
 }
 
 def getSupportedLocales() {

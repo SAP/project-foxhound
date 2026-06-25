@@ -226,15 +226,6 @@ def assert_success(returncode, output):
 def assert_all_task_statuses(objdir, acceptable_statuses):
     """Asserts that all tasks in build metrics have acceptable statuses."""
 
-    # Always executes because suppressUselessCastInSafeArgs sets `outputs.upToDateWhen { false }`.
-    # We could try using a marker file otherwise, but the task runtime is negligible and the added
-    # complexity doesn't seem worth it for what should only be a short-term workaround until Google
-    # fixes the upstream Navigation bug that led to it being added in the first place.
-    always_executed_tasks = [
-        ":fenix:generateSafeArgsDebug",
-        ":fenix:suppressUselessCastInSafeArgs",
-    ]
-
     build_metrics = get_test_run_build_metrics(objdir)
     assert build_metrics is not None, "Build metrics JSON not found"
     assert "tasks" in build_metrics, "Build metrics missing 'tasks' section"
@@ -245,14 +236,9 @@ def assert_all_task_statuses(objdir, acceptable_statuses):
         task_name = task.get("path")
         actual_status = task.get("status")
 
-        if task_name in always_executed_tasks:
-            assert actual_status == "EXECUTED", (
-                f"Task {task_name} should always execute, got '{actual_status}'"
-            )
-        else:
-            assert actual_status in acceptable_statuses, (
-                f"Task {task_name} had status '{actual_status}', expected one of {acceptable_statuses}"
-            )
+        assert actual_status in acceptable_statuses, (
+            f"Task {task_name} had status '{actual_status}', expected one of {acceptable_statuses}"
+        )
 
 
 def assert_ordered_task_outcomes(objdir, ordered_expected_task_statuses, output=None):
