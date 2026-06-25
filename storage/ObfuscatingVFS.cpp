@@ -131,11 +131,13 @@ struct ObfsFile {
       encryptCipherStrategy; /* CipherStrategy for encryption */
   IPCStreamCipherStrategy*
       decryptCipherStrategy; /* CipherStrategy for decryption */
-  /* Per-file raw key, copied into derivative WAL/journal ObfsFiles via
-  ** sqlite3_database_file_object() so SQLite can finalize a connection's
-  ** journals without consulting the keystore (which is required at
-  ** shutdown after ShutdownEncryptionKeystore has run). Zeroized in
-  ** obfsClose. */
+  /* For a main DB opened with an explicit URI ?key= whose key is NOT in
+  ** lockstore (private-browsing IDB/Cache pass an ephemeral &key=), retain the
+  ** raw key so the keyless WAL/journal opened later can inherit it via
+  ** sqlite3_database_file_object(). The policy branch cannot re-derive a key
+  ** lockstore never stored. Lockstore-keyed DBs leave aHasUriKey false and
+  ** re-fetch on demand (nothing cached). Zeroized in obfsClose. */
+  bool aHasUriKey;
   u8 aKey[kKeyBytes];
 };
 
@@ -320,10 +322,8 @@ static int obfsClose(sqlite3_file* pFile) {
   delete p->decryptCipherStrategy;
   delete p->encryptCipherStrategy;
 
-  // Wipe the per-file key bytes so the closed slot can't leak to a later
-  // attacker reading freed pager memory. memset is sufficient here -- the
-  // pager hands these pages back to SQLite, not back out to the heap, so a
-  // simple write is observable.
+  // Wipe any retained URI key so a closed slot can't leak to a later reader of
+  // freed pager memory (a no-op for lockstore-keyed files, which never set it).
   ::memset(p->aKey, 0, sizeof(p->aKey));
 
   pFile = ORIGFILE(pFile);
@@ -605,10 +605,9 @@ static OnDiskHeader PeekOnDiskHeader(const char* zPath) {
   if (n != sizeof(hdr)) {
     return OnDiskHeader::TooShort;
   }
-  static const unsigned char kSQLiteMagic[16] = {'S', 'Q', 'L', 'i', 't',
-                                                 'e', ' ', 'f', 'o', 'r',
-                                                 'm', 'a', 't', ' ', '3',
-                                                 '\0'};
+  static const unsigned char kSQLiteMagic[16] = {'S', 'Q', 'L', 'i', 't', 'e',
+                                                 ' ', 'f', 'o', 'r', 'm', 'a',
+                                                 't', ' ', '3', '\0'};
   if (::memcmp(hdr, kSQLiteMagic, sizeof(kSQLiteMagic)) != 0) {
     // Not a SQLite-shaped file (corrupt, or some other format). No useful
     // signal for the policy/disk mismatch check; treat as TooShort.
@@ -681,10 +680,6 @@ static int obfsOpen(sqlite3_vfs* pVfs, const char* zName, sqlite3_file* pFile,
   int rc, i;
   const char* zKey;
   u8 aKey[kKeyBytes];
-  // Set when aKey has already been populated by a non-hex path -- currently
-  // the partner-inheritance branch below. Suppresses the URI-key hex
-  // validation loop and the "no key -> plaintext forward" guard.
-  bool keyReady = false;
   pSubVfs = ORIGVFS(pVfs);
   if (flags &
       (SQLITE_OPEN_MAIN_DB | SQLITE_OPEN_WAL | SQLITE_OPEN_MAIN_JOURNAL)) {
@@ -692,28 +687,31 @@ static int obfsOpen(sqlite3_vfs* pVfs, const char* zName, sqlite3_file* pFile,
   } else {
     zKey = nullptr;
   }
+  const bool keyFromUri = (zKey != nullptr);
 
-  // Partner-cipher fast path. SQLite is opening the rollback journal or WAL
-  // of a connection whose main DB is already open; the partner ObfsFile
-  // carries the same per-DB key. Reuse it instead of consulting the
-  // keystore: (a) avoids one keystore round trip per journal/WAL open in
-  // steady state, and (b) keeps shutdown correct -- the keystore tears
-  // down before SQLite finalizes journals, so a keystore lookup here at
-  // shutdown returns NS_ERROR_FAILURE and would orphan the journal on
-  // disk. If the main DB is NOT an ObfsFile (lower-VFS plaintext open,
-  // e.g. for an out-of-profile or bypass DB), fall through; the policy
-  // branch below will land on Plaintext and forward to the lower VFS.
+  // SQLite opens a connection's rollback journal / WAL without the main DB's
+  // URI query params, so they arrive keyless. Two key sources, in order:
+  //  1. Partner inheritance (below): a main DB opened with an explicit &key=
+  //     whose key is NOT in lockstore (private-browsing IDB/Cache) retains it
+  //     on its ObfsFile so its keyless WAL/journal can reuse it.
+  //  2. The policy branch: lockstore-keyed in-profile DBs re-derive the same
+  //     per-DB key from lockstore on demand (DeriveMainDbPath strips the
+  //     -wal/-journal suffix). lockstore stays alive until XPCOMWillShutdown,
+  //     so this works even for the final checkpoint at shutdown -- nothing is
+  //     cached for these.
+  bool keyReady = false;
   if (zKey == nullptr &&
       (flags & (SQLITE_OPEN_WAL | SQLITE_OPEN_MAIN_JOURNAL))) {
     sqlite3_file* pDbFile = sqlite3_database_file_object(zName);
     if (pDbFile && pDbFile->pMethods == &obfs_io_methods) {
       ObfsFile* pPartner = reinterpret_cast<ObfsFile*>(pDbFile);
-      ::memcpy(aKey, pPartner->aKey, sizeof(aKey));
-      keyReady = true;
-      MOZ_LOG(mozilla::storage::GetSQLiteEncryptionLog(),
-              mozilla::LogLevel::Verbose,
-              ("obfsOpen: inherited key from partner ObfsFile for %s",
-               zName));
+      if (pPartner->aHasUriKey) {
+        // Main DB carries an explicit URI key absent from lockstore; inherit
+        // it rather than fall through to a policy lookup that would mint a
+        // different key and corrupt the journal.
+        ::memcpy(aKey, pPartner->aKey, sizeof(aKey));
+        keyReady = true;
+      }
     }
   }
 
@@ -723,8 +721,8 @@ static int obfsOpen(sqlite3_vfs* pVfs, const char* zName, sqlite3_file* pFile,
   nsAutoCString policyKey;
 
   if (!keyReady && zKey == nullptr &&
-      (flags &
-       (SQLITE_OPEN_MAIN_DB | SQLITE_OPEN_WAL | SQLITE_OPEN_MAIN_JOURNAL))) {
+      (flags & (SQLITE_OPEN_MAIN_DB | SQLITE_OPEN_WAL |
+                SQLITE_OPEN_MAIN_JOURNAL))) {
     // No URI key. With obfsvfs registered as SQLite's default VFS, this is
     // the path every keyless main/WAL/journal open lands in. Apply the
     // at-rest encryption *policy*; never silently fall back to plaintext
@@ -742,8 +740,7 @@ static int obfsOpen(sqlite3_vfs* pVfs, const char* zName, sqlite3_file* pFile,
 
     mozilla::storage::EncryptionStatus status =
         mozilla::storage::EncryptionStatus::Unset;
-    nsresult rv =
-        mozilla::storage::GetDatabaseEncryptionStatus(dbPath, status);
+    nsresult rv = mozilla::storage::GetDatabaseEncryptionStatus(dbPath, status);
     if (NS_FAILED(rv)) {
       MOZ_LOG(log, mozilla::LogLevel::Error,
               ("obfsOpen: policy lookup failed (0x%" PRIx32 ") for %s; "
@@ -883,9 +880,16 @@ static int obfsOpen(sqlite3_vfs* pVfs, const char* zName, sqlite3_file* pFile,
 
   p->encryptCipherStrategy = encryptCipherStrategy.release();
   p->decryptCipherStrategy = decryptCipherStrategy.release();
-  // Persist the per-file key so the partner-inheritance branch above can
-  // reuse it when SQLite opens this connection's journal or WAL later.
-  ::memcpy(p->aKey, aKey, sizeof(aKey));
+
+  if (keyFromUri) {
+    // Retain the explicit URI key so this main DB's keyless WAL/journal can
+    // inherit it; the policy branch cannot re-derive a non-lockstore key.
+    // Success path only: the SQLITE_ERROR bailouts above leave pFile with null
+    // methods (obfsClose never runs), so a key copied earlier would linger
+    // uncleaned in the pager's ObfsFile memory.
+    p->aHasUriKey = true;
+    ::memcpy(p->aKey, aKey, sizeof(aKey));
+  }
 
   return SQLITE_OK;
 }

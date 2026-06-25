@@ -4,6 +4,7 @@
 
 #include "LockstoreService.h"
 
+#include "mozilla/AppShutdown.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/Result.h"
@@ -22,6 +23,7 @@
 #include "nsThreadUtils.h"
 #include "xpcpublic.h"
 
+#include <cstring>
 #include <type_traits>
 #include <utility>
 
@@ -47,23 +49,65 @@ LockstoreService::~LockstoreService() {
 }
 
 nsresult LockstoreService::Init() {
-  // Resolve the profile path on the main thread and cache it.
-  // `nsIDirectoryService::Get` asserts main-thread, and every sync
-  // `Do*` method runs off-main, so the directory lookup must happen
-  // here at construction time.
-  nsCOMPtr<nsIFile> profileDir;
-  MOZ_TRY(NS_GetSpecialDirectory(NS_APP_USER_PROFILE_50_DIR,
-                                 getter_AddRefs(profileDir)));
-  nsAutoString widePath;
-  MOZ_TRY(profileDir->GetPath(widePath));
-  CopyUTF16toUTF8(widePath, mProfilePath);
+  MOZ_ASSERT(NS_IsMainThread());
+
+  // A consumer that creates the service at or beyond XPCOMWillShutdown would
+  // register a teardown observer that never fires and open a keystore that is
+  // never closed; mark it shut down so EnsureOpenLocked fails closed instead.
+  // (Mirrors InitEncryptionKeystore's late-init guard.)
+  if (AppShutdown::IsInOrBeyond(ShutdownPhase::XPCOMWillShutdown)) {
+    MutexAutoLock lock(mMutex);
+    mShutdown = true;
+    return NS_OK;
+  }
 
   nsCOMPtr<nsIObserverService> os = services::GetObserverService();
   if (os) {
-    os->AddObserver(this, "profile-before-change", false);
+    // The profile may not be selected yet if a consumer creates the service in
+    // early startup (NS_APP_USER_PROFILE_50_DIR not yet resolvable), so resolve
+    // the path when it becomes available too. profile-do-change fires once per
+    // process -- profile switching relaunches Firefox -- so the path is
+    // resolved at most once and stays valid for the process lifetime.
+    os->AddObserver(this, "profile-do-change", false);
+    // Tear down last, at XPCOMWillShutdown, so the keystore stays available for
+    // late profile writes by its consumers (SQLite at-rest encryption, profile
+    // backup, caches). xpcom-shutdown stays as an idempotent backstop.
+    os->AddObserver(this, "xpcom-will-shutdown", false);
     os->AddObserver(this, "xpcom-shutdown", false);
   }
+
+  // Common case: the service is created after profile-do-change, so the profile
+  // is already available -- resolve now. Otherwise the observer above resolves
+  // it; EnsureOpenLocked fails closed until then.
+  CacheProfilePathOnMainThread();
   return NS_OK;
+}
+
+void LockstoreService::CacheProfilePathOnMainThread() {
+  MOZ_ASSERT(NS_IsMainThread());
+  {
+    MutexAutoLock lock(mMutex);
+    if (!mProfilePath.IsEmpty()) {
+      // profile-do-change fires once, but stay idempotent.
+      return;
+    }
+  }
+  // Resolve outside the lock: `nsIDirectoryService::Get` is main-thread only,
+  // and holding mMutex across it would block any off-main `Do*` waiting on the
+  // mutex behind the directory lookup.
+  nsCOMPtr<nsIFile> profileDir;
+  if (NS_FAILED(NS_GetSpecialDirectory(NS_APP_USER_PROFILE_50_DIR,
+                                       getter_AddRefs(profileDir))) ||
+      !profileDir) {
+    // Profile not selected yet; resolved later on profile-do-change.
+    return;
+  }
+  nsAutoString widePath;
+  if (NS_FAILED(profileDir->GetPath(widePath))) {
+    return;
+  }
+  MutexAutoLock lock(mMutex);
+  CopyUTF16toUTF8(widePath, mProfilePath);
 }
 
 // static
@@ -88,9 +132,13 @@ nsresult LockstoreService::EnsureOpenLocked() {
   if (mKeystore) {
     return NS_OK;
   }
-  // `Init()` runs unconditionally as the component's `init_method`
-  // before any FFI dispatch can reach this point.
-  MOZ_ASSERT(!mProfilePath.IsEmpty(), "Init() must have run first");
+  if (mProfilePath.IsEmpty()) {
+    // The profile is not available yet -- a consumer reached the FFI before
+    // profile-do-change resolved the path (only possible if the service is
+    // created in early startup, before profile selection). Fail closed; the
+    // caller may retry once the profile is selected.
+    return NS_ERROR_NOT_AVAILABLE;
+  }
   return keystore_open(&mProfilePath, &mKeystore);
 }
 
@@ -101,6 +149,14 @@ nsresult LockstoreService::EnsureOpenLocked() {
 NS_IMETHODIMP
 LockstoreService::Observe(nsISupports* aSubject, const char* aTopic,
                           const char16_t* aData) {
+  if (!strcmp(aTopic, "profile-do-change")) {
+    // Resolve the profile path now that the profile is available; covers the
+    // early-startup case where Init() ran before profile selection.
+    CacheProfilePathOnMainThread();
+    return NS_OK;
+  }
+
+  // xpcom-will-shutdown / xpcom-shutdown: tear down the keystore.
   // mMutex is held across every FFI call by the sync `Do*` tier, so
   // acquiring it here implicitly drains any in-flight background work:
   // a running encrypt/decrypt holds the mutex and blocks us until it

@@ -90,11 +90,11 @@ class LockstoreService final : public nsILockstore, public nsIObserver {
   // Called under mMutex by every FFI-touching method.
   nsresult EnsureOpenLocked() MOZ_REQUIRES(mMutex);
 
-  // Cached UTF-8 absolute path of the keystore parent directory
-  // (`<profile>`). Resolved once on the main thread in `Init()` because
-  // `nsIDirectoryService::Get` asserts main-thread, and the sync tier
-  // runs off-main. Const after Init — no synchronisation needed.
-  nsCString mProfilePath;
+  // Resolve and cache `mProfilePath` on the main thread. No-op if the profile
+  // is not yet available (early startup, before profile selection) or the path
+  // is already cached. Idempotent; called from `Init()` and on
+  // `profile-do-change`.
+  void CacheProfilePathOnMainThread();
 
   // Protects mKeystore and mShutdown. Held across every FFI call so a
   // shutdown racing with an in-flight operation cannot free the handle
@@ -117,6 +117,14 @@ class LockstoreService final : public nsILockstore, public nsIObserver {
   // `EnsureOpenLocked` short-circuit with `NS_ERROR_NOT_AVAILABLE`, so
   // no new FFI work starts after shutdown.
   bool mShutdown MOZ_GUARDED_BY(mMutex);
+
+  // Cached UTF-8 absolute path of the keystore parent directory (`<profile>`).
+  // Resolved on the main thread -- in `Init()` if the profile is already
+  // available, otherwise on `profile-do-change` -- because
+  // `nsIDirectoryService::Get` asserts main-thread while the sync `Do*` tier
+  // runs off-main. Guarded by mMutex: it may be written on the main thread at
+  // `profile-do-change` while a `Do*` call reads it off-main.
+  nsCString mProfilePath MOZ_GUARDED_BY(mMutex);
 };
 
 }  // namespace mozilla::security::lockstore

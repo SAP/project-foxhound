@@ -4,6 +4,7 @@
 
 #include "mozilla/storage/SQLiteEncryption.h"
 
+#include "mozilla/AppShutdown.h"
 #include "mozilla/Hex.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Services.h"
@@ -54,12 +55,11 @@ constexpr size_t kDekBytes = 32;
 // key at runtime. This is the storage-side counterpart to the
 // explicit `key_size` argument now threaded through
 // `keystore_create_dek`.
-static_assert(
-    kDekBytes ==
-        sizeof(mozilla::dom::quota::IPCStreamCipherStrategy::KeyType),
-    "kDekBytes must match the page-encryption cipher's KeyType size; "
-    "update kDekBytes (and the keystore_create_dek call sites that "
-    "pass it) in lockstep with any cipher key-length change.");
+static_assert(kDekBytes ==
+                  sizeof(mozilla::dom::quota::IPCStreamCipherStrategy::KeyType),
+              "kDekBytes must match the page-encryption cipher's KeyType size; "
+              "update kDekBytes (and the keystore_create_dek call sites that "
+              "pass it) in lockstep with any cipher key-length change.");
 
 mozilla::StaticMutex sStateMutex;
 KeystoreHandle* sHandle MOZ_GUARDED_BY(sStateMutex) = nullptr;
@@ -67,7 +67,7 @@ nsString sCachedProfilePath MOZ_GUARDED_BY(sStateMutex);
 // Deterministic kek_ref (lockstore::kek::local:sqlite) under which every
 // SQLite DEK is wrapped; resolved lazily via create_kek's get-or-create.
 nsCString sKekRef MOZ_GUARDED_BY(sStateMutex);
-// Set once quit-application has torn the keystore down, so later calls
+// Set once xpcom-will-shutdown has torn the keystore down, so later calls
 // don't re-open it or mint key material that would never be destroyed.
 bool sShuttingDown MOZ_GUARDED_BY(sStateMutex) = false;
 // Set if writing the EncryptedDatabases marker to compatibility.ini failed.
@@ -228,11 +228,16 @@ NS_IMETHODIMP ProfileObserver::Observe(nsISupports*, const char* aTopic,
   } else if (!strcmp(aTopic, "profile-after-change")) {
     EnsureProfilePathCached();
     MarkProfileEncryptedIfNeeded();
-  } else if (!strcmp(aTopic, "quit-application")) {
-    // Close lockstore now (AppShutdownConfirmed) so the SQLite WAL
-    // checkpoint that runs inside the keystore's Drop happens before
-    // LateWriteChecks activates at AppShutdownNetTeardown (the default
-    // toolkit.shutdown.lateWriteChecksStage = 2).
+  } else if (!strcmp(aTopic, "xpcom-will-shutdown")) {
+    // Tear down lockstore last, at XPCOMWillShutdown. Every in-profile
+    // encrypted database has already closed by now -- Places at
+    // profile-before-change, QuotaManager/IndexedDB/DOM-storage at
+    // profile-before-change-qm -- and nothing writes the profile after
+    // AppShutdownTelemetry, so the keystore stays available for all of those
+    // late writes (including each connection's final WAL checkpoint) and only
+    // then closes. The SQLite WAL checkpoint inside the keystore's own Drop
+    // still has two phases of headroom before LateWriteChecks activates at
+    // XPCOMShutdownThreads (default toolkit.shutdown.lateWriteChecksStage = 2).
     ShutdownEncryptionKeystore();
   }
   return NS_OK;
@@ -243,19 +248,32 @@ NS_IMETHODIMP ProfileObserver::Observe(nsISupports*, const char* aTopic,
 void InitEncryptionKeystore() {
   MOZ_ASSERT(NS_IsMainThread());
 
+  // If we are already at or beyond XPCOMWillShutdown (e.g. a storage service
+  // created very late in shutdown), don't register a teardown observer that
+  // would never fire, and refuse to open a keystore that would never be closed.
+  if (AppShutdown::IsInOrBeyond(ShutdownPhase::XPCOMWillShutdown)) {
+    StaticMutexAutoLock lock(sStateMutex);
+    sShuttingDown = true;
+    return;
+  }
+
   // Eagerly try to cache the profile path. If the profile is already
   // loaded this succeeds; otherwise we fall through to the observer
   // below.
   EnsureProfilePathCached();
 
-  // If the profile is already available (we were initialized after
-  // profile-do-change, e.g. a lazily-created storage service), pre-initialize
-  // NSS now; the profile-do-change observer below would otherwise miss it.
-  // Mirrors nsCertOverrideService::Init's "observe, and run now if already
-  // changed" pattern.
+  // If the profile is already available (the common case: the storage service
+  // is created during NS_InitXPCOM, before profile-do-change), pre-initialize
+  // NSS now so a later worker-thread database open never deadlocks dispatching
+  // a synchronous NSS init to a blocked main thread -- e.g. PermissionManager
+  // opening permissions.sqlite on its IO thread while the main thread holds, or
+  // is waiting on, the permission-manager monitor. This runs before
+  // InitializeUserPrefs; nsNSSComponent::InitializeNSS reads security.nocertdb
+  // live (not via its `once`-mirror) so this early init does not prematurely
+  // snapshot once-mirrored prefs.
   EnsureNSSInitializedForEncryptionIfReady();
 
-  // Same catch-up for the encrypted-profile marker: a storage service first
+  // Catch-up for the encrypted-profile marker: a storage service first
   // created after profile-after-change has already missed that notification,
   // so mark here too. No-op when the pref is off or the profile is not yet
   // available (MarkProfileEncryptedDatabases bails without a profile);
@@ -272,10 +290,10 @@ void InitEncryptionKeystore() {
   sObserver = new ProfileObserver();
   if (NS_FAILED(os->AddObserver(sObserver, "profile-do-change", false)) ||
       NS_FAILED(os->AddObserver(sObserver, "profile-after-change", false)) ||
-      NS_FAILED(os->AddObserver(sObserver, "quit-application", false))) {
+      NS_FAILED(os->AddObserver(sObserver, "xpcom-will-shutdown", false))) {
     os->RemoveObserver(sObserver, "profile-do-change");
     os->RemoveObserver(sObserver, "profile-after-change");
-    os->RemoveObserver(sObserver, "quit-application");
+    os->RemoveObserver(sObserver, "xpcom-will-shutdown");
     sObserver = nullptr;
   }
 }
@@ -395,7 +413,7 @@ nsresult GetEncryptionKey(const nsACString& aDatabasePath, OpenIntent aIntent,
     StaticMutexAutoLock lock(sStateMutex);
 
     if (sShuttingDown) {
-      // After quit-application the keystore is (being) torn down; don't
+      // After xpcom-will-shutdown the keystore is (being) torn down; don't
       // re-open it or mint key material that would never be destroyed
       // (mak). Fail the open rather than silently dropping encryption.
       MOZ_LOG(GetSQLiteEncryptionLog(), LogLevel::Warning,
@@ -504,7 +522,7 @@ void ShutdownEncryptionKeystore() {
     if (os) {
       os->RemoveObserver(observer, "profile-do-change");
       os->RemoveObserver(observer, "profile-after-change");
-      os->RemoveObserver(observer, "quit-application");
+      os->RemoveObserver(observer, "xpcom-will-shutdown");
     }
   }
 
