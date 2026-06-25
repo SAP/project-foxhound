@@ -3,6 +3,16 @@
 
 "use strict";
 
+add_setup(async function () {
+  // Backup is disabled while SQLite at-rest encryption is on (Bug 1996558),
+  // which hides the backup pane regardless of browser.backup.archive.enabled.
+  // This test covers the pane's archive-enabled-driven visibility, so pin
+  // encryption off (the production default).
+  await SpecialPowers.pushPrefEnv({
+    set: [["security.storage.encryption.sqlite.enabled", false]],
+  });
+});
+
 /**
  * Test that we don't show the backup section if backup is disabled
  */

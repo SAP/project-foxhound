@@ -19,6 +19,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
 const BACKUP_DIR_PREF_NAME = "browser.backup.location";
 const BACKUP_ARCHIVE_ENABLED_PREF_NAME = "browser.backup.archive.enabled";
 const BACKUP_RESTORE_ENABLED_PREF_NAME = "browser.backup.restore.enabled";
+const SQLITE_ENCRYPTION_ENABLED_PREF_NAME =
+  "security.storage.encryption.sqlite.enabled";
 
 add_setup(async () => {
   setupProfile();
@@ -142,6 +144,50 @@ add_task(async function test_restore_policy() {
       defaults.setBoolPref(BACKUP_RESTORE_ENABLED_PREF_NAME, storedDefault);
     },
   });
+});
+
+// SQLite at-rest encryption disables both archive and restore. Unlike the
+// nimbus/pref/policy reasons, the encryption pref is fixed at startup (set by
+// build config or policy) and is not observed live, so the gate is evaluated
+// when status is read. Verify a service constructed with the pref on reports
+// both features disabled (with telemetry) and refuses to create or recover.
+add_task(async function test_sqlite_encryption_disables_backup() {
+  Services.fog.testResetFOG();
+  // The xpcshell manifest locks this pref off for the rest of the backup suite,
+  // so unlock it before toggling it on for this test.
+  Services.prefs.unlockPref(SQLITE_ENCRYPTION_ENABLED_PREF_NAME);
+  Services.prefs.setBoolPref(SQLITE_ENCRYPTION_ENABLED_PREF_NAME, true);
+
+  let bs = new BackupService();
+  bs.initStatusObservers();
+
+  assertStatus("archive", bs.archiveEnabledStatus, false, "sqlite-encryption");
+  assertStatus("restore", bs.restoreEnabledStatus, false, "sqlite-encryption");
+
+  let backup = await bs.createBackup();
+  Assert.ok(!backup, "createBackup is blocked while SQLite encryption is on.");
+
+  const recoveryDir = await IOUtils.createUniqueDirectory(
+    PathUtils.profileDir,
+    "recovered-profiles"
+  );
+  await Assert.rejects(
+    bs.recoverFromBackupArchive(
+      PathUtils.join(PathUtils.profileDir, "does-not-exist.html"),
+      null,
+      false,
+      PathUtils.profileDir,
+      recoveryDir,
+      true
+    ),
+    /.*disabled.*/,
+    "recoverFromBackupArchive is blocked while SQLite encryption is on."
+  );
+
+  bs.uninitStatusObservers();
+  await IOUtils.remove(recoveryDir, { recursive: true });
+  Services.prefs.setBoolPref(SQLITE_ENCRYPTION_ENABLED_PREF_NAME, false);
+  Services.prefs.lockPref(SQLITE_ENCRYPTION_ENABLED_PREF_NAME);
 });
 
 add_task(

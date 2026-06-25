@@ -4,6 +4,9 @@ prefs = [
   "browser.backup.archive.enabled=true",
   "browser.backup.restore.enabled=true",
   "browser.backup.scheduled.enabled=false",
+  # Profile backup is disabled when SQLite at-rest encryption is on
+  # (Bug 1996558); run these tests with it off (the production default).
+  "security.storage.encryption.sqlite.enabled=false",
 ]
 support-files = [
   "head.js",

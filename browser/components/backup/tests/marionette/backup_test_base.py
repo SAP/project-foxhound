@@ -29,6 +29,18 @@ class BackupTestBase(MarionetteTestCase):
         MarionetteTestCase.setUp(self)
         self.logger.info("Setting up test environment")
 
+        # Profile backup is disabled while SQLite at-rest encryption is on
+        # (per-database keys are not portable into the archive), so the backup
+        # feature these tests exercise is unavailable then. We cannot just force
+        # the pref off here: under a global encryption-on build the initial
+        # session already created an encrypted profile, and restarting with
+        # encryption off cannot reopen it. Skip instead -- on the shipping
+        # (encryption-off) configuration this is a no-op and the tests run.
+        if self.marionette.get_pref("security.storage.encryption.sqlite.enabled"):
+            self.skipTest(
+                "Profile backup is disabled when SQLite at-rest encryption is enabled"
+            )
+
         self.marionette.enforce_gecko_prefs({
             "browser.backup.enabled": True,
             "browser.backup.log": True,

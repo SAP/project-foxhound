@@ -46,6 +46,8 @@ const RESTORED_BACKUP_METADATA_PREF_NAME =
 const SANITIZE_ON_SHUTDOWN_PREF_NAME = "privacy.sanitize.sanitizeOnShutdown";
 const BACKUP_ENABLED_ON_PROFILES_PREF_NAME =
   "browser.backup.enabled_on.profiles";
+const SQLITE_ENCRYPTION_ENABLED_PREF_NAME =
+  "security.storage.encryption.sqlite.enabled";
 
 const SCHEMAS = Object.freeze({
   BACKUP_MANIFEST: 1,
@@ -705,6 +707,19 @@ export class BackupService extends EventTarget {
    * @type {EnabledStatus}
    */
   get archiveEnabledStatus() {
+    // Backup is unsupported while SQLite at-rest encryption is on: staged
+    // database copies are written as ciphertext whose keys live only in this
+    // profile's lockstore, so the archive cannot be restored elsewhere.
+    if (
+      Services.prefs.getBoolPref(SQLITE_ENCRYPTION_ENABLED_PREF_NAME, false)
+    ) {
+      return {
+        enabled: false,
+        reason: "Archiving a profile disabled while SQLite encryption is on.",
+        internalReason: "sqlite-encryption",
+      };
+    }
+
     // Check if disabled by Nimbus killswitch.
     const archiveKillswitchTriggered =
       lazy.NimbusFeatures.backupService.getVariable("archiveKillswitch");
@@ -744,6 +759,19 @@ export class BackupService extends EventTarget {
    * @type {EnabledStatus}
    */
   get restoreEnabledStatus() {
+    // Restoring into an instance with SQLite at-rest encryption on would copy
+    // plaintext database files that obfsvfs then rejects fail-closed, leaving a
+    // broken profile, so restore is disabled while encryption is on.
+    if (
+      Services.prefs.getBoolPref(SQLITE_ENCRYPTION_ENABLED_PREF_NAME, false)
+    ) {
+      return {
+        enabled: false,
+        reason: "Restoring a profile disabled while SQLite encryption is on.",
+        internalReason: "sqlite-encryption",
+      };
+    }
+
     // Check if disabled by Nimbus killswitch.
     const restoreKillswitchTriggered =
       lazy.NimbusFeatures.backupService.getVariable("restoreKillswitch");
