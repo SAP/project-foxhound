@@ -8,6 +8,7 @@
 #include "nsCOMPtr.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/Mutex.h"
+#include "nsIPrefBranch.h"
 #include "nsProxyRelease.h"
 #include "nsThreadUtils.h"
 #include "nsIInterfaceRequestor.h"
@@ -108,6 +109,15 @@ class Connection final : public mozIStorageConnection,
    * it does not exist.
    */
   nsresult initialize(nsIFileURL* aFileURL);
+
+  /**
+   * Creates the connection to the encrypted database.
+   *
+   * @param aDatabaseFile
+   *        The nsIFile of the location of the database to open, or create if it
+   *        does not exist.
+   */
+  nsresult initializeSecure(nsIFile* aDatabaseFile);
 
   /**
    * Same as initialize, but to be used on the async thread.
@@ -516,6 +526,11 @@ class Connection final : public mozIStorageConnection,
    * sharedAsyncExecutionMutex.
    */
   bool mConnectionClosed;
+
+  /**
+   * Set to true if the underlying database file is encrypted on disk.
+   */
+  bool mDatabaseEncrypted;
 
   /**
    * Stores the growth increment chunk size, set through SetGrowthIncrement().

@@ -8,6 +8,7 @@ with Files("**"):
 DIRS += [
     "/security/lockstore",
     "/security/mls",
+    "/security/keystore",
 ]
 
 with Files("generate*.py"):

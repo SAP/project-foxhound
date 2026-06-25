@@ -18826,6 +18826,15 @@
   value: true
   mirror: always
 
+# Enable sqlite database encryption. Mirrored "always" so that browser-chrome
+# tests that set the pref via their manifest see the updated value even when
+# Firefox was launched with the default. In practice the pref is read during
+# mozStorageService::Init and each Connection::initialize, not hot-reloaded.
+- name: security.storage.encryption.sqlite.enabled
+  type: RelaxedAtomicBool
+  value: false
+  mirror: always
+
 - name: security.tls13.aes_128_gcm_sha256
   type: RelaxedAtomicBool
   value: true

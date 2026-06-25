@@ -413,4 +413,22 @@ interface mozIStorageAsyncConnection : nsISupports {
                          in mozIStorageCompletionCallback aCallback,
                          [optional] in unsigned long aPagesPerStep,
                          [optional] in unsigned long aStepDelayMs);
+
+  /**
+   * Attach another database to this connection.
+   *
+   * This has the same effect as if executing ATTACH DATABASE aPath as aName,
+   * but when database encryption is enabled it opens the encrypted database
+   * file with the .enc extension and automatically fetches their key and
+   * decrypts them. See the SQLite documentation for more details.
+   *
+   * @param aPath
+   *        The path to the database file that should be attached. May be in
+   *        URI form.
+   * @param aName
+   *        The name under which the database should be attached.
+   */
+  mozIStoragePendingStatement attachDatabase(in string aPath,
+                                             in string aName,
+                                             [optional] in mozIStorageStatementCallback aCallback);
 };

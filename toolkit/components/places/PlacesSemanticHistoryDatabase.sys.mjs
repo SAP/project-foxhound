@@ -145,7 +145,7 @@ export class PlacesSemanticHistoryDatabase {
       this.#databaseFolderPath,
       "places.sqlite"
     );
-    await conn.execute(`ATTACH DATABASE '${placesDbPath}' AS places`);
+    await conn.attachDatabase(placesDbPath, "places");
     return conn;
   }
 

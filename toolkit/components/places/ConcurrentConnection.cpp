@@ -468,26 +468,23 @@ void ConcurrentConnection::SetupConnection() {
 
 nsresult ConcurrentConnection::AttachDatabase(const nsString& aFileName,
                                               const nsCString& aSchemaName) {
-  // No reason to cache this statement, so not using GetStatement here.
-  nsCOMPtr<mozIStorageAsyncStatement> stmt;
-  nsresult rv = mConn->CreateAsyncStatement(
-      "ATTACH DATABASE :path AS "_ns + DATABASE_FAVICONS_SCHEMANAME,
-      getter_AddRefs(stmt));
-  NS_ENSURE_SUCCESS(rv, rv);
-
   nsCOMPtr<nsIFile> databaseFile =
       GetDatabaseFileInProfile(DATABASE_FAVICONS_FILENAME);
-  NS_ENSURE_SUCCESS(rv, rv);
+
   nsString path;
-  rv = databaseFile->GetPath(path);
-  NS_ENSURE_SUCCESS(rv, rv);
-  rv = stmt->BindStringByName("path"_ns, path);
+  nsresult rv = databaseFile->GetPath(path);
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsCOMPtr<mozIStoragePendingStatement> ps;
   nsCOMPtr<mozIStorageStatementCallback> cb = MakeAndAddRef<CallbackOnError>(
       this, &ConcurrentConnection::CloseConnection);
-  rv = stmt->ExecuteAsync(cb, getter_AddRefs(ps));
+
+  NS_ConvertUTF16toUTF8 utf8Path(path);
+
+  const char* cPath = utf8Path.get();
+  const char* cSchema = DATABASE_FAVICONS_SCHEMANAME.AsString().get();
+
+  rv = mConn->AttachDatabase(cPath, cSchema, cb, getter_AddRefs(ps));
   NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;

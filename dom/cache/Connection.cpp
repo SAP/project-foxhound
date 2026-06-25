@@ -244,6 +244,13 @@ Connection::CreateTable(const char* aTable, const char* aSchema) {
 }
 
 NS_IMETHODIMP
+Connection::AttachDatabase(const char* aPath, const char* aName,
+                           mozIStorageStatementCallback* aCallback,
+                           mozIStoragePendingStatement** _handle) {
+  return mBase->AttachDatabase(aPath, aName, aCallback, _handle);
+}
+
+NS_IMETHODIMP
 Connection::SetGrowthIncrement(int32_t aIncrement,
                                const nsACString& aDatabase) {
   return mBase->SetGrowthIncrement(aIncrement, aDatabase);

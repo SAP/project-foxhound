@@ -105,7 +105,7 @@ function fetchOpaqueResponse(url) {
 // [3] https://searchfox.org/firefox-main/rev/3aff965e839b7872bf48a9803b80669ca49276ac/security/manager/ssl/TransportSecurityInfo.cpp#114
 // [4] https://searchfox.org/firefox-main/rev/3aff965e839b7872bf48a9803b80669ca49276ac/dom/cache/DBSchema.cpp#255
 function equalOrOffByOneGrowthChunk(a, b, message) {
-  if (SpecialPowers.getBoolPref("browser.privatebrowsing.autostart") && a != b) {
+  if ((SpecialPowers.getBoolPref("browser.privatebrowsing.autostart") || SpecialPowers.getBoolPref("security.storage.encryption.sqlite.enabled")) && a != b) {
     b += 32768;
   }
   is(a, b, message);

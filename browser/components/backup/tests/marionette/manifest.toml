@@ -39,3 +39,7 @@ support-files = [
 skip-if = [
   "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'", # 1924781: Gnome keyring not unlocked
 ]
+# Restores pre-existing unencrypted backup fixture archives; enabling
+# SQLite encryption on the restoring profile makes the compatibility
+# assertions meaningless.
+prefs = ["security.storage.encryption.sqlite.enabled=false"]

@@ -25,6 +25,7 @@
 #include "mozilla/StaticPrefs_storage.h"
 #include "mozilla/intl/Collator.h"
 #include "mozilla/intl/LocaleService.h"
+#include "mozilla/security/KeyStorage.h"
 
 #include "sqlite3.h"
 #include "mozilla/AutoSQLiteLifetime.h"
@@ -375,6 +376,15 @@ nsresult Service::initialize() {
   mozilla::RegisterWeakMemoryReporter(this);
   mozilla::RegisterStorageSQLiteDistinguishedAmount(
       StorageSQLiteDistinguishedAmount);
+
+  // Always register the key-storage profile observer so that the current
+  // profile path is known by the time any connection needs a key, even if
+  // the encryption pref is flipped on later (e.g. by browser-chrome tests
+  // setting `prefs = [...]` in their manifest).
+  {
+    nsresult rv = storage::key::Init();
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
 
   return NS_OK;
 }

@@ -6,13 +6,16 @@
 #include "mozilla/ScopeExit.h"
 #include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/StaticPrefs_places.h"
+#include "mozilla/StaticPrefs_security.h"
 #include "mozilla/glean/PlacesMetrics.h"
+#include "mozilla/security/KeyStorage.h"
 
 #include "Database.h"
 
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsIFile.h"
 
+#include "nsLocalFile.h"
 #include "nsNavBookmarks.h"
 #include "nsNavHistory.h"
 #include "nsPlacesTables.h"
@@ -21,6 +24,7 @@
 #include "nsPlacesMacros.h"
 #include "nsVariant.h"
 #include "SQLFunctions.h"
+#include "ScopedNSSTypes.h"
 #include "Helpers.h"
 #include "nsFaviconService.h"
 #include "ConcurrentConnection.h"
@@ -335,12 +339,28 @@ nsresult SetupDurability(nsCOMPtr<mozIStorageConnection>& aDBConn,
 
 nsresult AttachDatabase(nsCOMPtr<mozIStorageConnection>& aDBConn,
                         const nsACString& aPath, const nsACString& aName) {
+  nsresult rv;
+  nsCString path;
+  path = aPath;
+
+  bool encryptionEnabled =
+      StaticPrefs::security_storage_encryption_sqlite_enabled();
+  if (encryptionEnabled) {
+    nsCString dbKey;
+    rv = storage::key::GetKeyByPath(path.get(), dbKey);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    path = nsPrintfCString("file:%s?key=%s", path.get(), dbKey.get());
+  }
+
   nsCOMPtr<mozIStorageStatement> stmt;
-  nsresult rv = aDBConn->CreateStatement("ATTACH DATABASE :path AS "_ns + aName,
-                                         getter_AddRefs(stmt));
+  rv = aDBConn->CreateStatement("ATTACH DATABASE :path AS "_ns + aName,
+                                getter_AddRefs(stmt));
   NS_ENSURE_SUCCESS(rv, rv);
-  rv = stmt->BindUTF8StringByName("path"_ns, aPath);
+
+  rv = stmt->BindUTF8StringByName("path"_ns, path);
   NS_ENSURE_SUCCESS(rv, rv);
+
   rv = stmt->Execute();
   NS_ENSURE_SUCCESS(rv, rv);
 

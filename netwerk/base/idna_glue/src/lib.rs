@@ -13,7 +13,7 @@ use idna::uts46::ProcessingSuccess;
 use idna::uts46::Uts46;
 use nserror::*;
 use nsstring::*;
-use percent_encoding::percent_decode;
+use percent_encoding::{percent_decode, percent_encode, AsciiSet, CONTROLS};
 
 /// The URL deny list plus asterisk and double quote.
 /// Using AsciiDenyList::URL is https://bugzilla.mozilla.org/show_bug.cgi?id=1815926 .
@@ -275,4 +275,11 @@ pub unsafe extern "C" fn mozilla_net_recover_keyword_from_punycode(
             sink.append(label);
         }
     }
+}
+
+/// Percent-encodes a string.
+#[no_mangle]
+pub unsafe extern "C" fn mozilla_net_percent_encode(src: &nsACString, dst: &mut nsACString) {
+    static CHARS: AsciiSet = CONTROLS.add(b'%');
+    dst.assign(&percent_encode(src, &CHARS).to_string())
 }
