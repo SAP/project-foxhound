@@ -851,6 +851,16 @@ void ChannelWrapper::RegisterTraceableChannel(const WebExtensionPolicy& aAddon,
   if (!mChannelEntry) {
     mChannelEntry = WebRequestService::GetSingleton().RegisterChannel(this);
     CheckEventListeners();
+    if (!mAddedStreamListener) {
+      // If the stream listener was not connected before, and still fails to be
+      // added, then we know that ChannelWrapper::RequestListener::Init() has
+      // failed to register itself as a stream listener with the channel.
+      // There can be various reasons (channel not opened, or response already
+      // started before we started tracing). In any case, RequestListener will
+      // be unable to detect when it should clear mChannelEntry, so the safest
+      // thing to do here is to drop mChannelEntry now, to prevent bug 2044517.
+      mChannelEntry = nullptr;
+    }
   }
 }
 
@@ -1334,6 +1344,10 @@ void ChannelWrapper::CheckEventListeners() {
        HasListenersFor(nsGkAtoms::onstop) || mChannelEntry)) {
     auto listener = MakeRefPtr<RequestListener>(this);
     if (!NS_WARN_IF(NS_FAILED(listener->Init()))) {
+      // Once registered, the listener sticks to the channel. When redirected,
+      // AsyncOpen on the new channel receives the listener of the original
+      // (pre-redirect) channel, which is the listener we just added, or
+      // another stream listener that eventually calls our listener.
       mAddedStreamListener = true;
     }
   }

@@ -430,6 +430,7 @@ var ChannelEventSink = {
       HttpObserverManager.onChannelReplaced(oldChannel, newChannel);
     } catch (e) {
       // we don't wanna throw: it would abort the redirection
+      Cu.reportError(e);
     }
   },
 
