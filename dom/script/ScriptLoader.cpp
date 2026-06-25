@@ -713,8 +713,6 @@ void ScriptLoader::OnDelayedReady(
   MOZ_ASSERT(aRequest->IsRetrievedFromMemoryCache());
   MOZ_ASSERT(aRequest->IsDelayingReady());
 
-  EmulateNetworkEvents(aRequest, aCharsetForPreload);
-
   aRequest->SetReady();
   MaybeMoveToLoadedList(aRequest);
   ProcessPendingRequests();
@@ -724,6 +722,10 @@ nsresult ScriptLoader::StartClassicLoad(
     ScriptLoadRequest* aRequest,
     const Maybe<nsAutoString>& aCharsetForPreload) {
   if (aRequest->IsRetrievedFromMemoryCache()) {
+    // NOTE: The network event need to be dispatched in the current call stack,
+    //       in order to reflect it in the DevTools Network Monitor.
+    EmulateNetworkEvents(aRequest, aCharsetForPreload);
+
     nsCOMPtr<nsIRunnable> runnable =
         mozilla::NewRunnableMethod<RefPtr<ScriptLoadRequest>,
                                    const Maybe<nsAutoString>>(
