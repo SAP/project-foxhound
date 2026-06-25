@@ -10,24 +10,33 @@ support-files = [
 ]
 
 ["test_corrupt_favicons.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_corrupt_favicons_schema.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_corrupt_places_schema.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_corrupt_telemetry.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_favicons_replaceOnStartup.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_favicons_replaceOnStartup_clone.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_integrity_replacement.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_places_purge_caches.js"]
 
 ["test_places_replaceOnStartup.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_places_replaceOnStartup_clone.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_preventive_maintenance.js"]
 

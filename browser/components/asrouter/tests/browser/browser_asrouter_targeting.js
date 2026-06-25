@@ -2710,10 +2710,18 @@ add_task(async function check_backupArchiveEnabled() {
 
   await pushPrefs(["browser.backup.archive.enabled", true]);
 
+  // Backup is disabled whenever SQLite at-rest encryption is on, so the
+  // targeting value is false regardless of the killswitch in that build.
+  const sqliteEncryptionDisablesBackup = Services.prefs.getBoolPref(
+    "security.storage.encryption.sqlite.enabled",
+    false
+  );
   is(
     await ASRouterTargeting.Environment.backupArchiveEnabled,
-    true,
-    "should return true if the killswitch is not on"
+    !sqliteEncryptionDisablesBackup,
+    sqliteEncryptionDisablesBackup
+      ? "should be false when SQLite at-rest encryption disables backup"
+      : "should return true if the killswitch is not on"
   );
   await SpecialPowers.popPrefEnv();
   const archiveExperiment = await NimbusTestUtils.enrollWithFeatureConfig({
@@ -2739,10 +2747,18 @@ add_task(async function check_backupRestoreEnabled() {
 
   await pushPrefs(["browser.backup.restore.enabled", true]);
 
+  // Backup is disabled whenever SQLite at-rest encryption is on, so the
+  // targeting value is false regardless of the killswitch in that build.
+  const sqliteEncryptionDisablesBackup = Services.prefs.getBoolPref(
+    "security.storage.encryption.sqlite.enabled",
+    false
+  );
   is(
     await ASRouterTargeting.Environment.backupRestoreEnabled,
-    true,
-    "should return true if the killswitch is not on"
+    !sqliteEncryptionDisablesBackup,
+    sqliteEncryptionDisablesBackup
+      ? "should be false when SQLite at-rest encryption disables backup"
+      : "should return true if the killswitch is not on"
   );
   await SpecialPowers.popPrefEnv();
   await pushPrefs(["browser.backup.restore.enabled", true]);

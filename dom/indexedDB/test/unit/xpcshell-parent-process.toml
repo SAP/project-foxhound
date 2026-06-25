@@ -35,12 +35,16 @@ run-if = [
 ]
 
 ["test_URLSearchParams.js"]
+# Bug 1996558: migrates a plaintext profile fixture that obfsvfs cannot read; runs with SQLite encryption off.
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_bad_origin_directory.js"]
 
 ["test_blob_file_backed.js"]
 
 ["test_bug1056939.js"]
+# Bug 1996558: migrates a plaintext profile fixture that obfsvfs cannot read; runs with SQLite encryption off.
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_cleanup_transaction.js"]
 
@@ -57,6 +61,8 @@ skip-if = [
 ["test_connection_idle_maintenance.js"]
 
 ["test_connection_idle_maintenance_stop.js"]
+# Bug 1996558: incompatible with SQLite at-rest encryption; runs with encryption off.
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_databaseWorkStarted.js"]
 
@@ -65,12 +71,16 @@ skip-if = [
 ["test_database_onclose.js"]
 
 ["test_fileListUpgrade.js"]
+# Bug 1996558: migrates a plaintext profile fixture that obfsvfs cannot read; runs with SQLite encryption off.
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_file_copy_failure.js"]
 
 ["test_globalObjects_ipc.js"]
 
 ["test_idbSubdirUpgrade.js"]
+# Bug 1996558: migrates a plaintext profile fixture that obfsvfs cannot read; runs with SQLite encryption off.
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_idle_maintenance.js"]
 
@@ -89,34 +99,56 @@ skip-if = [
 ["test_maximal_structured_clone_size.js"]
 
 ["test_metadata2Restore.js"]
+# Bug 1996558: migrates a plaintext profile fixture that obfsvfs cannot read; runs with SQLite encryption off.
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_metadataRestore.js"]
+# Bug 1996558: migrates a plaintext profile fixture that obfsvfs cannot read; runs with SQLite encryption off.
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_mutableFileUpgrade.js"]
+# Bug 1996558: migrates a plaintext profile fixture that obfsvfs cannot read; runs with SQLite encryption off.
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_obsoleteOriginAttributesUpgrade.js"]
+# Bug 1996558: migrates a plaintext profile fixture that obfsvfs cannot read; runs with SQLite encryption off.
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_oldDirectories.js"]
+# Bug 1996558: migrates a plaintext profile fixture that obfsvfs cannot read; runs with SQLite encryption off.
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_orphaned_files.js"]
+# Bug 1996558: migrates a plaintext profile fixture that obfsvfs cannot read; runs with SQLite encryption off.
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_quotaExceeded_recovery.js"]
 
 ["test_readwriteflush_disabled.js"]
 
 ["test_schema18upgrade.js"]
+# Bug 1996558: migrates a plaintext profile fixture that obfsvfs cannot read; runs with SQLite encryption off.
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_schema21upgrade.js"]
+# Bug 1996558: migrates a plaintext profile fixture that obfsvfs cannot read; runs with SQLite encryption off.
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_schema23upgrade.js"]
+# Bug 1996558: migrates a plaintext profile fixture that obfsvfs cannot read; runs with SQLite encryption off.
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_slowDatabaseInitialization.js"]
 
 ["test_slowStorageInitialization.js"]
 
 ["test_snappyUpgrade.js"]
+# Bug 1996558: migrates a plaintext profile fixture that obfsvfs cannot read; runs with SQLite encryption off.
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_storagePersistentUpgrade.js"]
+# Bug 1996558: migrates a plaintext profile fixture that obfsvfs cannot read; runs with SQLite encryption off.
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_temporary_storage.js"]
 requesttimeoutfactor = 2  # Slow on Linux and Windows
@@ -131,5 +163,7 @@ skip-if = [
 ["test_view_put_get_values.js"]
 
 ["test_wasm_get_values.js"]
+# Bug 1996558: migrates a plaintext profile fixture that obfsvfs cannot read; runs with SQLite encryption off.
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_wasm_put_get_values.js"]

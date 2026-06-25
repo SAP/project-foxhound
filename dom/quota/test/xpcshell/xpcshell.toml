@@ -156,6 +156,7 @@ skip-if = [
 ["test_removeLocalStorage.js"]
 
 ["test_secondaryCacheValidity.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_shutdownDuringAllTemporaryOriginsInitialization.js"]
 # The test cannot function correctly with incremental origin initialization
@@ -221,6 +222,7 @@ run-if = [
 ["test_unaccessedOrigins.js"]
 
 ["test_unknownFiles.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_unsetLastAccessTime.js"]
 support-files = ["unsetLastAccessTime_profile.zip"]

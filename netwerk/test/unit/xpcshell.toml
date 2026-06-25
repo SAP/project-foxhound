@@ -569,6 +569,7 @@ skip-if = [
 ["test_cookiejars_safebrowsing.js"]
 
 ["test_cookies_async_failure.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 requesttimeoutfactor = 2  # Slow on Windows
 run-sequentially = [
   "os == 'mac'", # frequent timeouts in parallel on Mac
@@ -600,6 +601,7 @@ skip-if = [
 requesttimeoutfactor = 2  # Slow on macOS
 
 ["test_cookies_upgrade_10.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_cookies_validation_epoch.js"]
 

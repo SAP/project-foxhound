@@ -64,6 +64,7 @@ run-if = [
 tags = "remote-settings blocklist psm"
 
 ["test_broken_fips.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 # FIPS has never been a thing on Android, so the workaround doesn't
 # exist on that platform.
 # FIPS still works on Linux, so this test doesn't make any sense there.
@@ -103,6 +104,7 @@ run-if = [
 ["test_cert_keyUsage.js"]
 
 ["test_cert_override_read.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_cert_overrides.js"]
 run-sequentially = ["true"] # hardcoded ports
@@ -115,6 +117,7 @@ run-sequentially = ["true"] # hardcoded ports
 ["test_cert_signatures.js"]
 
 ["test_cert_storage.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 tags = "addons psm blocklist"
 
 ["test_cert_storage_broken_db.js"]
@@ -122,6 +125,7 @@ tags = "addons psm blocklist"
 ["test_cert_storage_direct.js"]
 
 ["test_cert_storage_preexisting.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_cert_trust.js"]
 
@@ -130,6 +134,7 @@ tags = "addons psm blocklist"
 ["test_cert_version.js"]
 
 ["test_client_auth_remember_service_read.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_client_auth_speculative_connection.js"]
 run-sequentially = ["true"] # hardcoded ports
@@ -146,6 +151,7 @@ run-sequentially = ["true"] # hardcoded ports
 tags = "remote-settings psm"
 
 ["test_crlite_preexisting.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 run-if = [
   "debug", # Requires hard-coded debug-only data
 ]
@@ -171,8 +177,10 @@ skip-if = [
 ]
 
 ["test_data_storage.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_db_format_pref_new.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 run-if = [
   "os != 'android'", # Android always has and always will use the new format, so this test doesn't apply.
 ]
@@ -218,6 +226,7 @@ run-sequentially = ["true"] # hardcoded ports
 ["test_intermediate_basic_usage_constraints.js"]
 
 ["test_intermediate_preloads.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 run-sequentially = ["true"] # hardcoded ports
 tags = "blocklist psm remote-settings"
 
@@ -303,16 +312,19 @@ run-sequentially = ["true"] # hardcoded ports
 ["test_sdr.js"]
 
 ["test_sdr_preexisting.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 run-if = [
   "os != 'android'", # Not relevant to Android. See the comment in the test.
 ]
 
 ["test_sdr_preexisting_with_password.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 run-if = [
   "os != 'android'", # Not relevant to Android. See the comment in the test.
 ]
 
 ["test_self_signed_certs.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_session_resumption.js"]
 run-sequentially = ["true"] # hardcoded ports
@@ -331,11 +343,13 @@ run-sequentially = ["true"] # hardcoded ports
 run-sequentially = ["true"] # hardcoded ports
 
 ["test_sss_eviction.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 run-if = [
   "!condprof", # Bug 1769154 - as designed
 ]
 
 ["test_sss_migration.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 run-if = [
   "!condprof", # Bug 1769154 - as designed
 ]
@@ -343,6 +357,7 @@ run-if = [
 ["test_sss_originAttributes.js"]
 
 ["test_sss_readstate.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 run-if = [
   "!condprof", # Bug 1769154 - as designed
 ]
@@ -353,11 +368,13 @@ run-if = [
 ]
 
 ["test_sss_readstate_garbage.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 run-if = [
   "!condprof", # Bug 1769154 - as designed
 ]
 
 ["test_sss_readstate_huge.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 run-if = [
   "!condprof", # Bug 1769154 - as designed
 ]
@@ -365,6 +382,7 @@ run-if = [
 ["test_sss_resetState.js"]
 
 ["test_sss_sanitizeOnShutdown_v2.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 requesttimeoutfactor = 2  # Slow on condprof
 firefox-appdir = "browser"
 skip-if = [

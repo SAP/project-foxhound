@@ -74,17 +74,33 @@ function test_openDatabase_directory() {
   dir.create(Ci.nsIFile.DIRECTORY_TYPE, 0o755);
   Assert.ok(dir.exists());
 
+  let encrypted = Services.prefs.getBoolPref(
+    "security.storage.encryption.sqlite.enabled",
+    false
+  );
+
   try {
     getDatabase(dir);
     do_throw("should not be here");
   } catch (e) {
-    Assert.equal(Cr.NS_ERROR_FILE_ACCESS_DENIED, e.result);
+    // The plain VFS rejects a directory-as-database open with
+    // NS_ERROR_FILE_ACCESS_DENIED; with encryption, obfsvfs rejects it earlier
+    // (before the lower VFS reports the access error) with NS_ERROR_FAILURE.
+    Assert.equal(
+      encrypted ? Cr.NS_ERROR_FAILURE : Cr.NS_ERROR_FILE_ACCESS_DENIED,
+      e.result
+    );
   }
 
-  Assert.equal(
-    Glean.sqliteStore.open.get("test_storage_temp", "access").testGetValue(),
-    1
-  );
+  // The plain VFS records an "access" open error here; with encryption the open
+  // is rejected by obfsvfs before mozStorage reaches its open-error telemetry,
+  // so nothing is recorded.
+  if (!encrypted) {
+    Assert.equal(
+      Glean.sqliteStore.open.get("test_storage_temp", "access").testGetValue(),
+      1
+    );
+  }
 
   dir.remove(true);
 }

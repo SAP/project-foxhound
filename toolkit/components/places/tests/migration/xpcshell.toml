@@ -7,6 +7,12 @@ skip-if = [
   "os == 'android'",
 ]
 # tests for databases. See discussion in bug 1838791.
+# SQLite at-rest encryption (Bug 1996558): these tests migrate pre-built
+# PLAINTEXT places.sqlite fixtures, which an encrypting build cannot read (there
+# is no plaintext->encrypted migration by design, and obfsvfs cannot ingest a
+# plaintext database). Schema migration is VFS-agnostic and is covered with
+# encryption off, so run these tests with encryption disabled.
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 support-files = [
   "favicons_v41.sqlite",

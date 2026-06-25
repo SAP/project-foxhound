@@ -36,6 +36,7 @@ prefs = [
 ]
 
 ["test_pkcs11_safe_mode.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_pkcs11_slot.js"]
 

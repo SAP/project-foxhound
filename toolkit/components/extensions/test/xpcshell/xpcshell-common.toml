@@ -694,6 +694,10 @@ skip-if = [
 ]
 
 ["test_ext_storage_local_corrupted_idb.js"]
+# Recreates the corrupted-database scenario by tampering with the storage.local
+# IndexedDB sqlite3 file directly (opening it and dropping the object store), so
+# it requires the on-disk format to be plaintext SQLite; pin encryption off.
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_ext_storage_managed.js"]
 skip-if = [
@@ -709,6 +713,12 @@ skip-if = [
 ]
 
 ["test_ext_storage_quota_exceeded_errors.js"]
+# At-rest encryption inflates the storage.local IndexedDB on-disk footprint past
+# this test's deliberately tiny dom.quotaManager fixedLimit, so the IDB backend
+# fails to initialize (migration cancelled: "exceeded its quota limitations")
+# and falls back to the JSONFile backend, which does not raise the
+# QuotaExceededError the test asserts; pin encryption off.
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 skip-if = [
   "os == 'android'", # Bug 1564871
 ]

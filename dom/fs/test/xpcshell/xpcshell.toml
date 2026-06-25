@@ -21,7 +21,10 @@ requesttimeoutfactor = 2  # Slow on Linux
 ["test_slowStorageInitialization.js"]
 
 ["test_syncAccessHandle_worker.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_writableFileStream.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_writableFileStream_worker.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]

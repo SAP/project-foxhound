@@ -25,6 +25,17 @@ class CacheAPIEncryptionPBM(QuotaTestCase):
     def setUp(self):
         super().setUp()
 
+        # This test exercises QuotaManager private-browsing encryption, which is
+        # unrelated to SQLite at-rest encryption. Under a global at-rest-on
+        # build the profile is created encrypted, and IndexedDB/Cache work then
+        # trips a debug threading assertion (Database::AssertIsOnConnectionThread)
+        # that crashes the browser. Skip while at-rest encryption is on; this
+        # runs normally on the shipping (encryption-off) configuration.
+        if self.marionette.get_pref("security.storage.encryption.sqlite.enabled"):
+            self.skipTest(
+                "Unrelated to SQLite at-rest encryption; skipped while it is on"
+            )
+
         self.testHTML = "dom/cache/basicCacheAPI_PBM.html"
         self.cacheName = "CachePBMTest"
         self.profilePath = self.marionette.instance.profile.profile
@@ -43,6 +54,13 @@ class CacheAPIEncryptionPBM(QuotaTestCase):
         self.cacheDBJournalFileName = "caches.sqlite-wal"
 
         self.dbCheckpointThresholdBytes = 512 * 1024
+
+        # This test verifies QuotaManager's own private-browsing encryption by
+        # contrasting it with plaintext non-private data on disk. SQLite at-rest
+        # (obfsvfs) encryption would encrypt the caches.sqlite but not the raw
+        # response body files, breaking that contrast; force it off here (the
+        # manifest pin is not honored by marionette).
+        self.marionette.set_pref("security.storage.encryption.sqlite.enabled", False)
 
     def tearDown(self):
         super().tearDown()

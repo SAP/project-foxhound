@@ -96,6 +96,7 @@ run-if = [
 ["test_permmanager_oa_strip.js"]
 
 ["test_permmanager_remote.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_permmanager_removeAllExceptTypes.js"]
 

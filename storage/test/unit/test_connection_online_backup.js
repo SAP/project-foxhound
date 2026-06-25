@@ -17,6 +17,15 @@ const TEST_ROWS = 10;
 // The page size to set on the source database. During setup, we assert that
 // this does not match the default page size.
 const TEST_PAGE_SIZE = 512;
+// Whether SQLite at-rest encryption is enabled. When it is, backupToFileAsync
+// produces an encrypted copy at a new path whose per-database key is not in
+// lockstore, so the copy cannot be reopened; this test then only checks that a
+// multi-step encrypted backup completes rather than looping forever re-copying
+// because the change counter never settles between steps.
+const ENCRYPTED = Services.prefs.getBoolPref(
+  "security.storage.encryption.sqlite.enabled",
+  false
+);
 
 /**
  * This setup function creates a table inside of the test database and inserts
@@ -128,6 +137,19 @@ async function createCopy(connection, pagesPerStep, stepDelayMs) {
  * @returns {Promise<undefined>}
  */
 async function assertSuccessfulCopy(file, expectedEntries = TEST_ROWS) {
+  Assert.ok(
+    !file.leafName.endsWith(".tmp"),
+    "Should not end in .tmp extension"
+  );
+
+  if (ENCRYPTED) {
+    // The renamed encrypted backup's key is orphaned by design (profile backup
+    // is disabled under encryption), so it cannot be reopened. Reaching here at
+    // all means the backup completed instead of restarting forever, which is
+    // what we are verifying.
+    return;
+  }
+
   let conn = await openAsyncDatabase(file);
 
   await executeSimpleSQLAsync(conn, "PRAGMA page_size", resultSet => {
@@ -143,11 +165,6 @@ async function assertSuccessfulCopy(file, expectedEntries = TEST_ROWS) {
   let row = results.getNextRow();
   let count = row.getResultByName("COUNT(*)");
   Assert.equal(count, expectedEntries, "Got the expected entries");
-
-  Assert.ok(
-    !file.leafName.endsWith(".tmp"),
-    "Should not end in .tmp extension"
-  );
 
   await asyncClose(conn);
 }

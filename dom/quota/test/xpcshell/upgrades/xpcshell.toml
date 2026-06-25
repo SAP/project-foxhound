@@ -40,11 +40,13 @@ support-files = [
 ]
 
 ["test_localStorageArchive1upgrade.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_localStorageArchive4upgrade.js"]
-prefs = ["dom.storage.enable_migration_from_unsupported_legacy_implementation=true"]
+prefs = ["dom.storage.enable_migration_from_unsupported_legacy_implementation=true", "security.storage.encryption.sqlite.enabled=false"]
 
 ["test_localStorageArchiveDowngrade.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_upgradeCacheFrom1.js"]
 

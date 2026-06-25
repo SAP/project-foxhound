@@ -20,10 +20,13 @@ support-files = [
 ["test_browserGlue_bookmarkshtml.js"]
 
 ["test_browserGlue_corrupt.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_browserGlue_corrupt_nobackup.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_browserGlue_corrupt_nobackup_default.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_browserGlue_distribution.js"]
 

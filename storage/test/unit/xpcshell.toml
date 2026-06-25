@@ -22,7 +22,6 @@ support-files = [
 ["test_bug-444233.js"]
 
 ["test_cache_size.js"]
-prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_chunk_growth.js"]
 # Bug 676981: test fails consistently on Android
@@ -46,9 +45,10 @@ run-if = [
 ["test_connection_interrupt.js"]
 
 ["test_connection_online_backup.js"]
-prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_default_journal_size_limit.js"]
+
+["test_encryption_rejects_plaintext.js"]
 
 ["test_js_helpers.js"]
 
@@ -67,11 +67,14 @@ prefs = ["security.storage.encryption.sqlite.enabled=false"]
 ["test_persist_journal.js"]
 
 ["test_readonly-immutable-nolock_vfs.js"]
+# obfsvfs (the SQLite at-rest encryption VFS) replaces the readonly/immutable/
+# nolock VFS this test exercises and forces its own WAL/page layout, so the
+# test's journal expectations do not hold under encryption.
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_retry_on_busy.js"]
 
 ["test_sqlite_secure_delete.js"]
-prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_statement_executeAsync.js"]
 

@@ -105,6 +105,8 @@ skip-if = [
 ["test_key_requirements.js"]
 
 ["test_keys.js"]
+# Bug 1996558: incompatible with SQLite at-rest encryption; runs with encryption off.
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 requesttimeoutfactor = 2  # Slow on Linux TSan
 
 ["test_multientry.js"]

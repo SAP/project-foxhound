@@ -6,6 +6,7 @@
 #include "FileSystemParentTestHelpers.h"
 #include "FileSystemParentTypes.h"
 #include "gtest/gtest.h"
+#include "mozilla/StaticPrefs_security.h"
 #include "mozilla/dom/quota/UsageInfo.h"
 
 // This file is intended for integration tests which verify usage tracking
@@ -102,6 +103,12 @@ TEST_F(TestFileSystemUsageTracking, WritesToFilesShouldIncreaseUsage) {
 }
 
 TEST_F(TestFileSystemUsageTracking, RemovingFileShouldDecreaseUsage) {
+  if (StaticPrefs::security_storage_encryption_sqlite_enabled()) {
+    // obfsvfs forces an 8192-byte page size with 32 reserved bytes per page,
+    // so the on-disk database usage no longer matches the byte counts this
+    // test computes assuming the unencrypted page layout.
+    GTEST_SKIP() << "QM usage accounting differs under SQLite at-rest encryption";
+  }
   // Initialize database
   ASSERT_NO_FATAL_FAILURE(EnsureDataManager());
 

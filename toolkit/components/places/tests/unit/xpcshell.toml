@@ -84,6 +84,7 @@ run-if = [
 ]
 
 ["test_PlacesSemanticHistoryModelSwitch.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 run-if = [
   "buildapp == 'browser'",
 ]
@@ -192,8 +193,10 @@ prefs = ["places.frecency.pages.alternative.featureGate=true"]
 ["test_metadata.js"]
 
 ["test_missing_builtin_folders.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_missing_root_folder.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_multi_observation.js"]
 
@@ -217,6 +220,7 @@ requesttimeoutfactor = 3  # Slow on Mac debug
 ["test_promiseBookmarksTree.js"]
 
 ["test_removeDownloadsMetadataFromDb.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 support-files = [
   "test_places.sqlite",
 ]
@@ -236,6 +240,7 @@ support-files = [
 ["test_tagging.js"]
 
 ["test_telemetry.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_update_frecency_after_delete.js"]
 

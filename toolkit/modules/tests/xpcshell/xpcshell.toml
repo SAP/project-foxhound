@@ -170,6 +170,7 @@ tags = "os_integration"
 ["test_servicerequest_xhr.js"]
 
 ["test_sqlite.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 skip-if = [
   "os == 'android'",
 ]

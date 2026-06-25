@@ -4,6 +4,9 @@ run-if = [
   "os != 'android'", # Not supported on GV because we can't add/remove from storage.
 ]
 support-files = ["data/**"]
+# The common head copies a fixture key4.db that is incompatible with at-rest
+# encryption's NSS initialization, so disable SQLite at-rest encryption here.
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_BreachAlertStore.js"]
 

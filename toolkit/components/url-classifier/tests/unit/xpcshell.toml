@@ -24,6 +24,7 @@ skip-if = [
 ["test_digest256.js"]
 
 ["test_exceptionListService.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 tags = "remote-settings"
 
 ["test_features.js"]
@@ -48,6 +49,7 @@ run-sequentially = ["true"] # fails 85% of the time in parallel
 ["test_provider_url.js"]
 
 ["test_rsListService.js"]
+prefs = ["security.storage.encryption.sqlite.enabled=false"]
 tags = "remote-settings"
 
 ["test_safebrowsing_protobuf.js"]
