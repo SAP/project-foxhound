@@ -54,7 +54,7 @@ def run_perfdocs(config, logger=None, paths=None, generate=True, regen_variants=
     PerfDocLogger.TOP_DIR = top_dir
 
     # Convert all the paths to relative ones
-    target_dir = [pathlib.Path(path) for path in paths]
+    target_dir = [p for p in map(pathlib.Path, paths) if p.exists()]
     rel_paths = []
     for path in target_dir:
         try:
@@ -63,10 +63,6 @@ def run_perfdocs(config, logger=None, paths=None, generate=True, regen_variants=
             rel_paths.append(path)
 
     PerfDocLogger.PATHS = rel_paths
-
-    for path in target_dir:
-        if not path.exists():
-            raise Exception(f"Cannot locate directory at {str(path)}")
 
     import datetime as _real_datetime
     import types
