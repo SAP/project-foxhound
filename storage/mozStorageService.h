@@ -93,7 +93,7 @@ class Service : public mozIStorageService,
   virtual ~Service();
 
   struct AutoVFSRegistration {
-    int Init(UniquePtr<sqlite3_vfs> aVFS);
+    int Init(UniquePtr<sqlite3_vfs> aVFS, bool aMakeDefault = false);
     ~AutoVFSRegistration();
 
    private:

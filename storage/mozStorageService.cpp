@@ -24,6 +24,7 @@
 #include "mozilla/LateWriteChecks.h"
 #include "mozIStorageCompletionCallback.h"
 #include "mozIStoragePendingStatement.h"
+#include "mozilla/StaticPrefs_security.h"
 #include "mozilla/StaticPrefs_storage.h"
 #include "mozilla/intl/Collator.h"
 #include "mozilla/intl/LocaleService.h"
@@ -183,11 +184,12 @@ already_AddRefed<Service> Service::getSingleton() {
   return nullptr;
 }
 
-int Service::AutoVFSRegistration::Init(UniquePtr<sqlite3_vfs> aVFS) {
+int Service::AutoVFSRegistration::Init(UniquePtr<sqlite3_vfs> aVFS,
+                                       bool aMakeDefault) {
   MOZ_ASSERT(!mVFS);
   if (aVFS) {
     mVFS = std::move(aVFS);
-    return sqlite3_vfs_register(mVFS.get(), 0);
+    return sqlite3_vfs_register(mVFS.get(), aMakeDefault ? 1 : 0);
   }
   NS_WARNING("Failed to register VFS");
   return SQLITE_OK;
@@ -354,8 +356,21 @@ nsresult Service::initialize() {
     return convertResultCode(rc);
   }
 
-  rc =
-      mObfuscatingSqliteVFS.Init(obfsvfs::ConstructVFS(quotavfs::GetVFSName()));
+  // obfsvfs registers as the SQLite default VFS *only* when at-rest
+  // encryption is enabled, so that every keyless sqlite3_open_v2 (e.g.
+  // rusqlite callers like app-services, skv) flows through it and gets
+  // path-aware at-rest encryption applied by xOpen. When the pref is off
+  // we register it non-default (exactly as before this feature): keyless
+  // opens keep using the OS default VFS and never enter obfsOpen's policy
+  // path, so the pref-off build is a true no-op. mozStorage callers that
+  // explicitly name `obfsvfs::GetVFSName()` keep using it by name in
+  // either case; callers that name `basevfs` / `quotavfs` / the
+  // read-only-no-lock VFS keep their named choice (sqlite3_open_v2 with
+  // an explicit zVfs argument bypasses the default).
+  rc = mObfuscatingSqliteVFS.Init(
+      obfsvfs::ConstructVFS(quotavfs::GetVFSName()),
+      /* aMakeDefault = */
+      StaticPrefs::security_storage_encryption_sqlite_enabled());
   if (rc != SQLITE_OK) {
     return convertResultCode(rc);
   }

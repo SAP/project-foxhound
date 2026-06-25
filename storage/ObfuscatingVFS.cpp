@@ -73,10 +73,16 @@
 
 #include <string.h>
 #include <ctype.h>
+#include <cerrno>
+#include <cstdio>
+#include <cstring>
 
 #include "mozilla/dom/quota/IPCStreamCipherStrategy.h"
+#include "mozilla/Logging.h"
 #include "mozilla/ScopeExit.h"
+#include "mozilla/storage/SQLiteEncryption.h"
 #include "nsPrintfCString.h"
+#include "nsString.h"
 #include "QuotaVFS.h"
 #include "sqlite3.h"
 
@@ -108,6 +114,12 @@ using u8 = unsigned char;
 using namespace mozilla;
 using namespace mozilla::dom::quota;
 
+// Derived from the cipher's own KeyType so this file stays correct if the
+// cipher ever switches to a different key length. Matches the canonical
+// `static_assert(sizeof(NSSCipherStrategy::KeyType) == 32)` in
+// dom/quota/NSSCipherStrategy.cpp.
+static constexpr int kKeyBytes = sizeof(IPCStreamCipherStrategy::KeyType);
+
 /* An open file */
 struct ObfsFile {
   sqlite3_file base;  /* IO methods */
@@ -119,6 +131,12 @@ struct ObfsFile {
       encryptCipherStrategy; /* CipherStrategy for encryption */
   IPCStreamCipherStrategy*
       decryptCipherStrategy; /* CipherStrategy for decryption */
+  /* Per-file raw key, copied into derivative WAL/journal ObfsFiles via
+  ** sqlite3_database_file_object() so SQLite can finalize a connection's
+  ** journals without consulting the keystore (which is required at
+  ** shutdown after ShutdownEncryptionKeystore has run). Zeroized in
+  ** obfsClose. */
+  u8 aKey[kKeyBytes];
 };
 
 /*
@@ -185,13 +203,20 @@ static const sqlite3_io_methods obfs_io_methods = {
     obfsUnfetch                /* xUnfetch */
 };
 
-static constexpr int kKeyBytes = 32;
 static constexpr int kIvBytes = IPCStreamCipherStrategy::BlockPrefixLength;
 static constexpr int kClearTextPrefixBytesOnFirstPage = 32;
 static constexpr int kReservedBytes = 32;
 static constexpr int kBasicBlockSize = IPCStreamCipherStrategy::BasicBlockSize;
 static_assert(kClearTextPrefixBytesOnFirstPage % kBasicBlockSize == 0);
 static_assert(kReservedBytes % kBasicBlockSize == 0);
+
+// The pager validates that no other connection has modified the database by
+// reading the 16-byte "file change counter" region at offset 24 of page 1
+// directly from the file on every shared-lock acquisition (pager.c, the
+// "CKVERS" read). It compares those bytes against the value it cached from
+// page 1 the last time it was read.
+static constexpr int kChangeCounterOffset = 24;
+static constexpr int kChangeCounterBytes = 16;
 
 /* Obfuscate a page using p->encryptCipherStrategy.
 **
@@ -295,6 +320,12 @@ static int obfsClose(sqlite3_file* pFile) {
   delete p->decryptCipherStrategy;
   delete p->encryptCipherStrategy;
 
+  // Wipe the per-file key bytes so the closed slot can't leak to a later
+  // attacker reading freed pager memory. memset is sufficient here -- the
+  // pager hands these pages back to SQLite, not back out to the heap, so a
+  // simple write is observable.
+  ::memset(p->aKey, 0, sizeof(p->aKey));
+
   pFile = ORIGFILE(pFile);
   return pFile->pMethods->xClose(pFile);
 }
@@ -313,6 +344,29 @@ static int obfsRead(sqlite3_file* pFile, void* zBuf, int iAmt,
   int rc;
   ObfsFile* p = (ObfsFile*)pFile;
   pFile = ORIGFILE(pFile);
+
+  // Serve the pager's change-counter validation read (page 1, offset 24, 16
+  // bytes) from a decoded copy of page 1. The pager caches the decoded value
+  // (pager.c readDbPage), but bytes 32..39 of this region are encrypted on
+  // disk, so a raw read never matches the cache: the pager concludes the file
+  // changed, resets its cache, and -- fatally for an in-progress online
+  // backup -- restarts the copy on every step, so a multi-step backup never
+  // completes. Decoding page 1 here makes both sides of the comparison
+  // plaintext while still reflecting a genuine change (the change counter at
+  // bytes 24..27 lives in the cleartext prefix). Fall through to the raw read
+  // when page 1 is not yet a valid SQLite header (e.g. an empty file), which
+  // is the behaviour the pager already expects.
+  if (!p->inCkpt && iOfst == kChangeCounterOffset &&
+      iAmt == kChangeCounterBytes) {
+    u8 aPage1[OBFS_PGSZ];
+    rc = pFile->pMethods->xRead(pFile, aPage1, OBFS_PGSZ, 0);
+    if (rc == SQLITE_OK && memcmp(aPage1, "SQLite format 3", 16) == 0) {
+      obfsDecode(p, aPage1, OBFS_PGSZ);
+      memcpy(zBuf, aPage1 + kChangeCounterOffset, kChangeCounterBytes);
+      return SQLITE_OK;
+    }
+  }
+
   rc = pFile->pMethods->xRead(pFile, zBuf, iAmt, iOfst);
   if (rc == SQLITE_OK) {
     if ((iAmt == OBFS_PGSZ || iAmt == OBFS_PGSZ + WAL_FRAMEHDRSIZE) &&
@@ -516,6 +570,109 @@ static u8 obfsHexToInt(int h) {
 ** If the key=XXXX parameter exists but is not 64-bytes of hex key, then
 ** put an error message in NS_WARNING() and return SQLITE_CANTOPEN.
 */
+/* Inspection of the on-disk file used to detect on-disk-vs-policy mismatches
+** before any encrypted/plaintext write touches the file.
+**
+** The discriminator is NOT the SQLite magic. obfsvfs deliberately leaves
+** "SQLite format 3\0" (offsets 0-15) and the page-size / file-format /
+** reserved-bytes fields (offsets 16-23) plaintext on disk so SQLite can
+** validate the file, and encrypts only the page payload from page 2 on.
+** That means an obfsvfs-encrypted file and a plain SQLite file both start
+** with the same magic; only the page-size (16-bit BE @ offset 16, with
+** 1 representing 65536) and reserved-bytes (uint8 @ offset 20) tell them
+** apart. obfsvfs always writes page_size=8192 and reserved=32.
+*/
+enum class OnDiskHeader { Missing, Error, TooShort, Plaintext, Encrypted };
+
+// The probe reads the leading header bytes that carry the magic (offsets
+// 0-15) plus the page-size, file-format, and reserved-bytes fields (16-23)
+// that distinguish an obfsvfs-encrypted file from a plain SQLite database.
+static constexpr size_t kOnDiskHeaderProbeBytes = 24;
+
+static OnDiskHeader PeekOnDiskHeader(const char* zPath) {
+  FILE* f = fopen(zPath, "rb");
+  if (!f) {
+    // Distinguish a genuinely absent file (Missing -- the no-CREATE probe
+    // below forwards it to the lower VFS) from any other open failure
+    // (permissions, too many open files, ...). Collapsing the latter to
+    // Missing could forward a plaintext open of a database we merely failed to
+    // inspect, so report Error and let obfsOpen refuse.
+    return errno == ENOENT ? OnDiskHeader::Missing : OnDiskHeader::Error;
+  }
+  unsigned char hdr[kOnDiskHeaderProbeBytes] = {0};
+  size_t n = fread(hdr, 1, sizeof(hdr), f);
+  fclose(f);
+  if (n != sizeof(hdr)) {
+    return OnDiskHeader::TooShort;
+  }
+  static const unsigned char kSQLiteMagic[16] = {'S', 'Q', 'L', 'i', 't',
+                                                 'e', ' ', 'f', 'o', 'r',
+                                                 'm', 'a', 't', ' ', '3',
+                                                 '\0'};
+  if (::memcmp(hdr, kSQLiteMagic, sizeof(kSQLiteMagic)) != 0) {
+    // Not a SQLite-shaped file (corrupt, or some other format). No useful
+    // signal for the policy/disk mismatch check; treat as TooShort.
+    return OnDiskHeader::TooShort;
+  }
+  uint32_t pageSize = (static_cast<uint32_t>(hdr[16]) << 8) | hdr[17];
+  if (pageSize == 1) {
+    pageSize = 65536;
+  }
+  uint32_t reservedBytes = hdr[20];
+  // obfsvfs signature: page_size == OBFS_PGSZ (8192) AND reserved == 32.
+  if (pageSize == OBFS_PGSZ && reservedBytes == 32) {
+    return OnDiskHeader::Encrypted;
+  }
+  // Any other SQLite-shaped file (a different page size or reserved-bytes
+  // value, i.e. not the obfsvfs signature) is treated as a plain SQLite
+  // database.
+  return OnDiskHeader::Plaintext;
+}
+
+/* For a journal/WAL open, strip the SQLite-internal suffix so the policy
+** lookup is keyed on the main DB's path. SQLite-internal suffixes:
+**   SQLITE_OPEN_MAIN_JOURNAL -- "-journal"
+**   SQLITE_OPEN_WAL          -- "-wal"
+** For SQLITE_OPEN_MAIN_DB the original zName is the policy key.
+*/
+static nsAutoCString DeriveMainDbPath(const char* zName, int flags) {
+  nsAutoCString p(zName);
+  if (flags & SQLITE_OPEN_MAIN_JOURNAL) {
+    constexpr auto kJournal = "-journal"_ns;
+    if (StringEndsWith(p, kJournal)) {
+      p.Truncate(p.Length() - kJournal.Length());
+    }
+  } else if (flags & SQLITE_OPEN_WAL) {
+    constexpr auto kWal = "-wal"_ns;
+    if (StringEndsWith(p, kWal)) {
+      p.Truncate(p.Length() - kWal.Length());
+    }
+  }
+  return p;
+}
+
+/* Pure-string fast bypass for the bootstrap files. Must run BEFORE any
+** storage-side call -- in particular before GetDatabaseEncryptionStatus,
+** which acquires sStateMutex via GetCachedProfilePath. The bypass path is
+** triggered when GetEncryptionKey (already holding sStateMutex) opens
+** lockstore.keys.sqlite via skv -> rusqlite -> our obfsvfs xOpen; without
+** this fast bypass the same thread would recurse into sStateMutex and
+** MOZ_CRASH on resource-deadlock-avoided.
+**
+** Same reasoning for NSS's own databases: libnss3's bundled SQLite shares
+** the global VFS namespace with ours, so its key4.db / cert9.db opens
+** during NSS_Initialize land in obfsOpen too -- and the storage-side
+** policy lookup would re-enter NSS via lockstore, deadlocking the still-
+** running NSS init. Bypassing these names keeps NSS's bootstrap fully
+** insulated from our at-rest layer.
+**
+** Operates on the post-suffix-stripped path, so journal/WAL opens (e.g.
+** "lockstore.keys.sqlite-wal") match too.
+*/
+static bool IsBootstrapBypassPath(const nsACString& aMainDbPath) {
+  return mozilla::storage::IsBootstrapDatabasePath(aMainDbPath);
+}
+
 static int obfsOpen(sqlite3_vfs* pVfs, const char* zName, sqlite3_file* pFile,
                     int flags, int* pOutFlags) {
   ObfsFile* p;
@@ -524,6 +681,10 @@ static int obfsOpen(sqlite3_vfs* pVfs, const char* zName, sqlite3_file* pFile,
   int rc, i;
   const char* zKey;
   u8 aKey[kKeyBytes];
+  // Set when aKey has already been populated by a non-hex path -- currently
+  // the partner-inheritance branch below. Suppresses the URI-key hex
+  // validation loop and the "no key -> plaintext forward" guard.
+  bool keyReady = false;
   pSubVfs = ORIGVFS(pVfs);
   if (flags &
       (SQLITE_OPEN_MAIN_DB | SQLITE_OPEN_WAL | SQLITE_OPEN_MAIN_JOURNAL)) {
@@ -531,19 +692,158 @@ static int obfsOpen(sqlite3_vfs* pVfs, const char* zName, sqlite3_file* pFile,
   } else {
     zKey = nullptr;
   }
-  if (zKey == nullptr) {
+
+  // Partner-cipher fast path. SQLite is opening the rollback journal or WAL
+  // of a connection whose main DB is already open; the partner ObfsFile
+  // carries the same per-DB key. Reuse it instead of consulting the
+  // keystore: (a) avoids one keystore round trip per journal/WAL open in
+  // steady state, and (b) keeps shutdown correct -- the keystore tears
+  // down before SQLite finalizes journals, so a keystore lookup here at
+  // shutdown returns NS_ERROR_FAILURE and would orphan the journal on
+  // disk. If the main DB is NOT an ObfsFile (lower-VFS plaintext open,
+  // e.g. for an out-of-profile or bypass DB), fall through; the policy
+  // branch below will land on Plaintext and forward to the lower VFS.
+  if (zKey == nullptr &&
+      (flags & (SQLITE_OPEN_WAL | SQLITE_OPEN_MAIN_JOURNAL))) {
+    sqlite3_file* pDbFile = sqlite3_database_file_object(zName);
+    if (pDbFile && pDbFile->pMethods == &obfs_io_methods) {
+      ObfsFile* pPartner = reinterpret_cast<ObfsFile*>(pDbFile);
+      ::memcpy(aKey, pPartner->aKey, sizeof(aKey));
+      keyReady = true;
+      MOZ_LOG(mozilla::storage::GetSQLiteEncryptionLog(),
+              mozilla::LogLevel::Verbose,
+              ("obfsOpen: inherited key from partner ObfsFile for %s",
+               zName));
+    }
+  }
+
+  // Owns the lifetime of a policy-derived hex key, when we take that branch.
+  // Declared here so the c_str() returned through zKey stays valid until
+  // the existing hex-validation loop below has finished consuming it.
+  nsAutoCString policyKey;
+
+  if (!keyReady && zKey == nullptr &&
+      (flags &
+       (SQLITE_OPEN_MAIN_DB | SQLITE_OPEN_WAL | SQLITE_OPEN_MAIN_JOURNAL))) {
+    // No URI key. With obfsvfs registered as SQLite's default VFS, this is
+    // the path every keyless main/WAL/journal open lands in. Apply the
+    // at-rest encryption *policy*; never silently fall back to plaintext
+    // for an in-profile DB whose policy says it must be encrypted.
+    mozilla::LogModule* log = mozilla::storage::GetSQLiteEncryptionLog();
+    nsAutoCString dbPath = DeriveMainDbPath(zName, flags);
+
+    // Fast bootstrap bypass -- runs BEFORE any storage-side call so it
+    // never touches sStateMutex. See IsBootstrapBypassPath for why this
+    // matters (would otherwise deadlock when GetEncryptionKey re-enters
+    // through skv, or recurse into NSS_Initialize via lockstore).
+    if (IsBootstrapBypassPath(dbPath)) {
+      return pSubVfs->xOpen(pSubVfs, zName, pFile, flags, pOutFlags);
+    }
+
+    mozilla::storage::EncryptionStatus status =
+        mozilla::storage::EncryptionStatus::Unset;
+    nsresult rv =
+        mozilla::storage::GetDatabaseEncryptionStatus(dbPath, status);
+    if (NS_FAILED(rv)) {
+      MOZ_LOG(log, mozilla::LogLevel::Error,
+              ("obfsOpen: policy lookup failed (0x%" PRIx32 ") for %s; "
+               "refusing open rather than risking plaintext fallback",
+               static_cast<uint32_t>(rv), zName));
+      return SQLITE_CANTOPEN;
+    }
+    if (status == mozilla::storage::EncryptionStatus::Unset) {
+      // Defensive: GetDatabaseEncryptionStatus sets a real value on every
+      // NS_OK path today, so this only fires if a future edit returns success
+      // without deciding. Refuse rather than fall through to a key lookup or a
+      // plaintext forward on an undecided policy.
+      MOZ_LOG(log, mozilla::LogLevel::Error,
+              ("obfsOpen: policy lookup left status unset for %s; refusing",
+               zName));
+      return SQLITE_CANTOPEN;
+    }
+
+    const bool isMainDb = flags & SQLITE_OPEN_MAIN_DB;
+    OnDiskHeader disk =
+        isMainDb ? PeekOnDiskHeader(dbPath.get()) : OnDiskHeader::Missing;
+
+    if (disk == OnDiskHeader::Error) {
+      // The file exists but its header could not be read (a non-ENOENT fopen
+      // failure). Never guess encrypted vs plaintext on an ambiguous open
+      // failure -- refuse rather than risk a plaintext write over ciphertext.
+      MOZ_LOG(log, mozilla::LogLevel::Error,
+              ("obfsOpen: could not inspect on-disk header for %s; refusing",
+               zName));
+      return SQLITE_CANTOPEN;
+    }
+
+    // No-CREATE open of a non-existent file (typical of app-services
+    // read-only probes that expect to retry with CREATE on failure):
+    // forward to the lower VFS so SQLite returns its natural
+    // file-not-found error rather than our keystore-derived
+    // SQLITE_CANTOPEN. Without this, the read-only probe would
+    // unnecessarily fire the re-unlock path and hard-error before the
+    // caller's retry-with-CREATE could re-enter and mint the DEK.
+    if (isMainDb && disk == OnDiskHeader::Missing &&
+        !(flags & SQLITE_OPEN_CREATE)) {
+      return pSubVfs->xOpen(pSubVfs, zName, pFile, flags, pOutFlags);
+    }
+
+    if (status == mozilla::storage::EncryptionStatus::Plaintext) {
+      // Out-of-profile, or the explicit bootstrap bypass for
+      // lockstore.keys.sqlite. Defense in depth: refuse to forward to the
+      // lower VFS plaintext when the file is already encrypted-shaped on
+      // disk, because that means policy regressed and a plaintext write
+      // would silently corrupt the existing ciphertext.
+      if (disk == OnDiskHeader::Encrypted) {
+        MOZ_LOG(log, mozilla::LogLevel::Error,
+                ("obfsOpen: policy says plaintext but on-disk header is "
+                 "encrypted for %s; refusing",
+                 zName));
+        return SQLITE_CANTOPEN_FULLPATH;
+      }
+      return pSubVfs->xOpen(pSubVfs, zName, pFile, flags, pOutFlags);
+    }
+
+    // status == Encrypted: derive the DEK from the keystore.
+    mozilla::storage::OpenIntent intent =
+        (flags & SQLITE_OPEN_CREATE)
+            ? mozilla::storage::OpenIntent::CreateIfNew
+            : mozilla::storage::OpenIntent::LoadExisting;
+    rv = mozilla::storage::GetEncryptionKey(dbPath, intent, policyKey);
+    if (NS_FAILED(rv)) {
+      MOZ_LOG(log, mozilla::LogLevel::Error,
+              ("obfsOpen: GetEncryptionKey 0x%" PRIx32
+               " for %s; refusing open (no plaintext fallback)",
+               static_cast<uint32_t>(rv), zName));
+      return SQLITE_CANTOPEN;
+    }
+    if (disk == OnDiskHeader::Plaintext) {
+      MOZ_LOG(log, mozilla::LogLevel::Error,
+              ("obfsOpen: policy says encrypted but on-disk header is "
+               "plaintext SQLite for %s; refusing rather than write "
+               "ciphertext over an existing plaintext DB",
+               zName));
+      return SQLITE_CANTOPEN_FULLPATH;
+    }
+    zKey = policyKey.get();
+  }
+
+  if (!keyReady && zKey == nullptr) {
     return pSubVfs->xOpen(pSubVfs, zName, pFile, flags, pOutFlags);
   }
-  for (i = 0;
-       i < kKeyBytes && isxdigit(zKey[i * 2]) && isxdigit(zKey[i * 2 + 1]);
-       i++) {
-    aKey[i] = (obfsHexToInt(zKey[i * 2]) << 4) | obfsHexToInt(zKey[i * 2 + 1]);
-  }
-  if (i != kKeyBytes) {
-    NS_WARNING(
-        nsPrintfCString("invalid query parameter on %s: key=%s", zName, zKey)
-            .get());
-    return SQLITE_CANTOPEN;
+  if (!keyReady) {
+    for (i = 0;
+         i < kKeyBytes && isxdigit(zKey[i * 2]) && isxdigit(zKey[i * 2 + 1]);
+         i++) {
+      aKey[i] =
+          (obfsHexToInt(zKey[i * 2]) << 4) | obfsHexToInt(zKey[i * 2 + 1]);
+    }
+    if (i != kKeyBytes) {
+      NS_WARNING(
+          nsPrintfCString("invalid query parameter on %s: key=%s", zName, zKey)
+              .get());
+      return SQLITE_CANTOPEN;
+    }
   }
   p = (ObfsFile*)pFile;
   memset(p, 0, sizeof(*p));
@@ -583,6 +883,9 @@ static int obfsOpen(sqlite3_vfs* pVfs, const char* zName, sqlite3_file* pFile,
 
   p->encryptCipherStrategy = encryptCipherStrategy.release();
   p->decryptCipherStrategy = decryptCipherStrategy.release();
+  // Persist the per-file key so the partner-inheritance branch above can
+  // reuse it when SQLite opens this connection's journal or WAL later.
+  ::memcpy(p->aKey, aKey, sizeof(aKey));
 
   return SQLITE_OK;
 }

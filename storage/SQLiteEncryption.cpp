@@ -280,8 +280,37 @@ void InitEncryptionKeystore() {
   }
 }
 
+bool IsBootstrapDatabasePath(const nsACString& aPath) {
+  // Single source of truth for the bootstrap-database name list; obfsvfs's
+  // IsBootstrapBypassPath delegates here so the two cannot drift.
+  static constexpr nsLiteralCString kBootstrapNames[] = {
+      "lockstore.keys.sqlite"_ns, "key4.db"_ns, "cert9.db"_ns, "key3.db"_ns,
+      "cert8.db"_ns};
+  // Match both separators: the bootstrap databases reach obfsvfs as native OS
+  // paths (rusqlite/skv open them directly, bypassing PreparePathForURI's
+  // forward-slash normalization), so on Windows the basename is delimited by a
+  // backslash.
+  const nsDependentCSubstring basename =
+      Substring(aPath, aPath.RFindCharInSet("/\\") + 1);
+  for (const auto& name : kBootstrapNames) {
+    if (basename == name) {
+      return true;
+    }
+  }
+  return false;
+}
+
 nsresult GetDatabaseEncryptionStatus(const nsACString& aDatabasePath,
                                      EncryptionStatus& aStatus) {
+  // Pref gate. With obfsvfs registered as the SQLite default VFS, every
+  // keyless sqlite3_open_v2 lands in this function via ObfsOpen; honour the
+  // master encryption pref here so a turned-off enterprise build still
+  // returns Plaintext for every path and obfsvfs forwards raw.
+  if (!StaticPrefs::security_storage_encryption_sqlite_enabled()) {
+    aStatus = EncryptionStatus::Plaintext;
+    return NS_OK;
+  }
+
   nsString profilePath;
   nsresult rv = GetCachedProfilePath(profilePath);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -301,11 +330,34 @@ nsresult GetDatabaseEncryptionStatus(const nsACString& aDatabasePath,
   rv = profileDir->Contains(dbFile, &isUnder);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  aStatus = isUnder ? EncryptionStatus::Encrypted : EncryptionStatus::Plaintext;
   if (!isUnder) {
+    aStatus = EncryptionStatus::Plaintext;
     MOZ_LOG(GetSQLiteEncryptionLog(), LogLevel::Debug,
             ("Database outside profile; opening unencrypted"));
+    return NS_OK;
   }
+
+  // Bootstrap bypass list. These in-profile SQLite databases must stay
+  // plaintext because they would otherwise re-enter the encryption layer
+  // during the very initialization that the encryption layer depends on:
+  //
+  //   - lockstore.keys.sqlite: the keystore itself. It is the source of
+  //     every per-database DEK, so there is no outer key to encrypt it
+  //     with. Encrypting it would require its own key, recursively.
+  //
+  //   - key4.db / cert9.db (and the legacy key3.db / cert8.db): NSS's own
+  //     softoken databases, opened by libnss3's bundled SQLite during
+  //     NSS_Initialize. Routing them through obfsvfs deadlocks the process
+  //     because GetEncryptionKey -> keystore_open -> nss_rs::init re-enters
+  //     NSS init while NSS_Initialize is still on the stack. NSS manages
+  //     its own at-rest protection for the private-key material in
+  //     key4.db; cert9.db holds public cert data.
+  if (IsBootstrapDatabasePath(aDatabasePath)) {
+    aStatus = EncryptionStatus::Plaintext;
+    return NS_OK;
+  }
+
+  aStatus = EncryptionStatus::Encrypted;
   return NS_OK;
 }
 

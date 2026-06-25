@@ -2219,12 +2219,24 @@ class Database final : public PBackgroundIDBDatabaseParent,
     // the current thread is the connection thread (mConnection might be reset
     // when EnsureConnection is called again, but in the meantime, we have to
     // fallback to just checking the main thread and the PBackgroud thread).
+    //
+    // We cannot additionally assert mInvalidated here: mConnection is only ever
+    // assigned (never cleared), so it is also left pointing at a closed
+    // connection after a routine idle-connection close. ConnectionPool's idle
+    // timer (IdleTimerCallback -> CloseDatabase -> CloseConnectionRunnable)
+    // closes the connection, and NoteClosedDatabase then drops the
+    // DatabaseInfo without invalidating the owning Database -- so the Database
+    // survives with a Closed() mConnection and mInvalidated still false. A
+    // sibling transaction's CommitOp can then run on the connection thread in
+    // this closed-but-not-invalidated state -- a window widened whenever an
+    // in-profile database open is slow (e.g. SQLite at-rest encryption fetching
+    // a per-database key). The CommitOp path tolerates a closed/absent
+    // connection, so only the thread identity matters here.
     if (mConnection && !mConnection->Closed()) {
       mConnection->AssertIsOnConnectionThread();
     } else {
       MOZ_ASSERT(!NS_IsMainThread());
       MOZ_ASSERT(!IsOnBackgroundThread());
-      MOZ_ASSERT(mInvalidated);
     }
 #endif
   }

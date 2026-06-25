@@ -38,6 +38,10 @@ enum class OpenIntent : uint8_t {
 // Whether a database should be opened encrypted or as plaintext, decided by
 // GetDatabaseEncryptionStatus from the database's location.
 enum class EncryptionStatus : uint8_t {
+  Unset,      // Sentinel: no decision made yet. Callers initialize to this and
+              // refuse the open if it survives a successful
+              // GetDatabaseEncryptionStatus return. A real value is always set
+              // on NS_OK; this only guards a future code path that forgets to.
   Encrypted,  // In-profile database: open through obfsvfs with a per-DB key.
   Plaintext,  // Out-of-profile database: open unencrypted, no key lookup.
 };
@@ -55,6 +59,19 @@ enum class EncryptionStatus : uint8_t {
 // error rather than opening plaintext.
 nsresult GetDatabaseEncryptionStatus(const nsACString& aDatabasePath,
                                      EncryptionStatus& aStatus);
+
+// True if |aPath|'s basename is one of the bootstrap SQLite databases that
+// must never be routed through the at-rest encryption layer: the lockstore
+// keystore itself (the source of every per-database key) and NSS's softoken
+// databases (key4.db / cert9.db and the legacy key3.db / cert8.db). Routing
+// any of these through obfsvfs would deadlock or recurse during the very
+// initialization the encryption layer depends on. This is the single source
+// of truth for that name list, shared by GetDatabaseEncryptionStatus and
+// obfsvfs's bootstrap bypass so the two can never drift apart. Matched by
+// exact basename and separator-aware (handles both '/' and '\\', as the
+// bootstrap databases reach obfsvfs as native OS paths). Pure string
+// inspection: takes no locks and is safe on the hot keyless-open path.
+bool IsBootstrapDatabasePath(const nsACString& aPath);
 
 // Look up (or, for OpenIntent::CreateIfNew, lazily create) the obfsvfs
 // per-database key for the SQLite database at |aDatabasePath| and return it
