@@ -1,9 +1,8 @@
 [DEFAULT]
 subsuite = "integration"
 tags = "inc-origin-init os_integration"
-# test_IDB_encryption_PBM verifies the QuotaVFS encryption layer writes
-# ciphertext for PBM DBs; stacking obfsvfs on top would double-encrypt and
-# break the on-disk checks.
+# test_IDB_encryption_PBM verifies QuotaVFS writes ciphertext for PBM DBs;
+# obfsvfs on top would double-encrypt.
 prefs = ["security.storage.encryption.sqlite.enabled=false"]
 
 ["test_IDB_encryption_PBM.py"]

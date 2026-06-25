@@ -48,6 +48,7 @@ EXPORTS.mozilla.storage += [
     "mozStorageStatementRow.h",
     "SQLiteMutex.h",
     "StatementCache.h",
+    "StoragePathUtil.h",
     "Variant.h",
     "Variant_inl.h",
 ]
@@ -76,6 +77,7 @@ UNIFIED_SOURCES += [
     "QuotaVFS.cpp",
     "ReadOnlyNoLockVFS.cpp",
     "StorageBaseStatementInternal.cpp",
+    "StoragePathUtil.cpp",
     "VacuumManager.cpp",
     "Variant.cpp",
 ]

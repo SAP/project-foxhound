@@ -279,6 +279,15 @@ interface nsIXULRuntime : nsISupports
   void invalidateCachesOnRestart();
 
   /**
+   * Record in the profile's compatibility.ini that this profile's SQLite
+   * databases are encrypted (security.storage.encryption.sqlite.enabled).
+   * Read back on the next startup so the apprunner can refuse to launch a
+   * build whose pref would open the now-encrypted databases as plaintext.
+   * Append-only and idempotent.
+   */
+  void markProfileEncryptedDatabases();
+
+  /**
    * Modification time of the profile lock before the profile was locked on
    * this startup. Used to know the last time the profile was used and not
    * closed cleanly. This is set to 0 if there was no existing profile lock.

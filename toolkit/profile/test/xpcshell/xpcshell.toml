@@ -31,6 +31,8 @@ run-if = ["os == 'mac'"]
 
 ["test_delete_dirs.js"]
 
+["test_encrypted_databases_marker.js"]
+
 ["test_find_currentProfile.js"]
 
 ["test_fix_directory_case.js"]

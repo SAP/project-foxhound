@@ -99,9 +99,9 @@ using u8 = unsigned char;
 #define ORIGFILE(p) ((sqlite3_file*)(((ObfsFile*)(p)) + 1))
 
 /*
-** Database page size for obfuscated databases
+** Database page size for obfuscated databases (defined in ObfuscatingVFS.h).
 */
-#define OBFS_PGSZ 8192
+#define OBFS_PGSZ (::mozilla::storage::obfsvfs::kObfsPageSize)
 
 #define WAL_FRAMEHDRSIZE 24
 

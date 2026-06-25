@@ -9,6 +9,7 @@
 #include "mozilla/StaticPrefs_security.h"
 #include "mozilla/glean/PlacesMetrics.h"
 #include "mozilla/security/KeyStorage.h"
+#include "mozilla/storage/StoragePathUtil.h"
 
 #include "Database.h"
 
@@ -350,6 +351,7 @@ nsresult AttachDatabase(nsCOMPtr<mozIStorageConnection>& aDBConn,
     rv = storage::key::GetKeyByPath(path.get(), dbKey);
     NS_ENSURE_SUCCESS(rv, rv);
 
+    storage::PreparePathForURI(path);
     path = nsPrintfCString("file:%s?key=%s", path.get(), dbKey.get());
   }
 

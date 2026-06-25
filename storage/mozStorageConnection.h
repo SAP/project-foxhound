@@ -533,6 +533,17 @@ class Connection final : public mozIStorageConnection,
   bool mDatabaseEncrypted;
 
   /**
+   * Default SQLite page size for this connection, kept in lock-step with
+   * mDatabaseEncrypted via SetDatabaseEncrypted() so initializeInternal() and
+   * GetDefaultPageSize() never disagree (a mismatch makes obfsvfs silently
+   * drop writes).
+   */
+  int32_t mPageSize;
+
+  // Set mDatabaseEncrypted and derive mPageSize together.
+  void SetDatabaseEncrypted(bool aEncrypted);
+
+  /**
    * Stores the growth increment chunk size, set through SetGrowthIncrement().
    */
   Atomic<int32_t> mGrowthChunkSize;

@@ -18826,10 +18826,10 @@
   value: true
   mirror: always
 
-# Enable sqlite database encryption. Mirrored "always" so that browser-chrome
-# tests that set the pref via their manifest see the updated value even when
-# Firefox was launched with the default. In practice the pref is read during
-# mozStorageService::Init and each Connection::initialize, not hot-reloaded.
+# INTERNAL -- DO NOT ENABLE. Master switch for SQLite database encryption
+# via obfsvfs; enabling without the rest of the key-management stack will
+# corrupt profiles by reopening existing unencrypted databases expecting
+# ciphertext. Read at Connection::initialize, not hot-reloadable.
 - name: security.storage.encryption.sqlite.enabled
   type: RelaxedAtomicBool
   value: false
