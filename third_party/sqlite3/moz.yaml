@@ -26,6 +26,8 @@ vendoring:
   source-hosting: github
   tracking: tag
   vendor-directory: third_party/sqlite3/src
+  patches:
+    - patches/*.patch
   skip-vendoring-steps:
     - hg-add
     - spurious-check
