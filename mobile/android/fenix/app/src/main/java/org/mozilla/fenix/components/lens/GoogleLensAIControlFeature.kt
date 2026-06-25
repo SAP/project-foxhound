@@ -12,7 +12,6 @@ import mozilla.components.concept.ai.controls.AIFeatureMetadata
 import mozilla.components.concept.ai.controls.AIFeatureState
 import org.mozilla.fenix.R
 import org.mozilla.fenix.utils.Settings
-import mozilla.components.ui.icons.R as iconsR
 
 /**
  * The AI Controls feature settings for the Google Lens integration. The toggle is local only and
@@ -42,7 +41,7 @@ class GoogleLensAIControlFeature(
         override val description: AIFeatureMetadata.Description = AIFeatureMetadata.Description(
             titleRes = R.string.ai_controls_google_lens_title,
             descriptionRes = R.string.ai_controls_google_lens_description,
-            iconRes = iconsR.drawable.mozac_ic_image_24,
+            iconRes = R.drawable.ic_logo_google_lens_24,
         )
     }
 }

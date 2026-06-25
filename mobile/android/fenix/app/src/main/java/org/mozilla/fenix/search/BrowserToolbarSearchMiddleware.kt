@@ -578,7 +578,7 @@ class BrowserToolbarSearchMiddleware(
             ) {
                 add(
                     ActionButtonRes(
-                        drawableResId = iconsR.drawable.mozac_ic_image_24,
+                        drawableResId = R.drawable.ic_logo_google_lens_24,
                         contentDescription = R.string.lens_search_content_description,
                         state = ActionButton.State.DEFAULT,
                         onClick = LensButtonClicked,

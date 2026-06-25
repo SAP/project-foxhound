@@ -193,7 +193,7 @@ private fun ModeToggle(
     ) {
         ToggleHalf(
             selected = mode == CameraMode.LENS,
-            iconRes = iconsR.drawable.mozac_ic_image_24,
+            iconRes = R.drawable.ic_logo_google_lens_24,
             contentDesc = stringResource(R.string.lens_camera_mode_lens),
             onClick = { onModeChange(CameraMode.LENS) },
         )
