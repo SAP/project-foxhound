@@ -108,7 +108,14 @@ DictionaryCacheEntry::~DictionaryCacheEntry() {
       ("Destroyed DictionaryCacheEntry %p, uri=%s, pattern=%s, id=%s", this,
        mURI.get(), mPattern.get(), mId.get()));
   if (mCachedPattern.isSome()) {
-    urlpattern_pattern_free(mCachedPattern.ref());
+    if (NS_IsMainThread()) {
+      urlpattern_pattern_free(mCachedPattern.ref());
+    } else {
+      UrlPatternGlue pattern = mCachedPattern.ref();
+      NS_DispatchToMainThread(NS_NewRunnableFunction(
+          "DictionaryCacheEntry::FreeCachedPattern",
+          [pattern]() { urlpattern_pattern_free(pattern); }));
+    }
   }
 }
 
