@@ -8,7 +8,7 @@
 #include "mozilla/StaticPrefs_places.h"
 #include "mozilla/StaticPrefs_security.h"
 #include "mozilla/glean/PlacesMetrics.h"
-#include "mozilla/security/KeyStorage.h"
+#include "mozilla/storage/SQLiteEncryption.h"
 #include "mozilla/storage/StoragePathUtil.h"
 
 #include "Database.h"
@@ -347,12 +347,21 @@ nsresult AttachDatabase(nsCOMPtr<mozIStorageConnection>& aDBConn,
   bool encryptionEnabled =
       StaticPrefs::security_storage_encryption_sqlite_enabled();
   if (encryptionEnabled) {
-    nsCString dbKey;
-    rv = storage::key::GetKeyByPath(path.get(), dbKey);
+    storage::EncryptionStatus encStatus;
+    rv = storage::GetDatabaseEncryptionStatus(path, encStatus);
     NS_ENSURE_SUCCESS(rv, rv);
 
-    storage::PreparePathForURI(path);
-    path = nsPrintfCString("file:%s?key=%s", path.get(), dbKey.get());
+    // Outside-profile DBs attach unencrypted. In-profile attach targets always
+    // pre-exist, so load the DEK (never create one).
+    if (encStatus == storage::EncryptionStatus::Encrypted) {
+      nsCString dbKey;
+      rv = storage::GetEncryptionKey(path, storage::OpenIntent::LoadExisting,
+                                     dbKey);
+      NS_ENSURE_SUCCESS(rv, rv);
+
+      storage::PreparePathForURI(path);
+      path = nsPrintfCString("file:%s?key=%s", path.get(), dbKey.get());
+    }
   }
 
   nsCOMPtr<mozIStorageStatement> stmt;

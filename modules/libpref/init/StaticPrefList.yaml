@@ -18455,11 +18455,14 @@
   mirror: always
 
 # This is checked at startup to see if NSS should be initialized without the
-# user's certificate and key databases.
+# user's certificate and key databases. `always`-mirrored (not `once`) because
+# NSS can be initialized before user prefs are read (at-rest SQLite encryption
+# brings NSS up early to avoid a worker-thread deadlock); a `once` read there
+# would prematurely snapshot every once-mirrored pref at its default.
 - name: security.nocertdb
-  type: bool
+  type: RelaxedAtomicBool
   value: false
-  mirror: once
+  mirror: always
 
 # Whether or not to import and trust third party root certificates from the OS.
 - name: security.enterprise_roots.enabled
@@ -18487,10 +18490,14 @@
 # If true, load PKCS#11 third-party modules in a dedicated utility process
 # rather than the main process. (Well, that's the long-term goal for the code
 # paths behind this pref, but right now this is still work in progress!)
+# `always`-mirrored (not `once`) because psm::InitializeNSS reads it, and NSS
+# can be initialized before user prefs are read (at-rest SQLite encryption
+# brings NSS up early to avoid a worker-thread deadlock); a `once` read there
+# would prematurely snapshot every once-mirrored pref at its default.
 - name: security.utility_pkcs11_module_process.enabled
-  type: bool
+  type: RelaxedAtomicBool
   value: false
-  mirror: once
+  mirror: always
 
 - name: security.pki.cert_short_lifetime_in_days
   type: RelaxedAtomicUint32

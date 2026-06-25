@@ -580,7 +580,7 @@ nsresult CheckForSmartCardChanges() {
   // If this is the parent process and PKCS#11 modules are loaded in the
   // utility process, this is a no-op.
   if (XRE_IsParentProcess() &&
-      StaticPrefs::security_utility_pkcs11_module_process_enabled_AtStartup()) {
+      StaticPrefs::security_utility_pkcs11_module_process_enabled()) {
     return NS_OK;
   }
 #  endif
@@ -1524,7 +1524,10 @@ nsresult nsNSSComponent::InitializeNSS() {
   SetNSSDatabaseCacheModeAsAppropriate();
 #endif
 
-  bool nocertdb = StaticPrefs::security_nocertdb_AtStartup();
+  // `always`-mirrored, not `_AtStartup` (see the pref definition): NSS can be
+  // initialized before user prefs are read, where a `once` read would snapshot
+  // every once-mirrored pref at its default too early.
+  bool nocertdb = StaticPrefs::security_nocertdb();
   bool inSafeMode = GetInSafeMode();
   MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("inSafeMode: %u\n", inSafeMode));
 

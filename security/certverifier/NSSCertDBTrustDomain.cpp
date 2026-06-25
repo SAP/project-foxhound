@@ -1547,10 +1547,9 @@ SECStatus InitializeNSS(const nsACString& dir, NSSDBConfig nssDbConfig,
   MOZ_ASSERT(NS_IsMainThread() || XRE_IsUtilityProcess());
   // If this is the utility process, the pref to enable the utility process
   // better be true (or this is a gtest).
-  MOZ_ASSERT(
-      !XRE_IsUtilityProcess() ||
-      StaticPrefs::security_utility_pkcs11_module_process_enabled_AtStartup() ||
-      PR_GetEnv("MOZ_RUN_GTEST"));
+  MOZ_ASSERT(!XRE_IsUtilityProcess() ||
+             StaticPrefs::security_utility_pkcs11_module_process_enabled() ||
+             PR_GetEnv("MOZ_RUN_GTEST"));
 
   // The NSS_INIT_NOROOTINIT flag turns off the loading of the root certs
   // module by NSS_Initialize because we will load it in LoadLoadableRoots
@@ -1566,7 +1565,7 @@ SECStatus InitializeNSS(const nsACString& dir, NSSDBConfig nssDbConfig,
   // PKCS#11 module DB.
   bool isParentProcessButLoadingModulesInUtilityProcess =
       XRE_IsParentProcess() &&
-      StaticPrefs::security_utility_pkcs11_module_process_enabled_AtStartup();
+      StaticPrefs::security_utility_pkcs11_module_process_enabled();
   if (pkcs11DbConfig == PKCS11DBConfig::DoNotLoadModules ||
       isParentProcessButLoadingModulesInUtilityProcess) {
     flags |= NSS_INIT_NOMODDB;
@@ -1606,7 +1605,7 @@ SECStatus InitializeNSS(const nsACString& dir, NSSDBConfig nssDbConfig,
   // and the utility process is not enabled or if this is the utility process.
   bool isParentProcessAndNotLoadingModulesInUtilityProcess =
       XRE_IsParentProcess() &&
-      !StaticPrefs::security_utility_pkcs11_module_process_enabled_AtStartup();
+      !StaticPrefs::security_utility_pkcs11_module_process_enabled();
   if (isParentProcessAndNotLoadingModulesInUtilityProcess ||
       XRE_IsUtilityProcess()) {
     CollectThirdPartyPKCS11ModuleTelemetry(/*aIsInitialization=*/true);

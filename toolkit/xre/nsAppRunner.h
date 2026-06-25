@@ -62,6 +62,14 @@ extern bool gAllowContentAnalysisArgPresent;
 
 namespace mozilla {
 nsresult AppInfoConstructor(const nsID& aIID, void** aResult);
+
+// Append the EncryptedDatabases marker to the running profile's
+// compatibility.ini (append-only; skips if already present). Exposed as a free
+// function so storage (SQLite at-rest encryption) can call it directly rather
+// than via an XPCOM service lookup;
+// nsIXULRuntime::MarkProfileEncryptedDatabases delegates here for the JS / test
+// entry point.
+nsresult MarkProfileEncryptedDatabases();
 }  // namespace mozilla
 
 // Exported for gtests.

@@ -7,6 +7,8 @@
 #include "mozilla/SpinEventLoopUntil.h"
 #include "nsIFile.h"
 #include "nsIFileURL.h"
+#include "nsAppDirectoryServiceDefs.h"
+#include "nsDirectoryServiceUtils.h"
 #include "mozStorageService.h"
 #include "mozStorageConnection.h"
 #include "nsComponentManagerUtils.h"
@@ -25,7 +27,7 @@
 #include "mozilla/StaticPrefs_storage.h"
 #include "mozilla/intl/Collator.h"
 #include "mozilla/intl/LocaleService.h"
-#include "mozilla/security/KeyStorage.h"
+#include "mozilla/storage/SQLiteEncryption.h"
 
 #include "sqlite3.h"
 #include "mozilla/AutoSQLiteLifetime.h"
@@ -377,14 +379,18 @@ nsresult Service::initialize() {
   mozilla::RegisterStorageSQLiteDistinguishedAmount(
       StorageSQLiteDistinguishedAmount);
 
-  // Always register the key-storage profile observer so that the current
-  // profile path is known by the time any connection needs a key, even if
-  // the encryption pref is flipped on later (e.g. by browser-chrome tests
-  // setting `prefs = [...]` in their manifest).
-  {
-    nsresult rv = storage::key::Init();
-    NS_ENSURE_SUCCESS(rv, rv);
-  }
+  // Eagerly cache the profile path and register the keystore observers.
+  // Off-main-thread database opens (Cookie, IndexedDB/QuotaManager, etc.)
+  // that race ahead of this still get their key: GetEncryptionKey resolves
+  // and caches the profile path on first use from any thread.
+  // Registers the profile observer that, when SQLite encryption is on,
+  // initializes NSS on the main thread at profile-do-change -- before any
+  // in-profile database is opened on a worker. That makes the worker-thread
+  // EnsureNSSInitializedChromeOrContent() a no-op, so it never has to
+  // SyncRunnable-dispatch NSS init back to a main thread that may be blocked
+  // awaiting the storage operation (which would deadlock). See
+  // storage/SQLiteEncryption.cpp.
+  InitEncryptionKeystore();
 
   return NS_OK;
 }

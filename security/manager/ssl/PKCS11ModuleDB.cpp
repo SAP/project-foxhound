@@ -39,7 +39,7 @@ PKCS11ModuleDB::PKCS11ModuleDB() {
   MOZ_ASSERT(NS_IsMainThread());
 
 #if defined(NIGHTLY_BUILD) && !defined(MOZ_NO_SMART_CARDS)
-  if (StaticPrefs::security_utility_pkcs11_module_process_enabled_AtStartup() &&
+  if (StaticPrefs::security_utility_pkcs11_module_process_enabled() &&
       !GetInSafeMode()) {
     auto manager = ipc::UtilityProcessManager::GetSingleton();
     MOZ_ASSERT(manager);
@@ -161,7 +161,7 @@ PKCS11ModuleDB::DeleteModule(const nsAString& aModuleName, JSContext* aCx,
       "DeleteModule promise", promise);
 
 #if defined(NIGHTLY_BUILD) && !defined(MOZ_NO_SMART_CARDS)
-  if (StaticPrefs::security_utility_pkcs11_module_process_enabled_AtStartup()) {
+  if (StaticPrefs::security_utility_pkcs11_module_process_enabled()) {
     if (!mPKCS11ModuleProcessPromise) {
       return NS_ERROR_NOT_AVAILABLE;
     }
@@ -343,7 +343,7 @@ PKCS11ModuleDB::AddModule(const nsAString& aModuleName,
       MakeRefPtr<nsMainThreadPtrHolder<Promise>>("AddModule promise", promise);
 
 #if defined(NIGHTLY_BUILD) && !defined(MOZ_NO_SMART_CARDS)
-  if (StaticPrefs::security_utility_pkcs11_module_process_enabled_AtStartup()) {
+  if (StaticPrefs::security_utility_pkcs11_module_process_enabled()) {
     if (!mPKCS11ModuleProcessPromise) {
       return NS_ERROR_NOT_AVAILABLE;
     }
@@ -548,7 +548,7 @@ PKCS11ModuleDB::ListModules(JSContext* aCx, Promise** aPromise) {
   promises.AppendElement(ListMainProcessModules());
 
 #if defined(NIGHTLY_BUILD) && !defined(MOZ_NO_SMART_CARDS)
-  if (StaticPrefs::security_utility_pkcs11_module_process_enabled_AtStartup()) {
+  if (StaticPrefs::security_utility_pkcs11_module_process_enabled()) {
     promises.AppendElement(ListRemoteProcessModules());
   }
 #endif  // NIGHTLY_BUILD && !MOZ_NO_SMART_CARDS

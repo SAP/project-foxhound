@@ -4,6 +4,7 @@
 
 XPCSHELL_TESTS_MANIFESTS += ["unit/xpcshell.toml"]
 MOCHITEST_CHROME_MANIFESTS += ["chrome/chrome.toml"]
+BROWSER_CHROME_MANIFESTS += ["browser/encryption/browser.toml"]
 
 TEST_DIRS += ["gtest"]
 
