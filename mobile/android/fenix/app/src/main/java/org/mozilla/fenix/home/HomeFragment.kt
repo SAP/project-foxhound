@@ -104,7 +104,6 @@ import org.mozilla.fenix.components.toolbar.ToolbarPosition
 import org.mozilla.fenix.compose.snackbar.SnackbarState
 import org.mozilla.fenix.ext.application
 import org.mozilla.fenix.ext.components
-import org.mozilla.fenix.ext.getRootView
 import org.mozilla.fenix.ext.hideToolbar
 import org.mozilla.fenix.ext.isOnline
 import org.mozilla.fenix.ext.nav
@@ -1311,7 +1310,7 @@ class HomeFragment : Fragment() {
             ),
             logoController = LogoController(
                 longFoxFeature = requireComponents.core.longFoxFeature,
-                container = requireActivity().getRootView() as? ViewGroup,
+                context = requireActivity(),
                 longFoxEnabled = requireComponents.settings.longfoxEnabled,
             ),
             sportsController = DefaultSportsController(

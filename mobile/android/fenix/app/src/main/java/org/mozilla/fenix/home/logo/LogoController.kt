@@ -4,7 +4,7 @@
 
 package org.mozilla.fenix.home.logo
 
-import android.view.ViewGroup
+import android.content.Context
 import org.mozilla.fenix.longfox.LongFoxFeatureApi
 
 /**
@@ -12,7 +12,7 @@ import org.mozilla.fenix.longfox.LongFoxFeatureApi
  */
 class LogoController(
     private val longFoxFeature: LongFoxFeatureApi,
-    private val container: ViewGroup?,
+    private val context: Context,
     private val longFoxEnabled: Boolean,
 ) {
 
@@ -20,7 +20,7 @@ class LogoController(
      * When the longfox entry point text is clicked, launch the LongFox feature.
      */
     fun handleLongfoxEntryPointClicked() {
-        if (container != null && longFoxEnabled) longFoxFeature.start(container = container)
+        if (longFoxEnabled) longFoxFeature.start(context)
     }
 
     /**
