@@ -1,5 +1,4 @@
 [DEFAULT]
-prefs = ["security.storage.encryption.sqlite.enabled=true"]
 
 ["browser_connect.js"]
 

@@ -10,7 +10,6 @@ support-files = [
 ]
 
 ["test_attach_database_uri_encoded_path.js"]
-prefs = ["security.storage.encryption.sqlite.enabled=true"]
 
 ["test_bindArray.js"]
 

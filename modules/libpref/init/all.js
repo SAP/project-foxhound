@@ -3978,6 +3978,13 @@ pref("dom.postMessage.sharedArrayBuffer.bypassCOOP_COEP.insecure.enabled", false
 pref("dom.postMessage.sharedArrayBuffer.bypassCOOP_COEP.insecure.enabled", false, locked);
 #endif
 
+// Locked so end users cannot toggle SQLite encryption from about:config or
+// user.js. Enterprise policies (Preferences allowlist) and our keystore
+// auto-recovery use the unlock/setDefault/relock dance to override.
+// Defined in StaticPrefList.yaml; locked here because the YAML has no
+// "locked" attribute.
+pref("security.storage.encryption.sqlite.enabled", false, locked);
+
 // Preferences for the form autofill toolkit component.
 // The truthy values of "extensions.formautofill.addresses.available"
 // is "on" and "detect",

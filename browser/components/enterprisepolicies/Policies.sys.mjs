@@ -2458,6 +2458,7 @@ export var Policies = {
         "security.ssl.enable_ocsp_stapling",
         "security.ssl.errorReporting.enabled",
         "security.ssl.require_safe_negotiation",
+        "security.storage.encryption.sqlite.enabled",
         "security.tls.enable_0rtt_data",
         "security.tls.hello_downgrade_check",
         "security.tls.version.enable-deprecated",

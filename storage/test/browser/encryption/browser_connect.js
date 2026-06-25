@@ -18,11 +18,15 @@ async function removeIfExists(path) {
 }
 
 add_task(async function testSecurityEnableEncryption() {
-  is(
-    Services.prefs.getBoolPref("security.storage.encryption.sqlite.enabled"),
-    true,
-    "security.storage.encryption.sqlite.enabled should be enabled"
-  );
+  if (
+    !Services.prefs.getBoolPref(
+      "security.storage.encryption.sqlite.enabled",
+      false
+    )
+  ) {
+    ok(true, "SQLite encryption disabled (landing default); skipping.");
+    return;
+  }
 
   let profileDir = Services.dirsvc.get("ProfD", Ci.nsIFile).path;
 

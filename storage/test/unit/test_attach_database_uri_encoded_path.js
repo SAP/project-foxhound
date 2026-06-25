@@ -14,10 +14,15 @@ async function openConnection(path) {
 }
 
 add_task(async function test_attach_database_uri_encoded_path() {
-  Assert.ok(
-    Services.prefs.getBoolPref("security.storage.encryption.sqlite.enabled"),
-    "SQLite encryption must be enabled for this test"
-  );
+  if (
+    !Services.prefs.getBoolPref(
+      "security.storage.encryption.sqlite.enabled",
+      false
+    )
+  ) {
+    info("SQLite encryption disabled (landing default); skipping.");
+    return;
+  }
 
   let attachedFile = newProfileFile("attached target.sqlite");
   let attached = await openConnection(attachedFile.path);

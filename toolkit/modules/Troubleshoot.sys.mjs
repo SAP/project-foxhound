@@ -141,6 +141,7 @@ const PREFS_UNIMPORTANT_LOCKED = [
   "dom.postMessage.sharedArrayBuffer.bypassCOOP_COEP.insecure.enabled",
   "extensions.backgroundServiceWorker.enabled",
   "privacy.restrict3rdpartystorage.url_decorations",
+  "security.storage.encryption.sqlite.enabled",
 ];
 
 function getPref(name) {
