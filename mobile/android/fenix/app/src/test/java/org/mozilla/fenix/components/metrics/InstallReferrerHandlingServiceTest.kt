@@ -429,6 +429,24 @@ internal class InstallReferrerHandlingServiceTest {
     }
 
     @Test
+    fun `WHEN installReferrerResponse has utm_source reddit THEN isRedditAttribution returns true`() {
+        assertTrue(InstallReferrerHandlingService.isRedditAttribution("utm_source=reddit&utm_medium=paid"))
+    }
+
+    @Test
+    fun `WHEN installReferrerResponse has a mixed-case utm_source reddit THEN isRedditAttribution returns true`() {
+        assertTrue(InstallReferrerHandlingService.isRedditAttribution("utm_source=Reddit&utm_medium=paid"))
+        assertTrue(InstallReferrerHandlingService.isRedditAttribution("utm_source%3Dreddit&utm_medium=paid"))
+    }
+
+    @Test
+    fun `WHEN installReferrerResponse has a utm_source that merely starts with reddit THEN isRedditAttribution returns false`() {
+        assertFalse(InstallReferrerHandlingService.isRedditAttribution("utm_source=reddities&utm_medium=cpc"))
+        assertFalse(InstallReferrerHandlingService.isRedditAttribution("utm_source=reddit_news&utm_medium=cpc"))
+        assertFalse(InstallReferrerHandlingService.isRedditAttribution("utm_source=reddit news&utm_medium=cpc"))
+    }
+
+    @Test
     fun `WHEN installReferrerResponse has a malformed percent escape THEN isRedditAttribution falls back to raw parsing`() {
         assertTrue(
             InstallReferrerHandlingService.isRedditAttribution(
