@@ -22,6 +22,8 @@ async function testWghtInteract(inspector, viewDoc) {
   is(wghtInput.value, "800", "wght value is 800 before focusing");
 
   wghtInput.focus();
+  await wait(100);
+
   is(wghtInput.value, "800", "wght value is 800 after focusing");
 }
 
@@ -34,11 +36,20 @@ async function testInstanceChange(inspector, viewDoc) {
   const instanceSelect = viewDoc.querySelector(
     "#font-editor .font-value-select"
   );
-
   instanceSelect.focus();
+  await wait(100);
+
+  const ruleView = inspector.getPanel("ruleview").view;
+  const onRuleViewChanged = ruleView.once("ruleview-changed");
+
   const onEditorUpdated = inspector.once("fonteditor-updated");
   EventUtils.sendKey("LEFT", viewDoc.defaultView);
+
+  info("Wait for fonteditor-updated");
   await onEditorUpdated;
+
+  info("Wait for ruleview-changed");
+  await onRuleViewChanged;
 
   wghtInput = viewDoc.querySelector(`.font-value-input[name="wght"]`);
   is(wghtInput.value, "900", "wght value is 900 after selecting new instance");
@@ -68,9 +79,19 @@ async function testInstanceWghtRounded(inspector, viewDoc) {
     "#font-editor .font-value-select"
   );
   instanceSelect.focus();
+  await wait(100);
+
+  const ruleView = inspector.getPanel("ruleview").view;
+  const onRuleViewChanged = ruleView.once("ruleview-changed");
+
   const onEditorUpdated = inspector.once("fonteditor-updated");
   EventUtils.sendKey("LEFT", viewDoc.defaultView);
+
+  info("Wait for fonteditor-updated");
   await onEditorUpdated;
+
+  info("Wait for ruleview-changed");
+  await onRuleViewChanged;
 
   wghtInput = viewDoc.querySelector(`.font-value-input[name="wght"]`);
   is(
@@ -80,6 +101,7 @@ async function testInstanceWghtRounded(inspector, viewDoc) {
   );
 
   wghtInput.focus();
+  await wait(100);
   is(wghtInput.value, "699.444", "wght value is rounded after focusing");
 }
 
@@ -90,6 +112,14 @@ async function testAxisStepRounded(inspector, viewDoc) {
   is(wghtInput.value, "699.444", "wght value is 699.444 before stepping");
 
   wghtInput.focus();
+  await wait(100);
+
+  const ruleView = inspector.getPanel("ruleview").view;
+  const onRuleViewChanged = ruleView.once("ruleview-changed");
+
   EventUtils.sendKey("DOWN", viewDoc.defaultView);
   is(wghtInput.value, "699.333", "wght value is rounded after stepping down");
+
+  info("Wait for ruleview-changed");
+  await onRuleViewChanged;
 }
