@@ -140,7 +140,12 @@ already_AddRefed<Promise> Promise::Resolve(
     nsIGlobalObject* aGlobal, JSContext* aCx, JS::Handle<JS::Value> aValue,
     ErrorResult& aRv, PropagateUserInteraction aPropagateUserInteraction) {
   JSAutoRealm ar(aCx, aGlobal->GetGlobalJSObject());
-  JS::Rooted<JSObject*> p(aCx, JS::CallOriginalPromiseResolve(aCx, aValue));
+  JS::Rooted<JS::Value> value(aCx, aValue);
+  if (!JS_WrapValue(aCx, &value)) {
+    aRv.NoteJSContextException(aCx);
+    return nullptr;
+  }
+  JS::Rooted<JSObject*> p(aCx, JS::CallOriginalPromiseResolve(aCx, value));
   if (!p) {
     aRv.NoteJSContextException(aCx);
     return nullptr;
@@ -155,7 +160,12 @@ already_AddRefed<Promise> Promise::Reject(nsIGlobalObject* aGlobal,
                                           JS::Handle<JS::Value> aValue,
                                           ErrorResult& aRv) {
   JSAutoRealm ar(aCx, aGlobal->GetGlobalJSObject());
-  JS::Rooted<JSObject*> p(aCx, JS::CallOriginalPromiseReject(aCx, aValue));
+  JS::Rooted<JS::Value> value(aCx, aValue);
+  if (!JS_WrapValue(aCx, &value)) {
+    aRv.NoteJSContextException(aCx);
+    return nullptr;
+  }
+  JS::Rooted<JSObject*> p(aCx, JS::CallOriginalPromiseReject(aCx, value));
   if (!p) {
     aRv.NoteJSContextException(aCx);
     return nullptr;
