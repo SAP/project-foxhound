@@ -11,6 +11,8 @@ ChromeUtils.defineESModuleGetters(this, {
 
 var { ExtensionError, promiseObserved } = ExtensionUtils;
 
+// Note: params from extensions are in CSS pixels, not desktop pixels.
+// This method clamps values as needed, still in CSS pixels.
 function sanitizePositionParams(params, window = null, positionOffset = 0) {
   if (params.left === null && params.top === null) {
     return;
@@ -43,37 +45,36 @@ function sanitizePositionParams(params, window = null, positionOffset = 0) {
   const screenManager = Cc["@mozilla.org/gfx/screenmanager;1"].getService(
     Ci.nsIScreenManager
   );
+  // screenForRect and GetAvailRectDisplayPix expect desktop pixels, so we need
+  // to map to desktop pixels (and back to CSS pixels later).
+  const cssToDesktopScale = window
+    ? window.devicePixelRatio / window.desktopToDeviceScale
+    : 1;
+  const desktopLeft = params.left * cssToDesktopScale;
+  const desktopTop = params.top * cssToDesktopScale;
+  const desktopWidth = width * cssToDesktopScale;
+  const desktopHeight = height * cssToDesktopScale;
   const screen = screenManager.screenForRect(
-    params.left,
-    params.top,
-    width,
-    height
+    desktopLeft,
+    desktopTop,
+    desktopWidth,
+    desktopHeight
   );
-  const availDeviceLeft = {};
-  const availDeviceTop = {};
-  const availDeviceWidth = {};
-  const availDeviceHeight = {};
-  screen.GetAvailRect(
-    availDeviceLeft,
-    availDeviceTop,
-    availDeviceWidth,
-    availDeviceHeight
-  );
-  const slopX = window?.screenEdgeSlopX || 0;
-  const slopY = window?.screenEdgeSlopY || 0;
-  const factor = screen.defaultCSSScaleFactor;
-  const availLeft = Math.floor(availDeviceLeft.value / factor) - slopX;
-  const availTop = Math.floor(availDeviceTop.value / factor) - slopY;
-  const availWidth = Math.floor(availDeviceWidth.value / factor) + slopX;
-  const availHeight = Math.floor(availDeviceHeight.value / factor) + slopY;
-  params.left = Math.min(
-    availLeft + availWidth - width,
-    Math.max(availLeft, params.left)
-  );
-  params.top = Math.min(
-    availTop + availHeight - height,
-    Math.max(availTop, params.top)
-  );
+  const availLeft = {};
+  const availTop = {};
+  const availWidth = {};
+  const availHeight = {};
+  screen.GetAvailRectDisplayPix(availLeft, availTop, availWidth, availHeight);
+  const slopX = (window?.screenEdgeSlopX || 0) * cssToDesktopScale;
+  const slopY = (window?.screenEdgeSlopY || 0) * cssToDesktopScale;
+  const minLeft = availLeft.value - slopX;
+  const minTop = availTop.value - slopY;
+  const maxLeft = availLeft.value + availWidth.value - desktopWidth;
+  const maxTop = availTop.value + availHeight.value - desktopHeight;
+  const clampedLeft = Math.min(maxLeft, Math.max(minLeft, desktopLeft));
+  const clampedTop = Math.min(maxTop, Math.max(minTop, desktopTop));
+  params.left = Math.round(clampedLeft / cssToDesktopScale);
+  params.top = Math.round(clampedTop / cssToDesktopScale);
 }
 
 this.windows = class extends ExtensionAPIPersistent {
@@ -429,11 +430,20 @@ this.windows = class extends ExtensionAPIPersistent {
           if (createData.height !== null) {
             features.push("outerHeight=" + createData.height);
           }
+          // TODO bug 2049007: openWindow() with null parent currently
+          // interprets left/top as desktop pixels instead of CSS pixels.
+          const cssToDesktopScale = baseWindow
+            ? baseWindow.devicePixelRatio / baseWindow.desktopToDeviceScale
+            : 1;
           if (createData.left !== null) {
-            features.push("left=" + createData.left);
+            features.push(
+              "left=" + Math.round(createData.left * cssToDesktopScale)
+            );
           }
           if (createData.top !== null) {
-            features.push("top=" + createData.top);
+            features.push(
+              "top=" + Math.round(createData.top * cssToDesktopScale)
+            );
           }
 
           let window = Services.ww.openWindow(

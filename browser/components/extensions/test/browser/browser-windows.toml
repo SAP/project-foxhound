@@ -28,6 +28,8 @@ tags = "fullscreen"
 
 ["browser_ext_windows_create_cookieStoreId.js"]
 
+["browser_ext_windows_create_hidpi.js"]
+
 ["browser_ext_windows_create_params.js"]
 skip-if = [
   "os == 'win' && os_version == '11.26200' && asan", # Bug 2019745
