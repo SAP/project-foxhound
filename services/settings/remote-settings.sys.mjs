@@ -350,6 +350,7 @@ function remoteSettingsFunction() {
     expectedTimestamp,
     trigger = "manual",
     full = false,
+    // eslint-disable-next-line complexity
   } = {}) => {
     if (lazy.Utils.shouldSkipRemoteActivity) {
       return;
@@ -432,18 +433,32 @@ function remoteSettingsFunction() {
       }
     }
 
+    // Do we have the latest version already?
+    // Every time we register a new client, we have to fetch the whole list again.
+    const lastEtag = _invalidatePolling
+      ? ""
+      : lazy.gPrefs.getStringPref(PREF_SETTINGS_LAST_ETAG, "");
+
+    if (
+      trigger == "startup" &&
+      lastEtag &&
+      expectedTimestamp &&
+      lastEtag > expectedTimestamp
+    ) {
+      // startup trigger event can fire with a stale timestamp when clients reconnect to push
+      await lazy.UptakeTelemetry.report(
+        lazy.UptakeTelemetry.STATUS.STALE_EXPECTED,
+        pollTelemetryArgs
+      );
+      return;
+    }
+
     lazy.console.info(`Start polling for changes (trigger=${trigger})`);
     Services.obs.notifyObservers(
       null,
       "remote-settings:changes-poll-start",
       JSON.stringify({ expectedTimestamp })
     );
-
-    // Do we have the latest version already?
-    // Every time we register a new client, we have to fetch the whole list again.
-    const lastEtag = _invalidatePolling
-      ? ""
-      : lazy.gPrefs.getStringPref(PREF_SETTINGS_LAST_ETAG, "");
 
     let pollResult;
     try {

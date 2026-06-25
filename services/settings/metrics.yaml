@@ -61,6 +61,7 @@ uptake.remotecontent.result:
           - `cleanup_error`: Clean-up of temporary files has failed.
           - `sync_broken_error`: Synchronization has been failing consistently.
           - `custom_1_error`: Error related to IndexedDB.
+          - `stale_expected`: Poll changes was called with a stale expected value.
         type: string
       source:
         description: >
