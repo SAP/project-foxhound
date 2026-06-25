@@ -19,6 +19,7 @@ export const MultiStageAboutWelcome = props => {
   let { defaultScreens } = props;
   const didFilter = useRef(false);
   const [didMount, setDidMount] = useState(false);
+  const [contentToggleChecked, setContentToggleChecked] = useState(true);
   const [screens, setScreens] = useState(defaultScreens);
 
   const [index, setScreenIndex] = useState(props.startScreen);
@@ -379,6 +380,8 @@ export const MultiStageAboutWelcome = props => {
               setActiveSingleSelectSelection={setActiveSingleSelectSelection}
               textInputs={textInputs[currentScreen.id]}
               setTextInput={setTextInput}
+              contentToggleChecked={contentToggleChecked}
+              setContentToggleChecked={setContentToggleChecked}
               negotiatedLanguage={negotiatedLanguage}
               langPackInstallPhase={langPackInstallPhase}
               forceHideStepsIndicator={currentScreen.force_hide_steps_indicator}
@@ -650,17 +653,6 @@ export class WelcomeScreen extends React.PureComponent {
     return MultiStageUtils.handleUserAction({ type, data });
   }
 
-  logTelemetry({ value, event, source, props }) {
-    MultiStageUtils.sendActionTelemetry(props.messageId, source, event.name);
-
-    // Send additional telemetry if a messaging surface like feature callout is
-    // dismissed via the dismiss button. Other causes of dismissal will be
-    // handled separately by the messaging surface's own code.
-    if (value === "dismiss_button" && !event.name) {
-      MultiStageUtils.sendDismissTelemetry(props.messageId, source);
-    }
-  }
-
   async handleMigrationIfNeeded(action, props) {
     const hasMigrate = a =>
       a.type === "SHOW_MIGRATION_WIZARD" ||
@@ -754,10 +746,21 @@ export class WelcomeScreen extends React.PureComponent {
       return actionResult;
     }
 
-    // Send telemetry before waiting on actions
-    this.logTelemetry({ value, event, source, props });
-
     action = JSON.parse(JSON.stringify(action));
+
+    const context = {};
+    if (action.collectContentToggleState) {
+      context.contentToggleState = props.contentToggleChecked;
+    }
+    MultiStageUtils.sendActionTelemetry(
+      props.messageId,
+      source,
+      event.name,
+      context
+    );
+    if (value === "dismiss_button" && !event.name) {
+      MultiStageUtils.sendDismissTelemetry(props.messageId, source);
+    }
 
     if (action.collectSelect) {
       this.setMultiSelectActions(action);
@@ -1002,6 +1005,8 @@ export class WelcomeScreen extends React.PureComponent {
         }
         textInputs={this.props.textInputs}
         setTextInput={this.props.setTextInput}
+        contentToggleChecked={this.props.contentToggleChecked}
+        setContentToggleChecked={this.props.setContentToggleChecked}
         totalNumberOfScreens={this.props.totalNumberOfScreens}
         appAndSystemLocaleInfo={this.props.appAndSystemLocaleInfo}
         negotiatedLanguage={this.props.negotiatedLanguage}

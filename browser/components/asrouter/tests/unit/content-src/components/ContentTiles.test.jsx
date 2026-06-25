@@ -5,6 +5,8 @@ import { ActionChecklist } from "content-src/components/ActionChecklist";
 import { MobileDownloads } from "content-src/components/MobileDownloads";
 import { EmbeddedBackupRestore } from "content-src/components/EmbeddedBackupRestore";
 import { EmbeddedMigrationWizard } from "content-src/components/EmbeddedMigrationWizard";
+import { TextBoxTile } from "content-src/components/TextBoxTile";
+import { ContentToggle } from "content-src/components/ContentToggle";
 import { MultiStageUtils } from "content-src/lib/multistage-utils.mjs";
 import { GlobalOverrider } from "tests/unit/utils";
 
@@ -1235,5 +1237,102 @@ describe("ContentTiles component", () => {
     );
 
     linkWrapper.unmount();
+  });
+
+  it("should render TextBoxTile for 'textbox' tile type", () => {
+    const TEXTBOX_TILE = {
+      type: "textbox",
+      header: { title: "Preview report" },
+      data: {
+        id: "chat-log-preview",
+        content: '{"log":[]}',
+        alternateContent: '{"log":[]}',
+        label: "Include page content",
+        rows: 8,
+      },
+    };
+    const textboxWrapper = shallow(
+      <ContentTiles
+        content={{ tiles: [TEXTBOX_TILE] }}
+        handleAction={handleAction}
+        activeMultiSelect={null}
+        setActiveMultiSelect={setActiveMultiSelect}
+      />
+    );
+    textboxWrapper.find(".tile-header").simulate("click");
+    assert.ok(textboxWrapper.find(TextBoxTile).exists());
+  });
+
+  it("should render ContentToggle for 'content-toggle' tile type", () => {
+    const TOGGLE_TILE = {
+      type: "content-toggle",
+      data: {
+        id: "page-content-toggle",
+        label: "Include page content",
+        visible: true,
+      },
+    };
+    const setContentToggleChecked = sandbox.stub();
+    const toggleWrapper = shallow(
+      <ContentTiles
+        content={{ tiles: [TOGGLE_TILE] }}
+        handleAction={handleAction}
+        activeMultiSelect={null}
+        setActiveMultiSelect={setActiveMultiSelect}
+        contentToggleChecked={true}
+        setContentToggleChecked={setContentToggleChecked}
+      />
+    );
+    assert.ok(toggleWrapper.find(ContentToggle).exists());
+    assert.equal(toggleWrapper.find(ContentToggle).prop("toggled"), true);
+    assert.equal(
+      toggleWrapper.find(ContentToggle).prop("onToggle"),
+      setContentToggleChecked
+    );
+  });
+
+  it("should pass contentToggleChecked to TextBoxTile", () => {
+    const TEXTBOX_TILE = {
+      type: "textbox",
+      data: { id: "chat-log-preview", content: '{"log":[]}' },
+    };
+    const textboxWrapper = shallow(
+      <ContentTiles
+        content={{ tiles: [TEXTBOX_TILE] }}
+        handleAction={handleAction}
+        activeMultiSelect={null}
+        setActiveMultiSelect={setActiveMultiSelect}
+        contentToggleChecked={false}
+      />
+    );
+    assert.equal(
+      textboxWrapper.find(TextBoxTile).prop("contentToggled"),
+      false
+    );
+  });
+
+  it("should use alternateTitle for textbox header when contentToggleChecked is false", () => {
+    const TEXTBOX_TILE = {
+      type: "textbox",
+      header: {
+        title: { string_id: "view-chat-details" },
+        alternateTitle: { string_id: "view-chat-details-no-page" },
+      },
+      data: { id: "chat-log-preview", content: '{"log":[]}' },
+    };
+    const textboxWrapper = shallow(
+      <ContentTiles
+        content={{ tiles: [TEXTBOX_TILE] }}
+        handleAction={handleAction}
+        activeMultiSelect={null}
+        setActiveMultiSelect={setActiveMultiSelect}
+        contentToggleChecked={false}
+      />
+    );
+    // When contentToggleChecked is false the alternateTitle should be used
+    assert.deepEqual(
+      textboxWrapper.find(".tile-header").find("Localized").at(0).prop("text"),
+      TEXTBOX_TILE.header.alternateTitle
+    );
   });
 });

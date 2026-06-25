@@ -3272,6 +3272,26 @@ html {
   border-color: var(--border-color-error);
   outline-color: var(--border-color-error);
 }
+.onboardingContainer .content-toggle-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xsmall);
+  padding-block: var(--space-small);
+  font-size: 14px;
+}
+.onboardingContainer .textbox-container {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-small) var(--space-large);
+}
+.onboardingContainer .textbox-container .textbox-input {
+  overflow-y: auto;
+  white-space: pre-wrap;
+  user-select: none;
+  cursor: default;
+  text-align: start;
+  border-radius: var(--input-text-border-radius);
+}
 .onboardingContainer .confirmation-checklist-section {
   display: flex;
   flex-direction: column;

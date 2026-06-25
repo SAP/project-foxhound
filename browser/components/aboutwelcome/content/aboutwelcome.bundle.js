@@ -162,7 +162,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var _MultiStageProtonScreen__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(6);
 /* harmony import */ var _LanguageSwitcher__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(7);
 /* harmony import */ var _SubmenuButton__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(12);
-/* harmony import */ var _lib_addUtmParams_mjs__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(30);
+/* harmony import */ var _lib_addUtmParams_mjs__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(32);
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -185,6 +185,7 @@ const MultiStageAboutWelcome = props => {
   } = props;
   const didFilter = (0,react__WEBPACK_IMPORTED_MODULE_0__.useRef)(false);
   const [didMount, setDidMount] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(false);
+  const [contentToggleChecked, setContentToggleChecked] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(true);
   const [screens, setScreens] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(defaultScreens);
   const [index, setScreenIndex] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(props.startScreen);
   const [previousOrder, setPreviousOrder] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(props.startScreen - 1);
@@ -482,6 +483,8 @@ const MultiStageAboutWelcome = props => {
       setActiveSingleSelectSelection: setActiveSingleSelectSelection,
       textInputs: textInputs[currentScreen.id],
       setTextInput: setTextInput,
+      contentToggleChecked: contentToggleChecked,
+      setContentToggleChecked: setContentToggleChecked,
       negotiatedLanguage: negotiatedLanguage,
       langPackInstallPhase: langPackInstallPhase,
       forceHideStepsIndicator: currentScreen.force_hide_steps_indicator,
@@ -720,21 +723,6 @@ class WelcomeScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCo
       data
     });
   }
-  logTelemetry({
-    value,
-    event,
-    source,
-    props
-  }) {
-    _lib_multistage_utils_mjs__WEBPACK_IMPORTED_MODULE_2__.MultiStageUtils.sendActionTelemetry(props.messageId, source, event.name);
-
-    // Send additional telemetry if a messaging surface like feature callout is
-    // dismissed via the dismiss button. Other causes of dismissal will be
-    // handled separately by the messaging surface's own code.
-    if (value === "dismiss_button" && !event.name) {
-      _lib_multistage_utils_mjs__WEBPACK_IMPORTED_MODULE_2__.MultiStageUtils.sendDismissTelemetry(props.messageId, source);
-    }
-  }
   async handleMigrationIfNeeded(action, props) {
     const hasMigrate = a => a.type === "SHOW_MIGRATION_WIZARD" || a.type === "MULTI_ACTION" && a.data?.actions?.some(hasMigrate);
     if (hasMigrate(action)) {
@@ -798,15 +786,15 @@ class WelcomeScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCo
       console.error("Failed to resolve action");
       return actionResult;
     }
-
-    // Send telemetry before waiting on actions
-    this.logTelemetry({
-      value,
-      event,
-      source,
-      props
-    });
     action = JSON.parse(JSON.stringify(action));
+    const context = {};
+    if (action.collectContentToggleState) {
+      context.contentToggleState = props.contentToggleChecked;
+    }
+    _lib_multistage_utils_mjs__WEBPACK_IMPORTED_MODULE_2__.MultiStageUtils.sendActionTelemetry(props.messageId, source, event.name, context);
+    if (value === "dismiss_button" && !event.name) {
+      _lib_multistage_utils_mjs__WEBPACK_IMPORTED_MODULE_2__.MultiStageUtils.sendDismissTelemetry(props.messageId, source);
+    }
     if (action.collectSelect) {
       this.setMultiSelectActions(action);
     }
@@ -1014,6 +1002,8 @@ class WelcomeScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCo
       setActiveSingleSelectSelection: this.props.setActiveSingleSelectSelection,
       textInputs: this.props.textInputs,
       setTextInput: this.props.setTextInput,
+      contentToggleChecked: this.props.contentToggleChecked,
+      setContentToggleChecked: this.props.setContentToggleChecked,
       totalNumberOfScreens: this.props.totalNumberOfScreens,
       appAndSystemLocaleInfo: this.props.appAndSystemLocaleInfo,
       negotiatedLanguage: this.props.negotiatedLanguage,
@@ -1333,6 +1323,8 @@ const MultiStageProtonScreen = props => {
     setActiveSingleSelectSelection: props.setActiveSingleSelectSelection,
     textInputs: props.textInputs,
     setTextInput: props.setTextInput,
+    contentToggleChecked: props.contentToggleChecked,
+    setContentToggleChecked: props.setContentToggleChecked,
     totalNumberOfScreens: props.totalNumberOfScreens,
     handleAction: props.handleAction,
     isFirstScreen: props.isFirstScreen,
@@ -2718,10 +2710,14 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var _lib_multistage_utils_mjs__WEBPACK_IMPORTED_MODULE_12__ = __webpack_require__(3);
 /* harmony import */ var _EmbeddedBackupRestore__WEBPACK_IMPORTED_MODULE_13__ = __webpack_require__(28);
 /* harmony import */ var _PinnableSitesList__WEBPACK_IMPORTED_MODULE_14__ = __webpack_require__(29);
+/* harmony import */ var _ContentToggle__WEBPACK_IMPORTED_MODULE_15__ = __webpack_require__(30);
+/* harmony import */ var _TextBoxTile__WEBPACK_IMPORTED_MODULE_16__ = __webpack_require__(31);
 function _extends() { return _extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, _extends.apply(null, arguments); }
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+
 
 
 
@@ -2903,6 +2899,7 @@ const ContentTiles = props => {
       "aria-expanded": isExpanded,
       "aria-controls": `tile-content-${index}`
     };
+    const headerTitle = tile.type === "textbox" && props.contentToggleChecked === false ? header?.alternateTitle ?? header?.title : header?.title;
     return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
       key: index,
       className: `content-tile ${header ? "has-header" : ""}`,
@@ -2915,7 +2912,7 @@ const ContentTiles = props => {
     }), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
       className: "header-text-container"
     }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_1__.Localized, {
-      text: header.title
+      text: headerTitle
     }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", {
       className: "header-title"
     })), header.subtitle && /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_1__.Localized, {
@@ -3009,6 +3006,17 @@ const ContentTiles = props => {
       tile: tile,
       messageId: props.messageId,
       handleAction: props.handleAction
+    }), tile.type === "content-toggle" && tile.data && /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_ContentToggle__WEBPACK_IMPORTED_MODULE_15__.ContentToggle, {
+      content: {
+        tiles: tile
+      },
+      toggled: props.contentToggleChecked,
+      onToggle: props.setContentToggleChecked
+    }), tile.type === "textbox" && tile.data && /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_TextBoxTile__WEBPACK_IMPORTED_MODULE_16__.TextBoxTile, {
+      content: {
+        tiles: tile
+      },
+      contentToggled: props.contentToggleChecked
     })) : null);
   };
   const renderContentTiles = () => {
@@ -4527,6 +4535,80 @@ const PinnableSitesList = ({
 
 /***/ }),
 /* 30 */
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   ContentToggle: () => (/* binding */ ContentToggle)
+/* harmony export */ });
+/* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
+/* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_0__);
+/* harmony import */ var _MSLocalized__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(5);
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+
+
+const ContentToggle = ({
+  content,
+  toggled,
+  onToggle
+}) => {
+  const {
+    data
+  } = content.tiles;
+  const onChange = react__WEBPACK_IMPORTED_MODULE_0___default().useCallback(e => onToggle?.(e.target.checked), [onToggle]);
+  if (!data.visible) {
+    return null;
+  }
+  return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("label", {
+    className: "content-toggle-label"
+  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("input", {
+    type: "checkbox",
+    checked: toggled,
+    onChange: onChange
+  }), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_1__.Localized, {
+    text: data.label
+  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", null)));
+};
+
+/***/ }),
+/* 31 */
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   TextBoxTile: () => (/* binding */ TextBoxTile)
+/* harmony export */ });
+/* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
+/* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_0__);
+/* harmony import */ var _lib_multistage_utils_mjs__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(3);
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+
+
+const TEXTBOX_STYLES = ["backgroundColor", "maxHeight"];
+const TextBoxTile = ({
+  content,
+  contentToggled
+}) => {
+  const {
+    data
+  } = content.tiles;
+  const activeContent = contentToggled ? data.content : data.alternateContent;
+  return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+    className: "textbox-container"
+  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+    className: "textbox-input",
+    style: _lib_multistage_utils_mjs__WEBPACK_IMPORTED_MODULE_1__.MultiStageUtils.getValidStyle(data.style, TEXTBOX_STYLES)
+  }, activeContent ?? ""));
+};
+
+/***/ }),
+/* 32 */
 /***/ ((__unused_webpack___webpack_module__, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
