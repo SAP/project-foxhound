@@ -768,12 +768,6 @@ class nsINode : public mozilla::dom::EventTarget {
   mozilla::Maybe<uint32_t> ComputeIndexInParentContent() const;
 
   /**
-   * Return true if the parent node may cache the computed index for further
-   * calls.
-   */
-  [[nodiscard]] bool MaybeParentCachesComputedIndex() const;
-
-  /**
    * Get the index of a child within this content.
    *
    * @param aPossibleChild the child to get the index of.
