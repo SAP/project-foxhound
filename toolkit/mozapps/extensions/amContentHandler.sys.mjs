@@ -42,8 +42,19 @@ amContentHandler.prototype = {
     }
 
     const { loadInfo, URI: uri } = aRequest;
-    const { triggeringPrincipal } = loadInfo;
+    let { triggeringPrincipal } = loadInfo;
     const browser = loadInfo.targetBrowsingContext.top.embedderElement;
+
+    if (
+      triggeringPrincipal.isSystemPrincipal &&
+      loadInfo.triggeringRemoteType
+    ) {
+      // Navigations from the system principal are expected to be triggered
+      // from the parent only; downgrade principal if from a content process.
+      triggeringPrincipal = Services.scriptSecurityManager.createNullPrincipal(
+        loadInfo.originAttributes
+      );
+    }
 
     // This check will allow a link to an xpi clicked by the user to trigger the
     // addon install flow, but prevents window.open or window.location from triggering
