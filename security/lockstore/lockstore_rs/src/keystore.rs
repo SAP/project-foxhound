@@ -78,12 +78,27 @@ struct WrappedDek {
     wrapped_dek: Vec<u8>,
 }
 
+fn default_key_size() -> usize {
+    // Pre-existing DekMetadata records on disk predate the explicit
+    // `key_size` field: they were minted with `cipher_suite.key_size()`
+    // bytes by construction, so fall back to that for back-compat. New
+    // records are always written with an explicit size from the caller.
+    DEFAULT_CIPHER_SUITE.key_size()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct DekMetadata {
     wrapped_deks: Vec<WrappedDek>,
     cipher_suite: CipherSuite,
     #[serde(default)]
     extractable: bool,
+    /// Caller-declared DEK length in bytes. Decoupled from `cipher_suite`
+    /// (which governs only the *wrapping* cipher) so the consumer's
+    /// expected key size is an explicit contract, not a coincidence
+    /// with lockstore's internal cipher choice. Validated against the
+    /// unwrapped bytes in `get_dek_internal`.
+    #[serde(default = "default_key_size")]
+    key_size: usize,
 }
 
 /// Exclusive access to the keystore's DEK metadata. Acquired via
@@ -295,8 +310,15 @@ impl Keystore {
         collection_name: &str,
         kek_ref: &str,
         extractable: bool,
+        key_size: usize,
     ) -> Result<(), LockstoreError> {
-        self.create_dek_with_cipher(collection_name, kek_ref, extractable, DEFAULT_CIPHER_SUITE)
+        self.create_dek_with_cipher(
+            collection_name,
+            kek_ref,
+            extractable,
+            DEFAULT_CIPHER_SUITE,
+            key_size,
+        )
     }
 
     pub fn create_dek_with_cipher(
@@ -305,7 +327,20 @@ impl Keystore {
         kek_ref: &str,
         extractable: bool,
         cipher_suite: CipherSuite,
+        key_size: usize,
     ) -> Result<(), LockstoreError> {
+        // The caller declares the DEK length here; it has no required
+        // relationship to `cipher_suite.key_size()`, which from this
+        // commit on governs only the wrapping cipher used to encrypt
+        // the DEK under the KEK. Reject obviously bad values early so
+        // a typo at the caller doesn't end up in DekMetadata on disk.
+        if key_size == 0 || key_size > 1024 {
+            return Err(LockstoreError::InvalidConfiguration(format!(
+                "key_size {} is out of range (1..=1024 bytes)",
+                key_size
+            )));
+        }
+
         let kek_type = KekType::from_kek_ref(kek_ref)?;
 
         // Serialises against concurrent KEK-mutating operations so a
@@ -324,7 +359,7 @@ impl Keystore {
             )));
         }
 
-        let new_dek = crypto::generate_random_key(cipher_suite);
+        let new_dek = crypto::generate_random_bytes(key_size);
         let kek = self.get_kek_symkey(cipher_suite, kek_ref)?;
         let wrapped = crypto::encrypt_with_symkey(&new_dek, &kek, cipher_suite)?;
 
@@ -336,6 +371,7 @@ impl Keystore {
             }],
             cipher_suite,
             extractable,
+            key_size,
         };
 
         conn.save_metadata(collection_name, &metadata)
@@ -401,6 +437,9 @@ impl Keystore {
             }],
             cipher_suite,
             extractable,
+            // Caller's explicit DEK length, mirroring create_dek. The
+            // length-validation at import time (above) is the authority.
+            key_size: dek_bytes.len(),
         };
 
         conn.save_metadata(collection_name, &metadata)
@@ -432,6 +471,19 @@ impl Keystore {
 
         let kek = self.get_kek_symkey(metadata.cipher_suite, kek_ref)?;
         let dek = crypto::decrypt_with_symkey(&entry.wrapped_dek, &kek)?;
+
+        // Defense in depth: the stored `key_size` reflects what the
+        // creator declared; if the wrapped bytes decrypted to a
+        // different length, the metadata and the ciphertext disagree
+        // (data corruption, downgrade, or wrong KEK).
+        if dek.len() != metadata.key_size {
+            return Err(LockstoreError::InvalidConfiguration(format!(
+                "DEK length {} does not match stored key_size {} for collection '{}'",
+                dek.len(),
+                metadata.key_size,
+                collection_name
+            )));
+        }
 
         Ok((dek, metadata.cipher_suite, metadata.extractable))
     }

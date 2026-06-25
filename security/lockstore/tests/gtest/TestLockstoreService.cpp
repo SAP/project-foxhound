@@ -139,8 +139,8 @@ TEST_F(LockstoreServiceTest, CreateAndDeleteDek) {
   nsCString coll = UniqueCollection("create-delete");
 
   RunOnBackground([&]() {
-    EXPECT_NS_SUCCEEDED(
-        mService->DoCreateDek(coll, mLocalKek, /*extractable=*/false));
+    EXPECT_NS_SUCCEEDED(mService->DoCreateDek(
+        coll, mLocalKek, /*extractable=*/false, /*keySize=*/32));
 
     auto collectionsResult = mService->DoListDeks();
     ASSERT_TRUE(collectionsResult.isOk());
@@ -164,10 +164,11 @@ TEST_F(LockstoreServiceTest, CreateAndDeleteDek) {
 TEST_F(LockstoreServiceTest, CreateDek_DuplicateRejects) {
   nsCString coll = UniqueCollection("dup");
   RunOnBackground([&]() {
-    EXPECT_NS_SUCCEEDED(
-        mService->DoCreateDek(coll, mLocalKek, /*extractable=*/false));
+    EXPECT_NS_SUCCEEDED(mService->DoCreateDek(
+        coll, mLocalKek, /*extractable=*/false, /*keySize=*/32));
 
-    EXPECT_EQ(mService->DoCreateDek(coll, mLocalKek, /*extractable=*/false),
+    EXPECT_EQ(mService->DoCreateDek(coll, mLocalKek, /*extractable=*/false,
+                                    /*keySize=*/32),
               NS_ERROR_FAILURE)
         << "createDek on an existing collection must reject";
 
@@ -177,7 +178,8 @@ TEST_F(LockstoreServiceTest, CreateDek_DuplicateRejects) {
 
 TEST_F(LockstoreServiceTest, CreateDek_RejectsEmptyCollection) {
   RunOnBackground([&]() {
-    EXPECT_EQ(mService->DoCreateDek(""_ns, mLocalKek, /*extractable=*/false),
+    EXPECT_EQ(mService->DoCreateDek(""_ns, mLocalKek, /*extractable=*/false,
+                                    /*keySize=*/32),
               NS_ERROR_INVALID_ARG);
   });
 }
@@ -185,7 +187,8 @@ TEST_F(LockstoreServiceTest, CreateDek_RejectsEmptyCollection) {
 TEST_F(LockstoreServiceTest, CreateDek_RejectsEmptyKekRef) {
   nsCString coll = UniqueCollection("empty-kek");
   RunOnBackground([&]() {
-    EXPECT_EQ(mService->DoCreateDek(coll, ""_ns, /*extractable=*/false),
+    EXPECT_EQ(mService->DoCreateDek(coll, ""_ns, /*extractable=*/false,
+                                    /*keySize=*/32),
               NS_ERROR_INVALID_ARG);
   });
 }
@@ -203,12 +206,12 @@ TEST_F(LockstoreServiceTest, ListDeks_ContainsCreated) {
   nsCString b = UniqueCollection("list-b");
   nsCString c = UniqueCollection("list-c");
   RunOnBackground([&]() {
-    EXPECT_NS_SUCCEEDED(
-        mService->DoCreateDek(a, mLocalKek, /*extractable=*/false));
-    EXPECT_NS_SUCCEEDED(
-        mService->DoCreateDek(b, mLocalKek, /*extractable=*/false));
-    EXPECT_NS_SUCCEEDED(
-        mService->DoCreateDek(c, mLocalKek, /*extractable=*/false));
+    EXPECT_NS_SUCCEEDED(mService->DoCreateDek(
+        a, mLocalKek, /*extractable=*/false, /*keySize=*/32));
+    EXPECT_NS_SUCCEEDED(mService->DoCreateDek(
+        b, mLocalKek, /*extractable=*/false, /*keySize=*/32));
+    EXPECT_NS_SUCCEEDED(mService->DoCreateDek(
+        c, mLocalKek, /*extractable=*/false, /*keySize=*/32));
 
     auto listResult = mService->DoListDeks();
     ASSERT_TRUE(listResult.isOk());
@@ -234,8 +237,8 @@ TEST_F(LockstoreServiceTest, ListDeks_ContainsCreated) {
 TEST_F(LockstoreServiceTest, ListKeks_ReflectsCreateDek) {
   nsCString coll = UniqueCollection("keks-create");
   RunOnBackground([&]() {
-    EXPECT_NS_SUCCEEDED(
-        mService->DoCreateDek(coll, mLocalKek, /*extractable=*/false));
+    EXPECT_NS_SUCCEEDED(mService->DoCreateDek(
+        coll, mLocalKek, /*extractable=*/false, /*keySize=*/32));
 
     auto refsResult = mService->DoListKeks(coll);
     ASSERT_TRUE(refsResult.isOk());
@@ -275,8 +278,8 @@ TEST_F(LockstoreServiceTest, ListKeks_RejectsEmptyCollection) {
 TEST_F(LockstoreServiceTest, EncryptDecryptRoundtrip) {
   nsCString coll = UniqueCollection("roundtrip");
   RunOnBackground([&]() {
-    EXPECT_NS_SUCCEEDED(
-        mService->DoCreateDek(coll, mLocalKek, /*extractable=*/false));
+    EXPECT_NS_SUCCEEDED(mService->DoCreateDek(
+        coll, mLocalKek, /*extractable=*/false, /*keySize=*/32));
 
     auto ctResult = mService->DoEncrypt(coll, mLocalKek, Bytes("hello world"));
     ASSERT_TRUE(ctResult.isOk());
@@ -299,8 +302,8 @@ TEST_F(LockstoreServiceTest, EncryptDecryptRoundtrip) {
 TEST_F(LockstoreServiceTest, Encrypt_YieldsUniqueCiphertexts) {
   nsCString coll = UniqueCollection("nonce");
   RunOnBackground([&]() {
-    EXPECT_NS_SUCCEEDED(
-        mService->DoCreateDek(coll, mLocalKek, /*extractable=*/false));
+    EXPECT_NS_SUCCEEDED(mService->DoCreateDek(
+        coll, mLocalKek, /*extractable=*/false, /*keySize=*/32));
 
     auto a = mService->DoEncrypt(coll, mLocalKek, Bytes("same"));
     auto b = mService->DoEncrypt(coll, mLocalKek, Bytes("same"));
@@ -318,8 +321,8 @@ TEST_F(LockstoreServiceTest, Encrypt_YieldsUniqueCiphertexts) {
 TEST_F(LockstoreServiceTest, Decrypt_CorruptedCiphertextRejects) {
   nsCString coll = UniqueCollection("corrupt");
   RunOnBackground([&]() {
-    EXPECT_NS_SUCCEEDED(
-        mService->DoCreateDek(coll, mLocalKek, /*extractable=*/false));
+    EXPECT_NS_SUCCEEDED(mService->DoCreateDek(
+        coll, mLocalKek, /*extractable=*/false, /*keySize=*/32));
 
     auto ctResult = mService->DoEncrypt(coll, mLocalKek, Bytes("payload"));
     ASSERT_TRUE(ctResult.isOk());
@@ -339,8 +342,8 @@ TEST_F(LockstoreServiceTest, Decrypt_CorruptedCiphertextRejects) {
 TEST_F(LockstoreServiceTest, Decrypt_TruncatedCiphertextRejects) {
   nsCString coll = UniqueCollection("trunc");
   RunOnBackground([&]() {
-    EXPECT_NS_SUCCEEDED(
-        mService->DoCreateDek(coll, mLocalKek, /*extractable=*/false));
+    EXPECT_NS_SUCCEEDED(mService->DoCreateDek(
+        coll, mLocalKek, /*extractable=*/false, /*keySize=*/32));
 
     auto ctResult = mService->DoEncrypt(coll, mLocalKek, Bytes("payload"));
     ASSERT_TRUE(ctResult.isOk());
@@ -359,8 +362,8 @@ TEST_F(LockstoreServiceTest, Decrypt_TruncatedCiphertextRejects) {
 TEST_F(LockstoreServiceTest, Decrypt_WrongKekRejects) {
   nsCString coll = UniqueCollection("wrong-kek");
   RunOnBackground([&]() {
-    EXPECT_NS_SUCCEEDED(
-        mService->DoCreateDek(coll, mLocalKek, /*extractable=*/false));
+    EXPECT_NS_SUCCEEDED(mService->DoCreateDek(
+        coll, mLocalKek, /*extractable=*/false, /*keySize=*/32));
 
     auto ctResult = mService->DoEncrypt(coll, mLocalKek, Bytes("payload"));
     ASSERT_TRUE(ctResult.isOk());
@@ -384,8 +387,8 @@ TEST_F(LockstoreServiceTest, Encrypt_NoDekRejects) {
 TEST_F(LockstoreServiceTest, Encrypt_RejectsEmptyArgs) {
   nsCString coll = UniqueCollection("empty-enc");
   RunOnBackground([&]() {
-    EXPECT_NS_SUCCEEDED(
-        mService->DoCreateDek(coll, mLocalKek, /*extractable=*/false));
+    EXPECT_NS_SUCCEEDED(mService->DoCreateDek(
+        coll, mLocalKek, /*extractable=*/false, /*keySize=*/32));
 
     EXPECT_TRUE(mService->DoEncrypt(""_ns, mLocalKek, Bytes("x")).isErr());
     EXPECT_TRUE(mService->DoEncrypt(coll, ""_ns, Bytes("x")).isErr());
@@ -409,8 +412,8 @@ TEST_F(LockstoreServiceTest, Decrypt_NoDekRejects) {
 TEST_F(LockstoreServiceTest, Decrypt_RejectsEmptyArgs) {
   nsCString coll = UniqueCollection("empty-dec");
   RunOnBackground([&]() {
-    EXPECT_NS_SUCCEEDED(
-        mService->DoCreateDek(coll, mLocalKek, /*extractable=*/false));
+    EXPECT_NS_SUCCEEDED(mService->DoCreateDek(
+        coll, mLocalKek, /*extractable=*/false, /*keySize=*/32));
 
     auto ctResult = mService->DoEncrypt(coll, mLocalKek, Bytes("x"));
     ASSERT_TRUE(ctResult.isOk());
@@ -438,8 +441,8 @@ TEST_F(LockstoreServiceTest, AddKek_RejectsMissingCollection) {
 TEST_F(LockstoreServiceTest, AddKek_RejectsEmptyArgs) {
   nsCString coll = UniqueCollection("addkek-empty");
   RunOnBackground([&]() {
-    EXPECT_NS_SUCCEEDED(
-        mService->DoCreateDek(coll, mLocalKek, /*extractable=*/false));
+    EXPECT_NS_SUCCEEDED(mService->DoCreateDek(
+        coll, mLocalKek, /*extractable=*/false, /*keySize=*/32));
 
     EXPECT_EQ(mService->DoAddKek(""_ns, mLocalKek, mOtherKek),
               NS_ERROR_INVALID_ARG);
@@ -453,8 +456,8 @@ TEST_F(LockstoreServiceTest, AddKek_RejectsEmptyArgs) {
 TEST_F(LockstoreServiceTest, RemoveKek_RejectsEmptyArgs) {
   nsCString coll = UniqueCollection("rmkek-empty");
   RunOnBackground([&]() {
-    EXPECT_NS_SUCCEEDED(
-        mService->DoCreateDek(coll, mLocalKek, /*extractable=*/false));
+    EXPECT_NS_SUCCEEDED(mService->DoCreateDek(
+        coll, mLocalKek, /*extractable=*/false, /*keySize=*/32));
 
     EXPECT_EQ(mService->DoRemoveKek(""_ns, mLocalKek), NS_ERROR_INVALID_ARG);
     EXPECT_EQ(mService->DoRemoveKek(coll, ""_ns), NS_ERROR_INVALID_ARG);
@@ -466,8 +469,8 @@ TEST_F(LockstoreServiceTest, RemoveKek_RejectsEmptyArgs) {
 TEST_F(LockstoreServiceTest, RemoveKek_LastWrappingRejects) {
   nsCString coll = UniqueCollection("rmkek-last");
   RunOnBackground([&]() {
-    EXPECT_NS_SUCCEEDED(
-        mService->DoCreateDek(coll, mLocalKek, /*extractable=*/false));
+    EXPECT_NS_SUCCEEDED(mService->DoCreateDek(
+        coll, mLocalKek, /*extractable=*/false, /*keySize=*/32));
 
     // Removing the last KEK wrapping must be rejected — otherwise the
     // DEK would become unrecoverable.
@@ -488,8 +491,8 @@ TEST_F(LockstoreServiceTest, ConcurrentEncryptsAllResolveUnique) {
   // each must produce a distinct ciphertext (random nonce).
   nsCString coll = UniqueCollection("concurrent");
   RunOnBackground([&]() {
-    EXPECT_NS_SUCCEEDED(
-        mService->DoCreateDek(coll, mLocalKek, /*extractable=*/false));
+    EXPECT_NS_SUCCEEDED(mService->DoCreateDek(
+        coll, mLocalKek, /*extractable=*/false, /*keySize=*/32));
   });
 
   constexpr size_t N = 8;
@@ -548,8 +551,8 @@ TEST_F(LockstoreServiceTest, ConcurrentMixedOpsAllComplete) {
     const nsCString& c = colls[i];
     MOZ_ALWAYS_SUCCEEDS(NS_DispatchBackgroundTask(NS_NewRunnableFunction(
         "ConcurrentMixedOps::create", [this, &c, &createDone]() {
-          EXPECT_NS_SUCCEEDED(
-              mService->DoCreateDek(c, mLocalKek, /*extractable=*/false));
+          EXPECT_NS_SUCCEEDED(mService->DoCreateDek(
+              c, mLocalKek, /*extractable=*/false, /*keySize=*/32));
           NS_DispatchToMainThread(
               NS_NewRunnableFunction("ConcurrentMixedOps::create-done",
                                      [&createDone]() { ++createDone; }));

@@ -238,9 +238,11 @@ nsresult LockstoreService::DoLock() {
 
 nsresult LockstoreService::DoCreateDek(const nsACString& aCollection,
                                        const nsACString& aKekRef,
-                                       bool aExtractable) {
+                                       bool aExtractable,
+                                       uint32_t aKeySize) {
   LOCKSTORE_SYNC_PREAMBLE;
-  return keystore_create_dek(mKeystore, &aCollection, &aKekRef, aExtractable);
+  return keystore_create_dek(mKeystore, &aCollection, &aKekRef, aExtractable,
+                             aKeySize);
 }
 
 nsresult LockstoreService::DoImportDek(const nsACString& aCollection,
@@ -374,10 +376,11 @@ LockstoreService::Lock(JSContext* aCx, Promise** aPromise) {
 NS_IMETHODIMP
 LockstoreService::CreateDek(const nsACString& aCollection,
                             const nsACString& aKekRef, bool aExtractable,
+                            uint32_t aKeySize,
                             JSContext* aCx, Promise** aPromise) {
   return ImplXpcomMethod(this, aCx, aPromise, &LockstoreService::DoCreateDek,
                          nsCString{aCollection}, nsCString{aKekRef},
-                         aExtractable);
+                         aExtractable, aKeySize);
 }
 
 NS_IMETHODIMP

@@ -113,7 +113,8 @@ TEST_F(LockstoreKeystoreTest, CreateAndListDek) {
   MintLocalKek();
 
   const nsCString coll("mycoll");
-  rv = keystore_create_dek(mKeystore, &coll, &mLocalKekRef, false);
+  rv = keystore_create_dek(mKeystore, &coll, &mLocalKekRef, false,
+                           /*key_size=*/32);
   ASSERT_NS_SUCCEEDED(rv);
 
   nsTArray<nsCString> collections;
@@ -129,7 +130,8 @@ TEST_F(LockstoreKeystoreTest, CreateDekEmptyCollection) {
   MintLocalKek();
 
   nsAutoCString empty;
-  rv = keystore_create_dek(mKeystore, &empty, &mLocalKekRef, false);
+  rv = keystore_create_dek(mKeystore, &empty, &mLocalKekRef, false,
+                           /*key_size=*/32);
   ASSERT_EQ(rv, NS_ERROR_INVALID_ARG);
 }
 
@@ -139,10 +141,12 @@ TEST_F(LockstoreKeystoreTest, CreateDekDuplicate) {
   MintLocalKek();
 
   const nsCString coll("dup");
-  rv = keystore_create_dek(mKeystore, &coll, &mLocalKekRef, false);
+  rv = keystore_create_dek(mKeystore, &coll, &mLocalKekRef, false,
+                           /*key_size=*/32);
   ASSERT_NS_SUCCEEDED(rv);
 
-  rv = keystore_create_dek(mKeystore, &coll, &mLocalKekRef, false);
+  rv = keystore_create_dek(mKeystore, &coll, &mLocalKekRef, false,
+                           /*key_size=*/32);
   ASSERT_EQ(rv, NS_ERROR_FAILURE);
 }
 
@@ -152,7 +156,8 @@ TEST_F(LockstoreKeystoreTest, GetDekExtractable) {
   MintLocalKek();
 
   const nsCString coll("extract");
-  rv = keystore_create_dek(mKeystore, &coll, &mLocalKekRef, true);
+  rv = keystore_create_dek(mKeystore, &coll, &mLocalKekRef, true,
+                           /*key_size=*/32);
   ASSERT_NS_SUCCEEDED(rv);
 
   nsTArray<uint8_t> dek;
@@ -189,7 +194,8 @@ TEST_F(LockstoreKeystoreTest, GetDekNotExtractable) {
   MintLocalKek();
 
   const nsCString coll("noextract");
-  rv = keystore_create_dek(mKeystore, &coll, &mLocalKekRef, false);
+  rv = keystore_create_dek(mKeystore, &coll, &mLocalKekRef, false,
+                           /*key_size=*/32);
   ASSERT_NS_SUCCEEDED(rv);
 
   nsTArray<uint8_t> dek;
@@ -203,7 +209,8 @@ TEST_F(LockstoreKeystoreTest, DeleteDek) {
   MintLocalKek();
 
   const nsCString coll("todelete");
-  rv = keystore_create_dek(mKeystore, &coll, &mLocalKekRef, false);
+  rv = keystore_create_dek(mKeystore, &coll, &mLocalKekRef, false,
+                           /*key_size=*/32);
   ASSERT_NS_SUCCEEDED(rv);
 
   rv = keystore_delete_dek(mKeystore, &coll);
@@ -254,11 +261,14 @@ TEST_F(LockstoreKeystoreTest, ListMultipleCollections) {
   const nsCString alpha("alpha");
   const nsCString beta("beta");
   const nsCString gamma("gamma");
-  rv = keystore_create_dek(mKeystore, &alpha, &mLocalKekRef, false);
+  rv = keystore_create_dek(mKeystore, &alpha, &mLocalKekRef, false,
+                           /*key_size=*/32);
   ASSERT_NS_SUCCEEDED(rv);
-  rv = keystore_create_dek(mKeystore, &beta, &mLocalKekRef, false);
+  rv = keystore_create_dek(mKeystore, &beta, &mLocalKekRef, false,
+                           /*key_size=*/32);
   ASSERT_NS_SUCCEEDED(rv);
-  rv = keystore_create_dek(mKeystore, &gamma, &mLocalKekRef, false);
+  rv = keystore_create_dek(mKeystore, &gamma, &mLocalKekRef, false,
+                           /*key_size=*/32);
   ASSERT_NS_SUCCEEDED(rv);
 
   nsTArray<nsCString> collections;
@@ -276,7 +286,8 @@ TEST_F(LockstoreKeystoreTest, PersistenceAcrossReopen) {
   MintLocalKek();
 
   const nsCString coll("persist");
-  rv = keystore_create_dek(mKeystore, &coll, &mLocalKekRef, false);
+  rv = keystore_create_dek(mKeystore, &coll, &mLocalKekRef, false,
+                           /*key_size=*/32);
   ASSERT_NS_SUCCEEDED(rv);
 
   ASSERT_NS_SUCCEEDED(keystore_close(mKeystore));
@@ -318,7 +329,8 @@ TEST_F(LockstoreKeystoreTest, AddKekDuplicate) {
   MintLocalKek();
 
   const nsCString coll("adddup");
-  rv = keystore_create_dek(mKeystore, &coll, &mLocalKekRef, false);
+  rv = keystore_create_dek(mKeystore, &coll, &mLocalKekRef, false,
+                           /*key_size=*/32);
   ASSERT_NS_SUCCEEDED(rv);
 
   rv = keystore_add_kek(mKeystore, &coll, &mLocalKekRef, &mLocalKekRef);
@@ -351,7 +363,8 @@ TEST_F(LockstoreKeystoreTest, RemoveKekLastRemaining) {
   MintLocalKek();
 
   const nsCString coll("removelast");
-  rv = keystore_create_dek(mKeystore, &coll, &mLocalKekRef, false);
+  rv = keystore_create_dek(mKeystore, &coll, &mLocalKekRef, false,
+                           /*key_size=*/32);
   ASSERT_NS_SUCCEEDED(rv);
 
   rv = keystore_remove_kek(mKeystore, &coll, &mLocalKekRef);
@@ -364,7 +377,8 @@ TEST_F(LockstoreKeystoreTest, EncryptDecryptRoundtrip) {
   MintLocalKek();
 
   const nsCString coll("crypto");
-  rv = keystore_create_dek(mKeystore, &coll, &mLocalKekRef, false);
+  rv = keystore_create_dek(mKeystore, &coll, &mLocalKekRef, false,
+                           /*key_size=*/32);
   ASSERT_NS_SUCCEEDED(rv);
 
   const uint8_t plaintext[] = {'h', 'e', 'l', 'l', 'o'};
@@ -414,7 +428,8 @@ TEST_F(LockstoreKeystoreTest, DecryptEmptyCiphertext) {
   MintLocalKek();
 
   const nsCString coll("decempty");
-  rv = keystore_create_dek(mKeystore, &coll, &mLocalKekRef, false);
+  rv = keystore_create_dek(mKeystore, &coll, &mLocalKekRef, false,
+                           /*key_size=*/32);
   ASSERT_NS_SUCCEEDED(rv);
 
   nsTArray<uint8_t> plaintext;
@@ -504,7 +519,7 @@ TEST_F(LockstoreKeystoreTest, GetDekForPasswordWhenLockedFails) {
   nsCString pwKekRef;
   MintPassword("hunter2"_ns, pwKekRef);
   const nsCString coll("pwlocked");
-  rv = keystore_create_dek(mKeystore, &coll, &pwKekRef, false);
+  rv = keystore_create_dek(mKeystore, &coll, &pwKekRef, false, /*key_size=*/32);
   ASSERT_EQ(rv, NS_ERROR_NOT_AVAILABLE);
 }
 
@@ -588,7 +603,8 @@ TEST_F(LockstoreKeystoreTest, IsDekExtractableTrue) {
   MintLocalKek();
 
   const nsCString coll("extract-yes");
-  rv = keystore_create_dek(mKeystore, &coll, &mLocalKekRef, true);
+  rv = keystore_create_dek(mKeystore, &coll, &mLocalKekRef, true,
+                           /*key_size=*/32);
   ASSERT_NS_SUCCEEDED(rv);
 
   bool extractable = false;
@@ -603,7 +619,8 @@ TEST_F(LockstoreKeystoreTest, IsDekExtractableFalse) {
   MintLocalKek();
 
   const nsCString coll("extract-no");
-  rv = keystore_create_dek(mKeystore, &coll, &mLocalKekRef, false);
+  rv = keystore_create_dek(mKeystore, &coll, &mLocalKekRef, false,
+                           /*key_size=*/32);
   ASSERT_NS_SUCCEEDED(rv);
 
   bool extractable = true;
@@ -655,7 +672,8 @@ TEST_F(LockstoreKeystoreTest, SwitchKekSameRefRejected) {
   MintLocalKek();
 
   const nsCString coll("col");
-  rv = keystore_create_dek(mKeystore, &coll, &mLocalKekRef, false);
+  rv = keystore_create_dek(mKeystore, &coll, &mLocalKekRef, false,
+                           /*key_size=*/32);
   ASSERT_NS_SUCCEEDED(rv);
 
   rv = keystore_switch_kek(mKeystore, &coll, &mLocalKekRef, &mLocalKekRef);
@@ -692,7 +710,8 @@ TEST_F(LockstoreKeystoreTest, SwitchKekMissingOldWrapping) {
   // must reject because that other ref doesn't currently wrap this
   // collection.
   const nsCString coll("local-only");
-  rv = keystore_create_dek(mKeystore, &coll, &mLocalKekRef, false);
+  rv = keystore_create_dek(mKeystore, &coll, &mLocalKekRef, false,
+                           /*key_size=*/32);
   ASSERT_NS_SUCCEEDED(rv);
 
   nsCString otherLocal;

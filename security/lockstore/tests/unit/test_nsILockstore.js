@@ -63,7 +63,7 @@ add_setup(async function () {
   // under both KEKs sidesteps the cleanup.
   const ls = getService();
   await ls.unlockKek(KEK_PASSWORD, PW, /*timeoutMs*/ 60_000);
-  await ls.createDek("_keepalive", KEK_LOCAL, false);
+  await ls.createDek("_keepalive", KEK_LOCAL, false, 32);
   await ls.addKek("_keepalive", KEK_LOCAL, KEK_PASSWORD);
   await ls.lockKek(KEK_PASSWORD);
 });
@@ -81,7 +81,7 @@ add_task(function test_service_accessible() {
 
 add_task(async function test_local_key_encrypt_decrypt_roundtrip() {
   const ls = getService();
-  await ls.createDek("rt", KEK_LOCAL, false);
+  await ls.createDek("rt", KEK_LOCAL, false, 32);
 
   const plaintext = bytes("hello, lockstore");
   const ct = await ls.encrypt("rt", KEK_LOCAL, plaintext);
@@ -99,7 +99,7 @@ add_task(async function test_create_dek_duplicate_rejects() {
   const ls = getService();
   // "rt" already exists from the previous task; recreating must fail.
   await Assert.rejects(
-    ls.createDek("rt", KEK_LOCAL, false),
+    ls.createDek("rt", KEK_LOCAL, false, 32),
     /NS_ERROR_FAILURE/,
     "createDek on an existing collection rejects"
   );
@@ -108,12 +108,12 @@ add_task(async function test_create_dek_duplicate_rejects() {
 add_task(async function test_create_dek_empty_args_rejected() {
   const ls = getService();
   await Assert.rejects(
-    ls.createDek("", KEK_LOCAL, false),
+    ls.createDek("", KEK_LOCAL, false, 32),
     INVALID_ARG_RE,
     "createDek with empty collection rejects"
   );
   await Assert.rejects(
-    ls.createDek("col", "", false),
+    ls.createDek("col", "", false, 32),
     INVALID_ARG_RE,
     "createDek with empty kekRef rejects"
   );
@@ -225,7 +225,7 @@ add_task(async function test_decrypt_truncated_ciphertext_rejects() {
 add_task(async function test_decrypt_with_wrong_kek_rejects() {
   const ls = getService();
   // Create a collection wrapped only under KEK_LOCAL.
-  await ls.createDek("local-only", KEK_LOCAL, false);
+  await ls.createDek("local-only", KEK_LOCAL, false, 32);
   const ct = await ls.encrypt("local-only", KEK_LOCAL, bytes("wrong-kek"));
   // Decrypting under a KEK that doesn't wrap this DEK must reject. PP
   // is not unlocked here either, but the failure mode we care about is
@@ -241,8 +241,8 @@ add_task(async function test_decrypt_with_wrong_kek_rejects() {
 
 add_task(async function test_list_deks_and_delete() {
   const ls = getService();
-  await ls.createDek("one", KEK_LOCAL, false);
-  await ls.createDek("two", KEK_LOCAL, false);
+  await ls.createDek("one", KEK_LOCAL, false, 32);
+  await ls.createDek("two", KEK_LOCAL, false, 32);
   const before = await ls.listDeks();
   Assert.ok(before.includes("one"));
   Assert.ok(before.includes("two"));
@@ -276,7 +276,7 @@ add_task(async function test_delete_dek_empty_arg_rejected() {
 
 add_task(async function test_listKeks_round_trip() {
   const ls = getService();
-  await ls.createDek("keks-rt", KEK_LOCAL, false);
+  await ls.createDek("keks-rt", KEK_LOCAL, false, 32);
 
   let refs = await ls.listKeks("keks-rt");
   Assert.deepEqual(
@@ -316,7 +316,7 @@ add_task(async function test_delete_dek_nonexistent_rejects() {
 
 add_task(async function test_delete_dek_succeeds() {
   const ls = getService();
-  await ls.createDek("safe-delete", KEK_LOCAL, false);
+  await ls.createDek("safe-delete", KEK_LOCAL, false, 32);
   await ls.deleteDek("safe-delete");
   await Assert.rejects(
     ls.encrypt("safe-delete", KEK_LOCAL, bytes("nope")),
@@ -365,7 +365,7 @@ add_task(async function test_password_lifecycle() {
   Assert.ok(ls.isKekUnlocked(KEK_PASSWORD), "correct password unlocks");
 
   // Encrypt/decrypt under the Password KEK while unlocked.
-  await ls.createDek("pw-col", KEK_PASSWORD, false);
+  await ls.createDek("pw-col", KEK_PASSWORD, false, 32);
   const ct = await ls.encrypt("pw-col", KEK_PASSWORD, bytes("secret"));
   const round = await ls.decrypt("pw-col", KEK_PASSWORD, ct);
   Assert.equal(str(round), "secret", "Password roundtrip while unlocked");
@@ -417,7 +417,7 @@ add_task(async function test_add_remove_kek() {
     await ls.unlockKek(KEK_PASSWORD, PW, 60000);
   }
 
-  await ls.createDek("multi", KEK_LOCAL, true);
+  await ls.createDek("multi", KEK_LOCAL, true, 32);
   await ls.addKek("multi", KEK_LOCAL, KEK_PASSWORD);
 
   const ct = await ls.encrypt("multi", KEK_LOCAL, bytes("shared DEK"));
@@ -586,7 +586,7 @@ add_task(async function test_pkcs11_unknown_kek_ref_rejected() {
 // async ops must all complete and produce distinct ciphertexts.
 add_task(async function test_concurrent_encrypts_serialised() {
   const ls = getService();
-  await ls.createDek("concurrent", KEK_LOCAL, false);
+  await ls.createDek("concurrent", KEK_LOCAL, false, 32);
 
   const N = 8;
   const pt = bytes("parallel-but-serialised");
@@ -621,7 +621,7 @@ add_task(async function test_concurrent_mixed_ops() {
   const ls = getService();
   // Mix createDek / encrypt / listDeks / deleteDek in flight.
   const colls = ["mix-a", "mix-b", "mix-c"];
-  await Promise.all(colls.map(c => ls.createDek(c, KEK_LOCAL, false)));
+  await Promise.all(colls.map(c => ls.createDek(c, KEK_LOCAL, false, 32)));
 
   const collsAfter = await ls.listDeks();
   for (const c of colls) {
@@ -716,7 +716,7 @@ add_task(async function test_import_dek_duplicate_rejected() {
 
 add_task(async function test_is_dek_extractable_true() {
   const ls = getService();
-  await ls.createDek("extract-yes", KEK_LOCAL, true);
+  await ls.createDek("extract-yes", KEK_LOCAL, true, 32);
   Assert.equal(
     await ls.isDekExtractable("extract-yes"),
     true,
@@ -727,7 +727,7 @@ add_task(async function test_is_dek_extractable_true() {
 
 add_task(async function test_is_dek_extractable_false() {
   const ls = getService();
-  await ls.createDek("extract-no", KEK_LOCAL, false);
+  await ls.createDek("extract-no", KEK_LOCAL, false, 32);
   Assert.equal(
     await ls.isDekExtractable("extract-no"),
     false,
@@ -751,7 +751,7 @@ add_task(async function test_switch_kek_round_trip() {
     await ls.unlockKek(KEK_PASSWORD, PW, 60000);
   }
 
-  await ls.createDek("switch-rt", KEK_LOCAL, false);
+  await ls.createDek("switch-rt", KEK_LOCAL, false, 32);
   // Produce ciphertext under the OLD kek_ref; after switching to PP the
   // same ciphertext must still decrypt — switch_kek changes only the
   // wrapping, not the DEK bytes.
@@ -783,7 +783,7 @@ add_task(async function test_switch_kek_round_trip() {
 
 add_task(async function test_switch_kek_same_ref_rejected() {
   const ls = getService();
-  await ls.createDek("same-ref", KEK_LOCAL, false);
+  await ls.createDek("same-ref", KEK_LOCAL, false, 32);
   await Assert.rejects(
     ls.switchKek("same-ref", KEK_LOCAL, KEK_LOCAL),
     /NS_ERROR_FAILURE/,
@@ -829,7 +829,7 @@ add_task(async function test_delete_kek_drops_unreferenced_local() {
   const ephemeral = await mintLocalKek();
   await ls.deleteKek(ephemeral);
   await Assert.rejects(
-    ls.createDek("dk-after-delete", ephemeral, false),
+    ls.createDek("dk-after-delete", ephemeral, false, 32),
     /NS_ERROR/,
     "createDek under a deleted local kek_ref fails"
   );
@@ -849,7 +849,7 @@ add_task(async function test_delete_kek_drops_unreferenced_password() {
 add_task(async function test_delete_kek_rejects_when_in_use() {
   const ls = getService();
   const ephemeral = await mintLocalKek();
-  await ls.createDek("dk-in-use", ephemeral, false);
+  await ls.createDek("dk-in-use", ephemeral, false, 32);
   await Assert.rejects(
     ls.deleteKek(ephemeral),
     /NS_ERROR_FAILURE/,

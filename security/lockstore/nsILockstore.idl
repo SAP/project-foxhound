@@ -99,11 +99,19 @@ interface nsILockstore : nsISupports
    * external cipher demands raw key material (e.g. mozStorage's
    * ObfuscatingVFS, which needs a 32-byte key for SQLite page
    * encryption); `encrypt`/`decrypt` work regardless of `extractable`.
+   *
+   * `keySize` is the DEK length in bytes the caller wants minted
+   * (1..=1024). It is decoupled from the wrapping cipher's key size:
+   * lockstore wraps the DEK under the KEK using its own internal
+   * cipher, but the DEK itself can be any byte length the consumer
+   * declares. A 32-byte DEK matches the obfsvfs page cipher
+   * (ChaCha20-Poly1305).
    */
   [implicit_jscontext]
   Promise createDek(in AUTF8String collection,
                     in AUTF8String kekRef,
-                    in boolean extractable);
+                    in boolean extractable,
+                    in unsigned long keySize);
 
   /**
    * Install caller-supplied `dekBytes` as the DEK for `collection`,

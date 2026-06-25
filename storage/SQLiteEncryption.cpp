@@ -11,6 +11,7 @@
 #include "mozilla/StaticPtr.h"
 #include "mozilla/StaticPrefs_security.h"
 #include "mozilla/SyncRunnable.h"
+#include "mozilla/dom/quota/IPCStreamCipherStrategy.h"
 #include "mozilla/security/lockstore/lockstore_ffi_generated.h"
 #include "ScopedNSSTypes.h"
 #include "nsAppDirectoryServiceDefs.h"
@@ -43,6 +44,22 @@ using mozilla::security::lockstore::keystore_open;
 using mozilla::security::lockstore::KeystoreHandle;
 
 constexpr size_t kDekBytes = 32;
+
+// The lockstore-minted DEK is consumed directly as the
+// page-encryption cipher's symmetric key in obfsvfs. The cipher's
+// `KeyType` is the load-bearing definition of how many bytes that
+// requires; pin `kDekBytes` to it so any cipher migration (or a
+// change to lockstore that mints a different-sized key) breaks the
+// build instead of producing a silently truncated / padded cipher
+// key at runtime. This is the storage-side counterpart to the
+// explicit `key_size` argument now threaded through
+// `keystore_create_dek`.
+static_assert(
+    kDekBytes ==
+        sizeof(mozilla::dom::quota::IPCStreamCipherStrategy::KeyType),
+    "kDekBytes must match the page-encryption cipher's KeyType size; "
+    "update kDekBytes (and the keystore_create_dek call sites that "
+    "pass it) in lockstep with any cipher key-length change.");
 
 mozilla::StaticMutex sStateMutex;
 KeystoreHandle* sHandle MOZ_GUARDED_BY(sStateMutex) = nullptr;
@@ -384,7 +401,8 @@ nsresult GetEncryptionKey(const nsACString& aDatabasePath, OpenIntent aIntent,
       // key: a missing DEK for an existing database is a hard error (handled
       // below), not a cue to create one and make the contents unreadable.
       nsresult crv = keystore_create_dek(sHandle, &collection, &sKekRef,
-                                         /* extractable */ true);
+                                         /* extractable */ true,
+                                         /* key_size */ kDekBytes);
       if (NS_FAILED(crv)) {
         MOZ_LOG(GetSQLiteEncryptionLog(), LogLevel::Debug,
                 ("create_dek returned 0x%" PRIx32 "; re-reading",

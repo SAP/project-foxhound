@@ -55,7 +55,7 @@ class LockstoreService final : public nsILockstore, public nsIObserver {
   nsresult DoLockKek(const nsACString& aKekRef);
   nsresult DoLock();
   nsresult DoCreateDek(const nsACString& aCollection, const nsACString& aKekRef,
-                       bool aExtractable);
+                       bool aExtractable, uint32_t aKeySize);
   nsresult DoImportDek(const nsACString& aCollection, const nsACString& aKekRef,
                        const nsTArray<uint8_t>& aDekBytes, bool aExtractable);
   Result<bool, nsresult> DoIsDekExtractable(const nsACString& aCollection);

@@ -96,6 +96,7 @@ pub extern "C" fn keystore_create_dek(
     collection: &nsACString,
     kek_ref: &nsACString,
     extractable: bool,
+    key_size: usize,
 ) -> nsresult {
     if collection.is_empty() || kek_ref.is_empty() {
         log::error!("Collection and kek_ref cannot be empty");
@@ -107,7 +108,7 @@ pub extern "C" fn keystore_create_dek(
 
     match handle
         .keystore
-        .create_dek(&coll_str, &kek_ref_str, extractable)
+        .create_dek(&coll_str, &kek_ref_str, extractable, key_size)
     {
         Ok(_) => NS_OK,
         Err(e) => error_to_nsresult(e),

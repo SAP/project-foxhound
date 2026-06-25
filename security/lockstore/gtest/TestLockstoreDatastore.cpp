@@ -56,7 +56,8 @@ class LockstoreDatastoreTest : public ::testing::Test {
                              /* cache_timeout_ms */ 0, &mLocalKekRef);
     ASSERT_NS_SUCCEEDED(rv);
 
-    rv = keystore_create_dek(mKeystore, &mTestColl, &mLocalKekRef, false);
+    rv = keystore_create_dek(mKeystore, &mTestColl, &mLocalKekRef, false,
+                             /*key_size=*/32);
     ASSERT_NS_SUCCEEDED(rv);
   }
 
