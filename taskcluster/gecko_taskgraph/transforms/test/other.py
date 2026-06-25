@@ -768,7 +768,7 @@ def apply_bug2043540_optimization(config, tasks):
             task.get("test-name") == "mochitest-browser-chrome"
             and "macosx1015-64" in test_platform
         ):
-            task["optimization"] = {"skip-unless-backstop": None}
+            task["optimization"] = {"test-backstop": None}
         yield task
 
 
