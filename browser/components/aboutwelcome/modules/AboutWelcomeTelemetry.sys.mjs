@@ -40,6 +40,136 @@ ChromeUtils.defineLazyGetter(lazy, "log", () => {
   return new Logger("AboutWelcomeTelemetry");
 });
 
+function normalizeTokens(tokens) {
+  if (!tokens) {
+    return undefined;
+  }
+  return {
+    search: tokens.search,
+    existing_memory: tokens.existing_memory,
+    followup: tokens.followup,
+  };
+}
+
+function normalizeToolUIData(toolUIData) {
+  if (!toolUIData) {
+    return undefined;
+  }
+  return {
+    uiType: toolUIData.uiType,
+    toolCallId: toolUIData.toolCallId,
+    properties: toolUIData.properties
+      ? {
+          originalUserPrompt: toolUIData.properties.originalUserPrompt,
+          tabs: toolUIData.properties.tabs?.map(
+            ({ linkedPanel, url, title, iconSrc, checked }) => ({
+              linkedPanel,
+              url,
+              title,
+              iconSrc,
+              checked,
+            })
+          ),
+        }
+      : undefined,
+  };
+}
+
+/**
+ * Normalizes a ChatMessage content object for recording as a Glean object
+ * metric. Only schema-declared fields are included to avoid schema-mismatch
+ * errors if ChatMessage gains undeclared fields in the future (undeclared
+ * fields cause Glean to drop the entire object). `type` fields are also
+ * renamed to avoid reserved-keyword conflicts in Glean's code generation
+ * (Bug 1945220).
+ *
+ * @param {object} content - The raw ChatMessage content object.
+ * @returns {object|undefined} Normalized content with only schema-declared fields.
+ */
+function normalizeToolCalls(toolCalls) {
+  return toolCalls?.map(({ type: call_type, id, function: fn }) => ({
+    id,
+    call_type,
+    function: fn ? { name: fn.name, arguments: fn.arguments } : undefined,
+  }));
+}
+
+function normalizeContent(content) {
+  if (!content) {
+    return undefined;
+  }
+  const { type: content_type, body, contextMentions } = content;
+
+  let normalizedBody;
+  if (typeof body === "string") {
+    normalizedBody = { text: body };
+  } else if (Array.isArray(body)) {
+    normalizedBody = { result: body };
+  } else if (body?.tool_calls) {
+    normalizedBody = { tool_calls: normalizeToolCalls(body.tool_calls) };
+  }
+
+  return {
+    content_type,
+    tool_call_id: content.tool_call_id,
+    body: normalizedBody,
+    name: content.name,
+    userContext: content.userContext
+      ? { realTimeContext: content.userContext.realTimeContext }
+      : undefined,
+    contextMentions: contextMentions?.map(
+      ({ type: mention_type, url, label, iconSrc }) => ({
+        mention_type,
+        url,
+        label,
+        iconSrc,
+      })
+    ),
+    contextPageUrl: content.contextPageUrl,
+  };
+}
+
+/**
+ * Prepares a chat log for recording as a Glean object metric. Explicitly
+ * picks only schema-declared fields from each ChatMessage to avoid
+ * schema-mismatch errors from undeclared fields, and normalizes content.body
+ * to always be an object (Glean object metrics require a single declared type):
+ *   - string bodies (text messages) become { text: body }
+ *   - array bodies (tool result messages) become { result: body }
+ *   - object bodies (function messages) have tool_calls[].type renamed to
+ *     call_type (Bug 1945220)
+ */
+function normalizeChatLog(chat) {
+  if (!Array.isArray(chat?.log)) {
+    return null;
+  }
+
+  return {
+    log: chat.log.map(msg => ({
+      id: msg.id,
+      createdDate: msg.createdDate,
+      parentMessageId: msg.parentMessageId,
+      revisionRootMessageId: msg.revisionRootMessageId,
+      ordinal: msg.ordinal,
+      isActiveBranch: msg.isActiveBranch,
+      role: msg.role,
+      modelId: msg.modelId,
+      content: normalizeContent(msg.content),
+      convId: msg.convId,
+      pageUrl: msg.pageUrl,
+      turnIndex: msg.turnIndex,
+      memoriesEnabled: msg.memoriesEnabled,
+      memoriesFlagSource: msg.memoriesFlagSource,
+      memoriesApplied: msg.memoriesApplied,
+      webSearchQueries: msg.webSearchQueries,
+      followUpSuggestions: msg.followUpSuggestions,
+      pageHistoryDeleted: msg.pageHistoryDeleted,
+      tokens: normalizeTokens(msg.tokens),
+      toolUIData: normalizeToolUIData(msg.toolUIData),
+    })),
+  };
+}
+
 export class AboutWelcomeTelemetry {
   constructor() {
     XPCOMUtils.defineLazyPreferenceGetter(
@@ -219,9 +349,13 @@ export class AboutWelcomeTelemetry {
     // the dedicated metric above, in the microsurvey ping.
     delete event_context?.value;
     if (event_context?.smart_window_user_feedback_data && writeInMicrosurvey) {
-      Glean.microsurvey.smartWindowUserFeedbackData.set(
-        event_context.smart_window_user_feedback_data
-      );
+      const { chat, ...userFeedbackData } =
+        event_context.smart_window_user_feedback_data;
+      Glean.microsurveySmartWindow.userFeedbackData.set(userFeedbackData);
+      const normalizedChat = normalizeChatLog(chat);
+      if (normalizedChat) {
+        Glean.microsurveySmartWindow.chat.set(normalizedChat);
+      }
     }
     delete event_context?.smart_window_user_feedback_data;
     // Screen_index was being coerced into a boolean value
@@ -302,6 +436,7 @@ export class AboutWelcomeTelemetry {
       }
       Glean.microsurvey.appDisplayVersion.set(version);
       Glean.microsurvey.appChannel.set(channel);
+      Glean.microsurvey.appBuildId.set(Services.appinfo.appBuildID);
     }
 
     // With all the metrics set, now it's time to submit this ping.

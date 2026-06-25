@@ -396,16 +396,35 @@ add_task(async function test_smart_window_user_feedback_data() {
 
   const AWTelemetry = new AboutWelcomeTelemetry();
   const feedbackData = {
-    metadata: { model: "test-model", turn_count: 2, prompt_version: 4 },
+    metadata: {
+      model: "test-model",
+      turn_count: 2,
+      prompt_version: 4,
+    },
+    chat: {
+      log: [{ role: 0, content: { type: "text", body: "hello" } }],
+    },
   };
 
   let pingSubmitted = false;
   GleanPings.microsurvey.testBeforeNextSubmit(() => {
     pingSubmitted = true;
     Assert.deepEqual(
-      Glean.microsurvey.smartWindowUserFeedbackData.testGetValue(),
-      feedbackData,
-      "smart_window_user_feedback_data is set on microsurvey ping."
+      Glean.microsurveySmartWindow.userFeedbackData.testGetValue(),
+      { metadata: feedbackData.metadata },
+      "microsurvey.smart_window.user_feedback_data is set on microsurvey ping."
+    );
+    Assert.deepEqual(
+      Glean.microsurveySmartWindow.chat.testGetValue(),
+      {
+        log: [
+          {
+            role: 0,
+            content: { content_type: "text", body: { text: "hello" } },
+          },
+        ],
+      },
+      "microsurvey.smart_window.chat is set with normalized body on microsurvey ping."
     );
   });
   await AWTelemetry.sendTelemetry({
@@ -420,8 +439,12 @@ add_task(async function test_smart_window_user_feedback_data() {
   GleanPings.messagingSystem.testBeforeNextSubmit(() => {
     pingSubmitted = true;
     Assert.ok(
-      !Glean.microsurvey.smartWindowUserFeedbackData.testGetValue(),
-      "smart_window_user_feedback_data is not set without write_in_microsurvey."
+      !Glean.microsurveySmartWindow.userFeedbackData.testGetValue(),
+      "user_feedback_data is not set without write_in_microsurvey."
+    );
+    Assert.ok(
+      !Glean.microsurveySmartWindow.chat.testGetValue(),
+      "chat is not set without write_in_microsurvey."
     );
   });
   await AWTelemetry.sendTelemetry({
@@ -433,6 +456,121 @@ add_task(async function test_smart_window_user_feedback_data() {
     pingSubmitted,
     "messagingSystem ping was submitted without write_in_microsurvey"
   );
+
+  pingSubmitted = false;
+  GleanPings.microsurvey.testBeforeNextSubmit(() => {
+    pingSubmitted = true;
+    Assert.ok(
+      Glean.microsurveySmartWindow.userFeedbackData.testGetValue(),
+      "user_feedback_data is set when chat is null."
+    );
+    Assert.ok(
+      !Glean.microsurveySmartWindow.chat.testGetValue(),
+      "chat is not set when chat is null."
+    );
+  });
+  await AWTelemetry.sendTelemetry({
+    event_context: {
+      smart_window_user_feedback_data: {
+        metadata: feedbackData.metadata,
+        chat: null,
+      },
+      write_in_microsurvey: true,
+    },
+  });
+  Assert.ok(pingSubmitted, "microsurvey ping was submitted with null chat");
+});
+
+add_task(async function test_chat_log_normalization() {
+  registerCleanupFunction(() => {
+    Services.prefs.clearUserPref(TELEMETRY_PREF);
+  });
+  Services.prefs.setBoolPref(TELEMETRY_PREF, true);
+
+  const AWTelemetry = new AboutWelcomeTelemetry();
+  const chat = {
+    log: [
+      // string body (text message) — should become { text }
+      {
+        role: 0,
+        content: { type: "text", body: "hello" },
+      },
+      // array body (tool result message) — should become { result }
+      {
+        role: 3,
+        content: {
+          tool_call_id: "call_123",
+          name: "get_page_content",
+          body: ["page content"],
+        },
+      },
+      // object body (function message) — should be unchanged
+      {
+        role: 1,
+        content: {
+          type: "function",
+          body: {
+            tool_calls: [
+              {
+                id: "call_123",
+                type: "function",
+                function: {
+                  name: "get_page_content",
+                  arguments: '{"url_list": ["https://example.com"]}',
+                },
+              },
+            ],
+          },
+        },
+      },
+    ],
+  };
+
+  let pingSubmitted = false;
+  GleanPings.microsurvey.testBeforeNextSubmit(() => {
+    pingSubmitted = true;
+    const recorded = Glean.microsurveySmartWindow.chat.testGetValue();
+
+    Assert.deepEqual(
+      recorded.log[0].content.body,
+      { text: "hello" },
+      "string body is normalized to { text }"
+    );
+
+    Assert.deepEqual(
+      recorded.log[1].content.body,
+      { result: ["page content"] },
+      "array body is normalized to { result }"
+    );
+
+    Assert.deepEqual(
+      recorded.log[2].content.body,
+      {
+        tool_calls: [
+          {
+            id: "call_123",
+            call_type: "function",
+            function: {
+              name: "get_page_content",
+              arguments: '{"url_list": ["https://example.com"]}',
+            },
+          },
+        ],
+      },
+      "object body has tool call type renamed to call_type"
+    );
+  });
+
+  await AWTelemetry.sendTelemetry({
+    event_context: {
+      smart_window_user_feedback_data: {
+        metadata: { model: "test-model", turn_count: 1, prompt_version: 1 },
+        chat,
+      },
+      write_in_microsurvey: true,
+    },
+  });
+  Assert.ok(pingSubmitted, "microsurvey ping was submitted");
 });
 
 // For event_context to be more useful, we want to make sure we don't error
