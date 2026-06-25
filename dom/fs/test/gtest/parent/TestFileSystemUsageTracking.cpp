@@ -107,7 +107,8 @@ TEST_F(TestFileSystemUsageTracking, RemovingFileShouldDecreaseUsage) {
     // obfsvfs forces an 8192-byte page size with 32 reserved bytes per page,
     // so the on-disk database usage no longer matches the byte counts this
     // test computes assuming the unencrypted page layout.
-    GTEST_SKIP() << "QM usage accounting differs under SQLite at-rest encryption";
+    GTEST_SKIP()
+        << "QM usage accounting differs under SQLite at-rest encryption";
   }
   // Initialize database
   ASSERT_NO_FATAL_FAILURE(EnsureDataManager());

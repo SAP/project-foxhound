@@ -1525,9 +1525,9 @@ nsresult mozilla::MarkProfileEncryptedDatabases() {
   // compatibility.ini to gate a future launch, so there is nothing to mark and
   // nothing to protect. Treat this as a benign no-op. Returning a failure here
   // would flip sMarkerWriteFailed (see MarkProfileEncryptedIfNeeded) and refuse
-  // every DEK mint for the session, breaking all in-profile opens under xpcshell
-  // with the pref on. A genuine write failure on an existing profile is still
-  // surfaced below.
+  // every DEK mint for the session, breaking all in-profile opens under
+  // xpcshell with the pref on. A genuine write failure on an existing profile
+  // is still surfaced below.
   if (NS_FAILED(rv) || !file) return NS_OK;
 
   file->AppendNative(FILE_COMPATIBILITY_INFO);

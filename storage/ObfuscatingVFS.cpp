@@ -721,8 +721,8 @@ static int obfsOpen(sqlite3_vfs* pVfs, const char* zName, sqlite3_file* pFile,
   nsAutoCString policyKey;
 
   if (!keyReady && zKey == nullptr &&
-      (flags & (SQLITE_OPEN_MAIN_DB | SQLITE_OPEN_WAL |
-                SQLITE_OPEN_MAIN_JOURNAL))) {
+      (flags &
+       (SQLITE_OPEN_MAIN_DB | SQLITE_OPEN_WAL | SQLITE_OPEN_MAIN_JOURNAL))) {
     // No URI key. With obfsvfs registered as SQLite's default VFS, this is
     // the path every keyless main/WAL/journal open lands in. Apply the
     // at-rest encryption *policy*; never silently fall back to plaintext
