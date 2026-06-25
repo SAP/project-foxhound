@@ -23,6 +23,7 @@ UNIFIED_SOURCES += [
     "TestEventTargetQI.cpp",
     "TestFile.cpp",
     "TestGCPostBarriers.cpp",
+    "TestHex.cpp",
     "TestID.cpp",
     "TestIDUtils.cpp",
     "TestINIParser.cpp",
