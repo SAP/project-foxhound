@@ -127,10 +127,37 @@ class ScriptLoadRequest : public nsISupports,
   virtual void SetReady();
 
   enum class State : uint8_t {
+    // The initial state before checking the in-memory cache.
     CheckingCache,
+
+    // One of the following:
+    //   * Fetching the script text from the network
+    //   * Fetching the script text from the necko cache
+    //   * Fetching the serialized stencil from the necko cache
     Fetching,
+
+    // Retrieved the already-compiled script from the in-memory cache, but not
+    // yet transitioned to Ready state, in order to avoid processing the script
+    // in the same timing as the script is inserted.
+    DelayingReady,
+
+    // Fetched the script text either from the network or the necko cache,
+    // and performing off-thread compilation.
+    //
+    // NOTE: This state is not used when the compilation is done on the
+    //       main thread.
     Compiling,
+
+    // One of the following:
+    //   * Fetched the script text from the network or the necko cache,
+    //     and the compilation is done
+    //   * Fetched the serialized stencil from the necko cache, and the
+    //     decoding is done
+    //   * Retrieved from the stencil in-memory cache
+    // The script can be executed, or is already executed.
     Ready,
+
+    // The request is cancelled, and the script is no longer used.
     Canceled
   };
 
@@ -143,6 +170,7 @@ class ScriptLoadRequest : public nsISupports,
   // Setup and load resources, to fill the LoadedScript and make it usable by
   // the JavaScript engine.
   bool IsFetching() const { return mState == State::Fetching; }
+  bool IsDelayingReady() const { return mState == State::DelayingReady; }
   bool IsCompiling() const { return mState == State::Compiling; }
   bool IsCanceled() const { return mState == State::Canceled; }
 
@@ -181,14 +209,21 @@ class ScriptLoadRequest : public nsISupports,
     return FetchOptions()->mTriggeringPrincipal;
   }
 
-  // Convert a CheckingCache ScriptLoadRequest into a Ready one, by populating
-  // the script data from cached script.
+  // Convert a CheckingCache ScriptLoadRequest into a DelayingReady
+  // (for classic script and import map) or Fetching (for module script),
+  // by populating the script data from the cached script.
+  //
+  // The DelayingReady state should be converted into Ready state, by calling
+  // SetReady in the next event tick.
   //
   // aFetchOptions is the current request's fetch option, which can have
   // different nonce value.
   void CacheEntryFound(LoadedScript* aLoadedScript,
                        ScriptFetchOptions* aFetchOptions);
 
+  // Use the cached entry, reviving from the dirty state.
+  // This should be called when the request is getting fetched from necko,
+  // and this keeps the request in the Fetching state.
   void CacheEntryRevived(LoadedScript* aLoadedScript);
 
   // Convert a CheckingCache ScriptLoadRequest into a Fetching one, by creating

@@ -699,11 +699,37 @@ static nsSecurityFlags CORSModeToSecurityFlags(CORSMode aCORSMode) {
   return securityFlags;
 }
 
+void ScriptLoader::OnDelayedReady(
+    ScriptLoadRequest* aRequest,
+    const Maybe<nsAutoString>& aCharsetForPreload) {
+  if (!mDocument) {
+    return;
+  }
+
+  if (aRequest->IsCanceled()) {
+    return;
+  }
+
+  MOZ_ASSERT(aRequest->IsRetrievedFromMemoryCache());
+  MOZ_ASSERT(aRequest->IsDelayingReady());
+
+  EmulateNetworkEvents(aRequest, aCharsetForPreload);
+
+  aRequest->SetReady();
+  MaybeMoveToLoadedList(aRequest);
+  ProcessPendingRequests();
+}
+
 nsresult ScriptLoader::StartClassicLoad(
     ScriptLoadRequest* aRequest,
     const Maybe<nsAutoString>& aCharsetForPreload) {
   if (aRequest->IsRetrievedFromMemoryCache()) {
-    EmulateNetworkEvents(aRequest, aCharsetForPreload);
+    nsCOMPtr<nsIRunnable> runnable =
+        mozilla::NewRunnableMethod<RefPtr<ScriptLoadRequest>,
+                                   const Maybe<nsAutoString>>(
+            "ScriptLoader::OnDelayedReady", this, &ScriptLoader::OnDelayedReady,
+            aRequest, aCharsetForPreload);
+    mDocument->Dispatch(runnable.forget());
     return NS_OK;
   }
 
@@ -1344,6 +1370,8 @@ void ScriptLoader::TryUseCache(ReferrerPolicy aReferrerPolicy,
   AddMemoryCacheRefCountTelemetry(cacheResult.mCompleteValue);
 
   aRequest->CacheEntryFound(cacheResult.mCompleteValue, aFetchOptions);
+  MOZ_ASSERT_IF(!aRequest->IsModuleRequest(), aRequest->IsDelayingReady());
+  MOZ_ASSERT_IF(aRequest->IsModuleRequest(), aRequest->IsFetching());
   LOG(
       ("ScriptLoader (%p): Found in-memory cache LoadedScript (%p) for "
        "ScriptLoadRequest(%p) %s.",
@@ -4584,6 +4612,8 @@ nsresult ScriptLoader::OnStreamComplete(
             // Main thread compilation is skipped in the same way as
             // non-dirty cache.
             aRequest->CacheEntryRevived(cacheResult.mCompleteValue);
+
+            MOZ_ASSERT(aRequest->IsFetching());
 
             cacheResult.mCompleteValue->AddFetchCount();
 
