@@ -10,9 +10,6 @@
 category app-startup nsBrowserGlue @mozilla.org/browser/browserglue;1 application={ec8030f7-c20a-464f-9b0e-13a3a9e97384} application={aa3c5121-dab2-40e2-81ca-7ea25febc110}
 
 category first-startup-new-profile resource:///modules/AboutNewTabResourceMapping.sys.mjs AboutNewTabResourceMapping.firstStartupNewProfile
-#ifdef XP_WIN
-category first-startup-new-profile resource:///modules/DefaultWindowsLaunchOnLogin.sys.mjs DefaultWindowsLaunchOnLogin.applyExperimentOverride
-#endif
 
 # Browser global components initializing before UI startup
 category browser-before-ui-startup resource:///modules/sessionstore/SessionStore.sys.mjs SessionStore.init
@@ -24,6 +21,9 @@ category browser-before-ui-startup moz-src:///browser/components/privatebrowsing
 category browser-before-ui-startup resource:///modules/AboutHomeStartupCache.sys.mjs AboutHomeStartupCache.init
 category browser-before-ui-startup resource:///modules/AccountsGlue.sys.mjs AccountsGlue.init
 category browser-before-ui-startup moz-src:///browser/modules/ObserverForwarder.sys.mjs ObserverForwarder.init
+#ifdef XP_WIN
+category browser-before-ui-startup resource:///modules/DefaultWindowsLaunchOnLogin.sys.mjs DefaultWindowsLaunchOnLogin.maybeEnableOnFirstRun
+#endif
 
 # Browser window lifecycle consumers
 category browser-window-before-initial-xul-layout-document-preparation chrome://browser/content/browser-customization.js AutoHideMenubar.init

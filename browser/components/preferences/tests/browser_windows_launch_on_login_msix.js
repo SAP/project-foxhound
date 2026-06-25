@@ -19,10 +19,17 @@ add_task(async function test_check_uncheck_checkbox() {
     featureId: "windowsLaunchOnLogin",
     value: { enabled: true },
   });
+  // Start from a known-disabled state so the test does not depend on whether
+  // first-run default enablement ran during startup. This must happen before
+  // the preferences pane is opened, since the checkbox reads the launch-on-
+  // login state during its setup.
+  await WindowsLaunchOnLogin._disableLaunchOnLoginMSIX();
+
   // Open preferences to general pane
   await openPreferencesViaOpenPreferencesAPI(STARTUP_PANE, {
     leaveOpen: true,
   });
+
   let doc = gBrowser.contentDocument;
   await TestUtils.waitForCondition(
     () => doc.getElementById("windowsLaunchOnLogin"),
@@ -31,37 +38,27 @@ add_task(async function test_check_uncheck_checkbox() {
 
   let launchOnLoginCheckbox = doc.getElementById("windowsLaunchOnLogin");
 
-  // Launch-on-login is enabled by default for new installs,
-  // so on a fresh profile the checkbox starts checked and the
-  // startup task is already enabled.
+  ok(!launchOnLoginCheckbox.checked, "Autostart checkbox starts unchecked");
+
+  // Click once: should enable launch-on-login.
+  synthesizeClick(launchOnLoginCheckbox);
   ok(
     launchOnLoginCheckbox.checked,
-    "Autostart checkbox starts checked (default-enabled for new installs)"
+    "Autostart checkbox checked after first click"
   );
-  ok(
-    await WindowsLaunchOnLogin.getLaunchOnLoginEnabled(),
-    "Launch on login is enabled at startup"
-  );
+  await TestUtils.waitForCondition(async () => {
+    return await WindowsLaunchOnLogin.getLaunchOnLoginEnabled();
+  }, "Launch on login is enabled after checking");
 
-  // Click once: should disable launch-on-login.
+  // Click again: should disable launch-on-login.
   synthesizeClick(launchOnLoginCheckbox);
   ok(
     !launchOnLoginCheckbox.checked,
-    "Autostart checkbox unchecked after first click"
+    "Autostart checkbox unchecked after second click"
   );
   await TestUtils.waitForCondition(async () => {
     return !(await WindowsLaunchOnLogin.getLaunchOnLoginEnabled());
   }, "Launch on login is disabled after unchecking");
-
-  // Click again: should re-enable launch-on-login.
-  synthesizeClick(launchOnLoginCheckbox);
-  ok(
-    launchOnLoginCheckbox.checked,
-    "Autostart checkbox re-checked after second click"
-  );
-  await TestUtils.waitForCondition(async () => {
-    return await WindowsLaunchOnLogin.getLaunchOnLoginEnabled();
-  }, "Launch on login is re-enabled after rechecking");
 
   gBrowser.removeCurrentTab();
   await doCleanup();

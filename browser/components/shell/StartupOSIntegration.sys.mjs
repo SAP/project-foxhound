@@ -166,35 +166,7 @@ export let StartupOSIntegration = {
         safeCall(() => this.maybePinMSIXToStartMenu());
       }
       safeCall(() => this.ensurePrivateBrowsingShortcutExists());
-      // Skip on local developer builds so `./mach run` doesn't register
-      // every dev's checkout to launch on login.
-      if (AppConstants.MOZILLA_OFFICIAL) {
-        safeCall(() => this.maybeCreateLaunchOnLoginOnFirstRun());
-      }
     }
-  },
-
-  // On the first run for a new install create the launch-on-login registry
-  // key / startup task if the default-enabled pref is true. Nimbus may have
-  // changed the pref from its default value earlier in the same startup via
-  // DefaultWindowsLaunchOnLogin.applyExperimentOverride.
-  async maybeCreateLaunchOnLoginOnFirstRun(
-    // isFirstRun is a parameter to allow testing.
-    isFirstRun = lazy.profileService.isFirstRun
-  ) {
-    if (
-      !isFirstRun ||
-      !Services.prefs.getBoolPref(
-        "browser.startup.windowsLaunchOnLogin.defaultEnabled",
-        false
-      )
-    ) {
-      return;
-    }
-    if (!(await lazy.WindowsLaunchOnLogin.getLaunchOnLoginApproved())) {
-      return;
-    }
-    await lazy.WindowsLaunchOnLogin.createLaunchOnLogin();
   },
 
   async ensureBridgeRegistered() {
