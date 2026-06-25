@@ -1970,7 +1970,8 @@ void Sanitizer::SanitizeChildren(nsINode* aNode, bool aSafe) const {
 
     // Step 1.5.6. If child is a shadow host, then call sanitize core on child’s
     // shadow root with configuration and handleJavascriptNavigationUrls.
-    if (RefPtr<ShadowRoot> shadow = child->GetShadowRoot()) {
+    if (RefPtr<ShadowRoot> shadow = child->GetShadowRoot();
+        shadow && !shadow->IsUAWidget()) {
       SanitizeChildren<IsDefaultConfig>(shadow, aSafe);
     }
 
