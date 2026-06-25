@@ -302,7 +302,7 @@ class RemoteAccessible : public Accessible, public HyperTextAccessibleBase {
 
   DocAccessibleParent* AsDoc() const { return IsDoc() ? mDoc : nullptr; }
 
-  void ApplyCache(CacheUpdateType aUpdateType, AccAttributes* aFields);
+  bool ApplyCache(CacheUpdateType aUpdateType, AccAttributes* aFields);
 
   void UpdateStateCache(uint64_t aState, bool aEnabled) {
     if (aState & kRemoteCalculatedStates) {

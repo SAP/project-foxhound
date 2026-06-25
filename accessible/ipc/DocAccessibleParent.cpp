@@ -306,7 +306,9 @@ RemoteAccessible* DocAccessibleParent::CreateAcc(
   mAccessibles.PutEntry(aAccData.ID())->mProxy = newProxy;
 
   if (RefPtr<AccAttributes> fields = aAccData.CacheFields()) {
-    newProxy->ApplyCache(CacheUpdateType::Initial, fields);
+    if (!newProxy->ApplyCache(CacheUpdateType::Initial, fields)) {
+      return nullptr;
+    }
   }
 
   return newProxy;
@@ -804,7 +806,9 @@ mozilla::ipc::IPCResult DocAccessibleParent::RecvCache(
       continue;
     }
 
-    remote->ApplyCache(aUpdateType, entry.Fields());
+    if (!remote->ApplyCache(aUpdateType, entry.Fields())) {
+      return IPC_FAIL(this, "Invalid cache data");
+    }
   }
 
   if (nsCOMPtr<nsIObserverService> obsService =

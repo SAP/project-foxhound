@@ -190,9 +190,9 @@ class CacheKey {
   static constexpr nsStaticAtom* DOMNodeClass = nsGkAtoms::_class;
   // nsAtom, CacheDomain::DOMNodeIDAndClass
   static constexpr nsStaticAtom* DOMNodeID = nsGkAtoms::id;
-  // AccGroupInfo, no domain
+  // AccGroupInfo, no domain, not sent from content
   static constexpr nsStaticAtom* GroupInfo = nsGkAtoms::group;
-  // nsTArray<int32_t>, no domain
+  // nsTArray<int32_t>, no domain, not sent from content
   // As returned by HyperTextAccessibleBase::CachedHyperTextOffsets.
   static constexpr nsStaticAtom* HyperTextOffsets = nsGkAtoms::offset;
   // bool, CacheDomain::ARIA
