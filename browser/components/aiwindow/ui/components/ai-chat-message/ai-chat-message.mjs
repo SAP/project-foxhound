@@ -438,6 +438,11 @@ export class AIChatMessage extends MozLitElement {
       return historyGrid;
     }
 
+    items.forEach((item, ndx) => {
+      item.resultIndex = ndx;
+      item.resultCount = items.length;
+    });
+
     const grid = this.ownerDocument.createElement("ai-chat-grid");
     grid.loading = loading;
     grid.view = view;
@@ -448,6 +453,16 @@ export class AIChatMessage extends MozLitElement {
 
     this.#historyGrids.set(index, grid);
     this.#requestHistoryAssets(items);
+
+    this.dispatchEvent(
+      new CustomEvent("AIChatContent:HistoryGridRender", {
+        bubbles: true,
+        composed: true,
+        detail: {
+          itemCount: items.length,
+        },
+      })
+    );
 
     return grid;
   }
@@ -526,6 +541,7 @@ export class AIChatMessage extends MozLitElement {
         favicon=${item.hasFavicon ? item.faviconUrl : null}
         timestamp=${item.timestamp}
         thumbnail=${item.image}
+        @click=${this.itemClick.bind(this, item)}
       >
       </ai-chat-card>
     `;
@@ -549,12 +565,31 @@ export class AIChatMessage extends MozLitElement {
         class="history-thumbnail-row"
         href=${item.url}
         target="_blank"
+        @click=${this.itemClick.bind(this, item)}
       >
         <img part="favicon" src=${favicon} />
         <span part="title" class="history-thumbnail-title">${item.title}</span>
         <span part="timestamp">${item.timestamp}</span>
       </a>
     `;
+  }
+
+  /**
+   * Handles clicks on the History Thumbnail grid items
+   * and dispatches an event so telemetry can be recorded.
+   *
+   * @param {HistoryItem} item
+   */
+  itemClick(item) {
+    this.dispatchEvent(
+      new CustomEvent("AIChatContent:HistoryGridItemClick", {
+        bubbles: true,
+        composed: true,
+        detail: {
+          item,
+        },
+      })
+    );
   }
 
   /**

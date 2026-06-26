@@ -241,6 +241,8 @@ let JSWINDOWACTORS = {
         "AIChatContent:AccountSignIn": { wantUntrusted: true },
         "AIChatContent:ToolUIUpdate": { wantUntrusted: true },
         "AIChatContent:RequestAssets": { wantUntrusted: true },
+        "AIChatContent:HistoryGridRender": { wantUntrusted: true },
+        "AIChatContent:HistoryGridItemClick": { wantUntrusted: true },
       },
     },
     allFrames: true,
