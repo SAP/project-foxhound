@@ -767,3 +767,339 @@ add_task(async function test_orderBy() {
     ],
   });
 });
+
+// A result returned by both the semantic history provider and a non-semantic
+// provider for the same page should be deduped down to the non-semantic
+// result, regardless of which provider's result is added first and regardless
+// of scheme/www differences or result type (URL vs switch-to-tab).
+async function checkSemanticDedupe({
+  semanticFirst,
+  semanticUrl = "https://example.com/foo/",
+  nonSemanticUrl = "https://example.com/foo/",
+  semanticType = UrlbarUtils.RESULT_TYPE.URL,
+  nonSemanticType = UrlbarUtils.RESULT_TYPE.URL,
+  description = "",
+}) {
+  let makeMatch = (type, url) =>
+    new UrlbarResult({
+      type,
+      source:
+        type == UrlbarUtils.RESULT_TYPE.TAB_SWITCH
+          ? UrlbarUtils.RESULT_SOURCE.TABS
+          : UrlbarUtils.RESULT_SOURCE.HISTORY,
+      payload: { url, title: "Example Page" },
+    });
+  let semanticMatch = makeMatch(semanticType, semanticUrl);
+  let nonSemanticMatch = makeMatch(nonSemanticType, nonSemanticUrl);
+
+  let providersManager = ProvidersManager.getInstanceForSap("urlbar");
+  // `unregisterProvider` matches by name, so clear any strays left under the
+  // semantic name by a previous run for a clean slate.
+  for (let p of [...providersManager.providers]) {
+    if (p.name == "UrlbarProviderSemanticHistorySearch") {
+      providersManager.unregisterProvider(p);
+    }
+  }
+
+  // Register the providers in the order under test so the matching result is
+  // processed first by the muxer.
+  let semanticProvider, nonSemanticProvider;
+  let registerSemantic = () =>
+    (semanticProvider = registerBasicTestProvider(
+      [semanticMatch],
+      undefined,
+      undefined,
+      "UrlbarProviderSemanticHistorySearch"
+    ));
+  let registerNonSemantic = () =>
+    (nonSemanticProvider = registerBasicTestProvider([nonSemanticMatch]));
+  if (semanticFirst) {
+    registerSemantic();
+    registerNonSemantic();
+  } else {
+    registerNonSemantic();
+    registerSemantic();
+  }
+
+  let context = createContext(undefined, {
+    providers: semanticFirst
+      ? [semanticProvider.name, nonSemanticProvider.name]
+      : [nonSemanticProvider.name, semanticProvider.name],
+  });
+  let controller = UrlbarTestUtils.newMockController();
+  await ProvidersManager.getInstanceForSap("urlbar").startQuery(
+    context,
+    controller
+  );
+
+  Assert.deepEqual(
+    context.results,
+    [nonSemanticMatch],
+    `Only the non-semantic result should survive (${description}semanticFirst=${semanticFirst})`
+  );
+
+  providersManager.unregisterProvider(semanticProvider);
+  providersManager.unregisterProvider(nonSemanticProvider);
+}
+
+add_task(async function test_dedupe_semantic_seen_first() {
+  await checkSemanticDedupe({ semanticFirst: true });
+});
+
+add_task(async function test_dedupe_nonSemantic_seen_first() {
+  await checkSemanticDedupe({ semanticFirst: false });
+});
+
+// The semantic and non-semantic results may have the same stripped URL but
+// different schemes (http vs https). The non-semantic result should still win.
+add_task(async function test_dedupe_semantic_scheme_mismatch() {
+  for (let semanticFirst of [true, false]) {
+    await checkSemanticDedupe({
+      semanticFirst,
+      semanticUrl: "https://example.com/foo/",
+      nonSemanticUrl: "http://example.com/foo/",
+      description: "scheme mismatch, ",
+    });
+  }
+});
+
+// Same as above but the prefixes differ by www. The non-semantic result wins.
+add_task(async function test_dedupe_semantic_www_mismatch() {
+  for (let semanticFirst of [true, false]) {
+    await checkSemanticDedupe({
+      semanticFirst,
+      semanticUrl: "https://www.example.com/foo/",
+      nonSemanticUrl: "https://example.com/foo/",
+      description: "www mismatch, ",
+    });
+  }
+});
+
+// A semantic switch-to-tab result that dupes a non-semantic switch-to-tab
+// result for the same open tab should be deduped to the non-semantic one.
+add_task(async function test_dedupe_semantic_tab_switch() {
+  for (let semanticFirst of [true, false]) {
+    await checkSemanticDedupe({
+      semanticFirst,
+      semanticUrl: "https://example.com/tab/",
+      nonSemanticUrl: "https://example.com/tab/",
+      semanticType: UrlbarUtils.RESULT_TYPE.TAB_SWITCH,
+      nonSemanticType: UrlbarUtils.RESULT_TYPE.TAB_SWITCH,
+      description: "tab switch, ",
+    });
+  }
+});
+
+// A semantic result with no non-semantic counterpart must not be suppressed,
+// whether it's a plain URL or a switch-to-tab result.
+add_task(async function test_semantic_only_survives() {
+  let providersManager = ProvidersManager.getInstanceForSap("urlbar");
+  for (let p of [...providersManager.providers]) {
+    if (p.name == "UrlbarProviderSemanticHistorySearch") {
+      providersManager.unregisterProvider(p);
+    }
+  }
+
+  let urlMatch = new UrlbarResult({
+    type: UrlbarUtils.RESULT_TYPE.URL,
+    source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+    payload: { url: "https://semantic-only.example.com/page/", title: "Page" },
+  });
+  let tabMatch = new UrlbarResult({
+    type: UrlbarUtils.RESULT_TYPE.TAB_SWITCH,
+    source: UrlbarUtils.RESULT_SOURCE.TABS,
+    payload: { url: "https://semantic-only.example.com/tab/", title: "Tab" },
+  });
+  let semanticProvider = registerBasicTestProvider(
+    [tabMatch, urlMatch],
+    undefined,
+    undefined,
+    "UrlbarProviderSemanticHistorySearch"
+  );
+
+  let context = createContext(undefined, {
+    providers: [semanticProvider.name],
+  });
+  await ProvidersManager.getInstanceForSap("urlbar").startQuery(
+    context,
+    UrlbarTestUtils.newMockController()
+  );
+
+  Assert.deepEqual(
+    context.results.map(r => r.payload.url).sort(),
+    [tabMatch.payload.url, urlMatch.payload.url].sort(),
+    "Semantic results with no non-semantic counterpart are kept"
+  );
+
+  providersManager.unregisterProvider(semanticProvider);
+});
+
+// Two semantic results that are prefix variants of the same page (and have no
+// non-semantic counterpart) should still be deduped to a single result by the
+// normal prefix-rank logic, since only suppressed semantic dupes are excluded
+// from that bookkeeping.
+add_task(async function test_dedupe_two_semantic_prefixes() {
+  let providersManager = ProvidersManager.getInstanceForSap("urlbar");
+  for (let p of [...providersManager.providers]) {
+    if (p.name == "UrlbarProviderSemanticHistorySearch") {
+      providersManager.unregisterProvider(p);
+    }
+  }
+
+  let httpsMatch = new UrlbarResult({
+    type: UrlbarUtils.RESULT_TYPE.URL,
+    source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+    payload: { url: "https://example.com/foo/", title: "Example Page" },
+  });
+  let httpMatch = new UrlbarResult({
+    type: UrlbarUtils.RESULT_TYPE.URL,
+    source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+    payload: { url: "http://example.com/foo/", title: "Example Page" },
+  });
+  let semanticProvider = registerBasicTestProvider(
+    [httpsMatch, httpMatch],
+    undefined,
+    undefined,
+    "UrlbarProviderSemanticHistorySearch"
+  );
+
+  let context = createContext(undefined, {
+    providers: [semanticProvider.name],
+  });
+  await ProvidersManager.getInstanceForSap("urlbar").startQuery(
+    context,
+    UrlbarTestUtils.newMockController()
+  );
+
+  Assert.deepEqual(
+    context.results,
+    [httpsMatch],
+    "Only the highest-prefix-rank semantic variant should survive"
+  );
+
+  providersManager.unregisterProvider(semanticProvider);
+});
+
+// When the separateGroup setting is enabled with semantic seearch, semantic results
+// share the general area with non-semantic history at a 9:1 ratio: at most ~1 in every
+// 10 of these slots is semantic, semantic results are ordered by frecency, and
+// they fill the remaining space (without evicting) when there's little other
+// history.
+//
+// The ratio 9:1 ratio enables one sementic result to be visible in the history view
+// when there are many semantic results.
+
+add_task(async function test_semantic_history_separate_group_ratio() {
+  // The separate semantic group only exists when this pref is enabled.
+  UrlbarPrefs.set("suggest.semanticHistory.separateGroup", true);
+
+  let providersManager = ProvidersManager.getInstanceForSap("urlbar");
+  // `unregisterProvider` matches by name, and earlier tests register providers
+  // under the same semantic name, so clear any strays for a clean slate.
+  for (let p of [...providersManager.providers]) {
+    if (p.name == "UrlbarProviderSemanticHistorySearch") {
+      providersManager.unregisterProvider(p);
+    }
+  }
+
+  let makeUrlResult = (url, frecency) =>
+    new UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.URL,
+      source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+      payload: { url, title: "Page", frecency },
+    });
+  let isSemantic = r => r.providerName == "UrlbarProviderSemanticHistorySearch";
+
+  // 12 general results, frecency descending, distinct URLs so nothing dedupes.
+  let exactMatches = Array.from({ length: 12 }, (_, i) =>
+    makeUrlResult(`https://example.com/exact${i}`, 120 - i * 10)
+  );
+  let semanticMatches = [
+    makeUrlResult("https://example.com/semantic1", 50),
+    makeUrlResult("https://example.com/semantic2", 200),
+    makeUrlResult("https://example.com/semantic3", 100),
+  ];
+
+  let exactProvider = registerBasicTestProvider(exactMatches);
+  let semanticProvider = registerBasicTestProvider(
+    semanticMatches,
+    undefined,
+    undefined,
+    "UrlbarProviderSemanticHistorySearch"
+  );
+
+  // Typical search results with competing search engine resuls. Only room for 3 history related
+  // results, so semantic results are supprressed to keep from evicting an exact match result
+  let limitedResultsContext = createContext(undefined, {
+    providers: [exactProvider.name, semanticProvider.name],
+    maxResults: 3,
+  });
+  await providersManager.startQuery(
+    limitedResultsContext,
+    UrlbarTestUtils.newMockController()
+  );
+  Assert.equal(limitedResultsContext.results.length, 3, "Fills the budget");
+  Assert.equal(
+    limitedResultsContext.results.filter(isSemantic).length,
+    0,
+    "At no semantic results are shown"
+  );
+  // History view with with lots of of competing history: the general area holds 10,
+  //  so the 9:1 split yields 9 general + 1 semantic.
+  let historyViewContext = createContext(undefined, {
+    providers: [exactProvider.name, semanticProvider.name],
+    maxResults: 10,
+  });
+  await providersManager.startQuery(
+    historyViewContext,
+    UrlbarTestUtils.newMockController()
+  );
+  Assert.equal(historyViewContext.results.length, 10, "Fills the budget");
+  Assert.equal(
+    historyViewContext.results.filter(isSemantic).length,
+    1,
+    "At most 1 in 10 results is semantic"
+  );
+  Assert.deepEqual(
+    historyViewContext.results.slice(0, 9),
+    exactMatches.slice(0, 9),
+    "The 9 highest-frecency general results are kept, ordered by frecency"
+  );
+  Assert.equal(
+    historyViewContext.results[9],
+    semanticMatches[1],
+    "The shown semantic result is the highest-frecency one (sorted by frecency)"
+  );
+
+  // Little competing history: semantic fills the leftover space without
+  // evicting the general results.
+  let fewExactProvider = registerBasicTestProvider(exactMatches.slice(0, 2));
+  let sparseContext = createContext(undefined, {
+    providers: [fewExactProvider.name, semanticProvider.name],
+    maxResults: 10,
+  });
+  await providersManager.startQuery(
+    sparseContext,
+    UrlbarTestUtils.newMockController()
+  );
+  Assert.equal(
+    sparseContext.results.filter(r => !isSemantic(r)).length,
+    2,
+    "Both general results are kept (not evicted)"
+  );
+  Assert.equal(
+    sparseContext.results.filter(isSemantic).length,
+    3,
+    "Semantic results fill the leftover space"
+  );
+  Assert.deepEqual(
+    sparseContext.results.filter(isSemantic),
+    [semanticMatches[1], semanticMatches[2], semanticMatches[0]],
+    "Multiple shown semantic results are ordered by frecency (descending)"
+  );
+
+  providersManager.unregisterProvider(exactProvider);
+  providersManager.unregisterProvider(fewExactProvider);
+  providersManager.unregisterProvider(semanticProvider);
+  UrlbarPrefs.clear("suggest.semanticHistory.separateGroup");
+});

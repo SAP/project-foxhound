@@ -625,6 +625,15 @@ urlbar:
         The format is like: '[["AU",["en-*"]],["CA",["en-*"]], …]' where `-*`
         can be used as a wildcard to match any locale that starts with the given
         prefix.
+    semanticHistoryInSeparateGroup:
+      type: boolean
+      setPref:
+        branch: user
+        pref: browser.urlbar.suggest.semanticHistory.separateGroup
+      description: >-
+        Whether semantic history results are placed in their own result group
+        that fills only the space left after the other result groups, so
+        semantic results never evict non-semantic results. Off by default.
     showDebuggingIcons:
       type: boolean
       setPref:

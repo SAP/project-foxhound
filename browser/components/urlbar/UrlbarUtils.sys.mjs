@@ -107,6 +107,7 @@ export var UrlbarUtils = {
     REMOTE_SUGGESTION: "remoteSuggestion",
     REMOTE_TAB: "remoteTab",
     RESTRICT_SEARCH_KEYWORD: "restrictSearchKeyword",
+    SEMANTIC_HISTORY: "semanticHistory",
     SUGGESTED_INDEX: "suggestedIndex",
     TAIL_SUGGESTION: "tailSuggestion",
   }),
@@ -668,6 +669,16 @@ export var UrlbarUtils = {
         return this.RESULT_GROUP.RESTRICT_SEARCH_KEYWORD;
       case this.RESULT_TYPE.AI_CHAT:
         return this.RESULT_GROUP.AI;
+    }
+    // When enabled, semantic history results (both history URLs and
+    // switch-to-tab results) get their own group so they fill only the space
+    // left after, and never evict, the plain (non-semantic) results that would
+    // otherwise share the general group.
+    if (
+      result.providerName == "UrlbarProviderSemanticHistorySearch" &&
+      lazy.UrlbarPrefs.get("suggest.semanticHistory.separateGroup")
+    ) {
+      return this.RESULT_GROUP.SEMANTIC_HISTORY;
     }
     return this.RESULT_GROUP.GENERAL;
   },
@@ -2037,7 +2048,10 @@ export var UrlbarUtils = {
       case this.RESULT_GROUP.OMNIBOX: {
         return "addon";
       }
-      case this.RESULT_GROUP.GENERAL: {
+      // Semantic history results have their own group for sorting purposes but
+      // are reported as "general" results, as they were before the group split.
+      case this.RESULT_GROUP.GENERAL:
+      case this.RESULT_GROUP.SEMANTIC_HISTORY: {
         return "general";
       }
       // Group of UrlbarProviderQuickSuggest is GENERAL_PARENT.
