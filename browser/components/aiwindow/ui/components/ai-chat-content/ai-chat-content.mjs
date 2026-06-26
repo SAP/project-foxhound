@@ -60,6 +60,18 @@ export class AIChatContent extends MozLitElement {
   #pendingAnnouncementMessageId = null;
   #scrollPositions = new Map();
 
+  /**
+   * Content-side mirror of the current conversation's history results pool,
+   * synced from the parent via `aiChatContentActor:history-results`. The
+   * canonical pool lives on the parent `ChatConversation`; this copy is a render
+   * cache, reset whenever the displayed conversation changes. The active
+   * (streaming) message binds this live pool; a message freezes a snapshot of it
+   * when it completes so later searches can't retroactively alter it.
+   *
+   * @type {Map<string, object>}
+   */
+  #historyResultsPool = new Map();
+
   constructor() {
     super();
     this.assistantIsLoading = false;
@@ -146,6 +158,16 @@ export class AIChatContent extends MozLitElement {
     this.addEventListener(
       "aiChatContentActor:set-generating",
       this.#handleSetGenerating.bind(this)
+    );
+
+    this.addEventListener(
+      "aiChatContentActor:assets-ready",
+      this.#handleAssetsReady.bind(this)
+    );
+
+    this.addEventListener(
+      "aiChatContentActor:history-results",
+      this.#handleHistoryResults.bind(this)
     );
 
     this.addEventListener(
@@ -396,6 +418,86 @@ export class AIChatContent extends MozLitElement {
     this.requestUpdate();
   }
 
+  /**
+   * Apply the history assets resolved by the parent (page thumbnail and favicon
+   * status) to a message's history results. Reassigns a fresh historyResults
+   * Map so the ai-chat-message sees a changed reference and recalculates its
+   * grid loading state.
+   *
+   * @param {CustomEvent} event
+   * @param {string} event.detail.messageId
+   * @param {Array<{url: string, image: string|null, hasFavicon: boolean}>} event.detail.images
+   */
+  #handleAssetsReady(event) {
+    const { messageId, images } = event.detail ?? {};
+    if (!messageId || !images?.length) {
+      return;
+    }
+
+    const entry = this.conversationState.find(
+      msg => msg?.messageId === messageId
+    );
+
+    if (!entry?.historyResults) {
+      return;
+    }
+
+    let changed = false;
+    for (const { url, image, hasFavicon } of images) {
+      const record = entry.historyResults.get(url);
+      if (!record) {
+        continue;
+      }
+      if (record.image !== image) {
+        record.image = image;
+        changed = true;
+      }
+      if (record.hasFavicon !== hasFavicon) {
+        record.hasFavicon = hasFavicon;
+        changed = true;
+      }
+    }
+
+    if (!changed) {
+      return;
+    }
+
+    entry.historyResults = new Map(entry.historyResults);
+    this.requestUpdate();
+  }
+
+  /**
+   * Sync the conversation-level history results pool from the parent (fired only
+   * when a search_browsing_history tool call is invoked) and hand the live pool
+   * to the active streaming message so it can hide/reveal lists as they stream.
+   * Completed messages keep their frozen snapshots.
+   *
+   * @param {CustomEvent} event
+   * @param {object[]} event.detail.records
+   */
+  #handleHistoryResults(event) {
+    const { records } = event.detail ?? {};
+    if (!records?.length) {
+      return;
+    }
+
+    // Preserve any content-applied thumbnail on records we already hold.
+    for (const record of records) {
+      if (!this.#historyResultsPool.has(record.url)) {
+        this.#historyResultsPool.set(record.url, record);
+      }
+    }
+
+    const active = this.conversationState.findLast(
+      msg => msg?.role === "assistant" && !msg.isLastChunk
+    );
+
+    if (active) {
+      active.historyResults = new Map(this.#historyResultsPool);
+      this.requestUpdate();
+    }
+  }
+
   async #restoreChatScrollPosition(convId) {
     await this.updateComplete;
 
@@ -453,12 +555,30 @@ export class AIChatContent extends MozLitElement {
       return;
     }
 
+    // Seed the pool from the snapshot carried on the completion event. The
+    // streaming-time history-results dispatch races the message lifecycle and
+    // can arrive late, be missed, or be cleared by a conversation reset; the
+    // completion snapshot makes the grid render deterministically. Don't
+    // clobber records we already hold (they may carry a resolved thumbnail).
+    for (const record of message.historyResults ?? []) {
+      if (!this.#historyResultsPool.has(record.url)) {
+        this.#historyResultsPool.set(record.url, record);
+      }
+    }
+
     const assistantLastMessage = this.conversationState.findLast(
       msg => msg?.messageId === messageId
     );
+
     if (assistantLastMessage) {
       assistantLastMessage.isLastChunk = true;
+      // Freeze a snapshot of the current pool so this message matches the URLs
+      // it lists; later searches grow the pool but won't alter this message.
+      if (this.#historyResultsPool.size) {
+        assistantLastMessage.historyResults = new Map(this.#historyResultsPool);
+      }
     }
+
     this.#pendingAnnouncementMessageId = messageId;
     this.assistantResponseAnnouncement = "";
     this.requestUpdate();
@@ -493,6 +613,7 @@ export class AIChatContent extends MozLitElement {
     // If the conversation ID has changed, reset the conversation state
     if (convIdChanged || isReloadingSameConvo) {
       this.conversationState = [];
+      this.#historyResultsPool = new Map();
       this.followUpSuggestions = [];
       this.#clearAssistantResponseAnnouncement();
       this.isSearching = false;
@@ -657,6 +778,19 @@ export class AIChatContent extends MozLitElement {
       ? []
       : followUpSuggestions.slice(0, FOLLOW_UP_QTY);
 
+    const isLastChunk =
+      !!isPreviousMessage || !!this.conversationState[ordinal]?.isLastChunk;
+
+    let historyResults;
+    if (isLastChunk) {
+      // A completed message keeps its frozen snapshot
+      historyResults = this.conversationState[ordinal]?.historyResults;
+    } else if (this.#historyResultsPool.size) {
+      // A streaming message binds the live pool so it can
+      // hide/reveal lists as items arrive.
+      historyResults = new Map(this.#historyResultsPool);
+    }
+
     this.conversationState[ordinal] = {
       role: "assistant",
       convId,
@@ -664,8 +798,9 @@ export class AIChatContent extends MozLitElement {
       body: content.body,
       appliedMemories: memoriesApplied ?? [],
       showCallout: showMemoriesCallout ?? false,
-      isLastChunk: !!isPreviousMessage,
+      isLastChunk,
       toolUIData,
+      historyResults,
     };
 
     this.requestUpdate();
@@ -1019,6 +1154,7 @@ export class AIChatContent extends MozLitElement {
           .complete=${msg.role === "assistant" && !!msg.isLastChunk}
           .conversationId=${this.conversationId}
           .seenUrls=${this.seenUrls}
+          .historyResults=${msg.historyResults}
         ></ai-chat-message>
         ${msg.role === "assistant" && msg.toolUIData && !isRetryComponent
           ? this.#renderToolUI(msg.toolUIData, msg.messageId)

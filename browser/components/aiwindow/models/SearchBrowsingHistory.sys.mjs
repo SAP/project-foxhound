@@ -39,6 +39,8 @@ function isoToMicroseconds(iso) {
  * @property {string|null} visitDate - ISO timestamp of last visit, or null.
  * @property {number} visitCount - Number of visits (defaults to 0).
  * @property {number} relevanceScore - Ranking score (semantic relevance or frecency fallback).
+ * @property {string|null} thumbnail - og:image URL from moz_places.preview_image_url,
+ *   or null when none is recorded or the row came from a Places history node.
  */
 
 /**
@@ -51,7 +53,7 @@ function isoToMicroseconds(iso) {
  * @returns {HistoryRow}              // normalized history entry
  */
 function buildHistoryRow(row, fromNode = false) {
-  let title, url, visitDateIso, visitCount, distance, frecency;
+  let title, url, visitDateIso, visitCount, distance, frecency, thumbnail;
 
   if (!fromNode) {
     // from semantic / SQL result (mozIStorageRow)
@@ -60,6 +62,7 @@ function buildHistoryRow(row, fromNode = false) {
     visitCount = row.getResultByName("visit_count");
     distance = row.getResultByName("distance");
     frecency = row.getResultByName("frecency");
+    thumbnail = row.getResultByName("preview_image_url") || null;
 
     // convert last_visit_date to ISO format
     const lastVisitRaw = row.getResultByName("last_visit_date");
@@ -77,6 +80,8 @@ function buildHistoryRow(row, fromNode = false) {
     url = row.uri;
     visitCount = row.accessCount;
     frecency = row.frecency;
+    // nsINavHistoryResultNode doesn't expose preview_image_url.
+    thumbnail = null;
 
     // convert time to ISO format
     const lastVisitDate = lazy.PlacesUtils.toDate(row.time);
@@ -96,6 +101,7 @@ function buildHistoryRow(row, fromNode = false) {
     visitDate: visitDateIso, // ISO timestamp format
     visitCount: visitCount || 0,
     relevanceScore: relevanceScore || 0, // Use embedding's distance as relevance score when available
+    thumbnail,
   };
 }
 
@@ -293,9 +299,11 @@ async function searchBrowsingHistoryTimeRange({
                  NULL AS distance,
                  visit_count,
                  frecency,
-                 last_visit_date
+                 last_visit_date,
+                 preview_image_url
           FROM moz_places
           WHERE frecency <> 0
+          AND hidden = 0
           AND (:startTs IS NULL OR last_visit_date >= :startTs)
           AND (:endTs IS NULL OR last_visit_date <= :endTs)
           ORDER BY last_visit_date DESC, frecency DESC
@@ -427,10 +435,12 @@ async function searchBrowsingHistorySemantic({
            distance,
            visit_count,
            frecency,
-           last_visit_date
+           last_visit_date,
+           preview_image_url
     FROM moz_places
     JOIN matches USING (url_hash)
     WHERE frecency <> 0
+    AND hidden = 0
     AND (:startTs IS NULL OR last_visit_date >= :startTs)
     AND (:endTs IS NULL OR last_visit_date <= :endTs)
     ORDER BY distance
