@@ -368,6 +368,8 @@ Function PrepareStubInstallPing
       nsJSON::Set /tree ping "Data" "disk_space_req_not_met" /value true
     ${Case} ${ERR_PREINSTALL_NOT_WRITABLE}
       nsJSON::Set /tree ping "Data" "writeable_req_not_met" /value true
+    ${Case} ${ERR_INSTALL_TIMEOUT}
+      nsJSON::Set /tree ping "Data" "install_timeout" /value true
     ${Default} ; including ERR_UNKNOWN
       nsJSON::Set /tree ping "Data" "unknown_error" /value true
   ${EndSelect}
