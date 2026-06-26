@@ -12,7 +12,7 @@ export const FeedbackModal = {
   /**
    * @param {MozBrowser} browser
    * @param {string} type - "thumbs-up" or "thumbs-down".
-   * @param {object} [metadata] - Optional metadata to include in telemetry.
+   * @param {object} metadata - Chat session data to include in telemetry.
    */
   async open(browser, type, metadata) {
     await lazy.ASRouter.waitForInitialized;
@@ -24,11 +24,50 @@ export const FeedbackModal = {
     if (!message) {
       return;
     }
+    const clonedMessage = structuredClone(message);
     if (metadata) {
-      message.content.feedbackData = metadata;
+      clonedMessage.content.feedbackData = {
+        metadata: metadata.metadata,
+        chat: metadata.chatLog,
+        chatWithoutPageContent: metadata.chatLogWithoutPageContent,
+      };
+
+      for (const screen of clonedMessage.content.screens ?? []) {
+        const { tiles } = screen.content ?? {};
+        const textboxTile = tiles?.find(t => t.type === "textbox");
+        const contentToggleTile = tiles?.find(t => t.type === "content-toggle");
+
+        if (textboxTile && metadata.chatLog) {
+          textboxTile.data.content = JSON.stringify(
+            { metadata: metadata.metadata, ...metadata.chatLog },
+            null,
+            2
+          );
+          if (textboxTile.header?.title) {
+            textboxTile.header.title.string_id =
+              metadata.chatLogWithoutPageContent
+                ? "aiwindow-feedback-preview-report-with-page"
+                : "aiwindow-feedback-preview-report";
+          }
+          if (contentToggleTile) {
+            contentToggleTile.data.visible =
+              !!metadata.chatLogWithoutPageContent;
+          }
+          if (metadata.chatLogWithoutPageContent) {
+            textboxTile.data.alternateContent = JSON.stringify(
+              {
+                metadata: metadata.metadata,
+                ...metadata.chatLogWithoutPageContent,
+              },
+              null,
+              2
+            );
+          }
+        }
+      }
     }
     try {
-      await lazy.Spotlight.showSpotlightDialog(browser, message);
+      await lazy.Spotlight.showSpotlightDialog(browser, clonedMessage);
     } catch (e) {
       console.error("Failed to open feedback modal", e);
     }

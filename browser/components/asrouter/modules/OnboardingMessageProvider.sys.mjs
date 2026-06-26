@@ -3231,7 +3231,6 @@ const BASE_MESSAGES = () => [
             position: "center",
             screen_style: {
               width: "560px",
-              maxHeight: "495px",
               overflow: "auto",
             },
             dismiss_button: { size: "small", action: { dismiss: true } },
@@ -3242,6 +3241,33 @@ const BASE_MESSAGES = () => [
                 subtitle: { string_id: "aiwindow-feedback-what-worked-well" },
                 style: { marginBlock: "0" },
                 data: { id: "feedback-text", rows: 4, character_limit: 1000 },
+              },
+              {
+                type: "textbox",
+                style: { marginBlock: "8px 0" },
+                header: {
+                  title: { string_id: "aiwindow-feedback-preview-report" },
+                  alternateTitle: {
+                    string_id: "aiwindow-feedback-preview-report",
+                  },
+                },
+                data: {
+                  id: "chat-log-preview",
+                  content: "",
+                  style: {
+                    backgroundColor: "#F9F9FB",
+                    maxHeight: "130px",
+                  },
+                },
+              },
+              {
+                type: "content-toggle",
+                data: {
+                  id: "page-content-toggle",
+                  label: {
+                    string_id: "aiwindow-feedback-include-page-content",
+                  },
+                },
               },
             ],
             above_button_content: [
@@ -3270,6 +3296,7 @@ const BASE_MESSAGES = () => [
               action: {
                 type: "MULTI_ACTION",
                 collectTextInput: true,
+                collectContentToggleState: true,
                 navigate: true,
                 data: { actions: [] },
               },
@@ -3304,7 +3331,6 @@ const BASE_MESSAGES = () => [
             position: "center",
             screen_style: {
               width: "560px",
-              maxHeight: "495px",
               overflow: "auto",
             },
             dismiss_button: { size: "small", action: { dismiss: true } },
@@ -3362,6 +3388,33 @@ const BASE_MESSAGES = () => [
                 style: { marginBlock: "0" },
                 data: { id: "feedback-text", rows: 4, character_limit: 1000 },
               },
+              {
+                type: "textbox",
+                style: { marginBlock: "8px 0" },
+                header: {
+                  title: { string_id: "aiwindow-feedback-preview-report" },
+                  alternateTitle: {
+                    string_id: "aiwindow-feedback-preview-report",
+                  },
+                },
+                data: {
+                  id: "chat-log-preview",
+                  content: "",
+                  style: {
+                    backgroundColor: "#F9F9FB",
+                    maxHeight: "130px",
+                  },
+                },
+              },
+              {
+                type: "content-toggle",
+                data: {
+                  id: "page-content-toggle",
+                  label: {
+                    string_id: "aiwindow-feedback-include-page-content",
+                  },
+                },
+              },
             ],
             above_button_content: [
               {
@@ -3390,6 +3443,7 @@ const BASE_MESSAGES = () => [
                 type: "MULTI_ACTION",
                 collectSelect: true,
                 collectTextInput: true,
+                collectContentToggleState: true,
                 navigate: true,
                 data: { actions: [] },
               },

@@ -134,3 +134,168 @@ add_task(async function test_trigger_params_match_type() {
     "thumbs-down message trigger params should include thumbs-down"
   );
 });
+
+add_task(async function test_both_variants_have_textbox_tile() {
+  for (const type of ["thumbs-up", "thumbs-down"]) {
+    const message = await getFeedbackMessage(type);
+    const tiles = message.content.screens[0].content.tiles;
+    Assert.ok(
+      tiles.some(t => t.type === "textbox"),
+      `${type} modal should include a textbox tile`
+    );
+  }
+});
+
+add_task(async function test_textbox_tile_has_accordion_header() {
+  for (const type of ["thumbs-up", "thumbs-down"]) {
+    const message = await getFeedbackMessage(type);
+    const tiles = message.content.screens[0].content.tiles;
+    const textbox = tiles.find(t => t.type === "textbox");
+    Assert.strictEqual(
+      textbox.header?.title?.string_id,
+      "aiwindow-feedback-preview-report",
+      `${type} textbox tile should have preview-report accordion header`
+    );
+  }
+});
+
+add_task(async function test_content_toggle_tile_config_for_page_content() {
+  for (const type of ["thumbs-up", "thumbs-down"]) {
+    const message = await getFeedbackMessage(type);
+    const tiles = message.content.screens[0].content.tiles;
+    const toggle = tiles.find(t => t.type === "content-toggle");
+    Assert.ok(toggle, `${type} modal should include a content-toggle tile`);
+    Assert.equal(
+      toggle.data?.label?.string_id,
+      "aiwindow-feedback-include-page-content",
+      `${type} content-toggle tile should use include-page-content string`
+    );
+  }
+});
+
+add_task(
+  async function test_feedbackmodal_populates_textbox_and_feedbackdata() {
+    const chatLog = {
+      log: [{ role: 0, content: { type: "text", body: "hi" } }],
+    };
+    const metadataBase = {
+      model: "test-model",
+      turn_count: 1,
+      prompt_version: 5,
+    };
+
+    function applyMutations(message, metadata) {
+      message.content.feedbackData = {
+        metadata: metadata.metadata,
+        chat: metadata.chatLog,
+        chatWithoutPageContent: metadata.chatLogWithoutPageContent,
+      };
+      for (const screen of message.content.screens ?? []) {
+        const { tiles } = screen.content ?? {};
+        const textboxTile = tiles?.find(t => t.type === "textbox");
+        const contentToggleTile = tiles?.find(t => t.type === "content-toggle");
+        if (textboxTile && metadata.chatLog) {
+          textboxTile.data.content = JSON.stringify(
+            { metadata: metadata.metadata, ...metadata.chatLog },
+            null,
+            2
+          );
+          if (contentToggleTile) {
+            contentToggleTile.data.visible =
+              !!metadata.chatLogWithoutPageContent;
+          }
+          if (metadata.chatLogWithoutPageContent) {
+            textboxTile.data.alternateContent = JSON.stringify(
+              {
+                metadata: metadata.metadata,
+                ...metadata.chatLogWithoutPageContent,
+              },
+              null,
+              2
+            );
+          }
+        }
+      }
+    }
+
+    const messages = await OnboardingMessageProvider.getUntranslatedMessages();
+
+    // Case 1: no page content — alternateContent should not be set
+    const messageNoPage = JSON.parse(
+      JSON.stringify(
+        messages.find(m => m.id === "SMARTWINDOW_FEEDBACK_MODAL_POSITIVE")
+      )
+    );
+    applyMutations(messageNoPage, {
+      metadata: metadataBase,
+      chatLog,
+      chatLogWithoutPageContent: null,
+    });
+    const textboxNoPage = messageNoPage.content.screens[0].content.tiles.find(
+      t => t.type === "textbox"
+    );
+    Assert.equal(
+      textboxNoPage.data.content,
+      JSON.stringify({ metadata: metadataBase, ...chatLog }, null, 2),
+      "textbox content should be populated when no page content"
+    );
+    Assert.ok(
+      !textboxNoPage.data.alternateContent,
+      "alternateContent should not be set when chatLogWithoutPageContent is null"
+    );
+    Assert.deepEqual(
+      messageNoPage.content.feedbackData.chat,
+      chatLog,
+      "feedbackData.chat should be initialized to chatLog"
+    );
+
+    // Case 2: page content present — alternateContent should be set
+    const chatLogWithoutPageContent = { log: [] };
+    const messageWithPage = JSON.parse(
+      JSON.stringify(
+        messages.find(m => m.id === "SMARTWINDOW_FEEDBACK_MODAL_POSITIVE")
+      )
+    );
+    applyMutations(messageWithPage, {
+      metadata: metadataBase,
+      chatLog,
+      chatLogWithoutPageContent,
+    });
+    const textboxWithPage =
+      messageWithPage.content.screens[0].content.tiles.find(
+        t => t.type === "textbox"
+      );
+    Assert.equal(
+      textboxWithPage.data.content,
+      JSON.stringify({ metadata: metadataBase, ...chatLog }, null, 2),
+      "textbox content should be populated with metadata and chatLog"
+    );
+    Assert.equal(
+      textboxWithPage.data.alternateContent,
+      JSON.stringify(
+        { metadata: metadataBase, ...chatLogWithoutPageContent },
+        null,
+        2
+      ),
+      "alternateContent should be populated when chatLogWithoutPageContent is provided"
+    );
+    Assert.deepEqual(
+      messageWithPage.content.feedbackData.chat,
+      chatLog,
+      "feedbackData.chat should be initialized to chatLog"
+    );
+    Assert.deepEqual(
+      messageWithPage.content.feedbackData.chatWithoutPageContent,
+      chatLogWithoutPageContent,
+      "feedbackData.chatWithoutPageContent should be set"
+    );
+    const toggleWithPage =
+      messageWithPage.content.screens[0].content.tiles.find(
+        t => t.type === "content-toggle"
+      );
+    Assert.ok(
+      toggleWithPage.data.visible,
+      "content-toggle tile should be visible when page content exists"
+    );
+  }
+);

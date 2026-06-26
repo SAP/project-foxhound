@@ -17,6 +17,8 @@ import { ConfirmationChecklist } from "./ConfirmationChecklist";
 import { MultiStageUtils } from "../lib/multistage-utils.mjs";
 import { EmbeddedBackupRestore } from "./EmbeddedBackupRestore";
 import { PinnableSitesList } from "./PinnableSitesList";
+import { ContentToggle } from "./ContentToggle";
+import { TextBoxTile } from "./TextBoxTile";
 
 const HEADER_STYLES = [
   "backgroundColor",
@@ -235,6 +237,11 @@ export const ContentTiles = props => {
             "aria-controls": `tile-content-${index}`,
           };
 
+    const headerTitle =
+      tile.type === "textbox" && props.contentToggleChecked === false
+        ? (header?.alternateTitle ?? header?.title)
+        : header?.title;
+
     return (
       <div
         key={index}
@@ -249,7 +256,7 @@ export const ContentTiles = props => {
             style={MultiStageUtils.getValidStyle(header.style, HEADER_STYLES)}
           >
             <div className="header-text-container">
-              <Localized text={header.title}>
+              <Localized text={headerTitle}>
                 <span className="header-title" />
               </Localized>
               {header.subtitle && (
@@ -386,6 +393,19 @@ export const ContentTiles = props => {
                 tile={tile}
                 messageId={props.messageId}
                 handleAction={props.handleAction}
+              />
+            )}
+            {tile.type === "content-toggle" && tile.data && (
+              <ContentToggle
+                content={{ tiles: tile }}
+                toggled={props.contentToggleChecked}
+                onToggle={props.setContentToggleChecked}
+              />
+            )}
+            {tile.type === "textbox" && tile.data && (
+              <TextBoxTile
+                content={{ tiles: tile }}
+                contentToggled={props.contentToggleChecked}
               />
             )}
           </div>

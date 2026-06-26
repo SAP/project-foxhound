@@ -16,6 +16,8 @@ const { XPCOMUtils } = ChromeUtils.importESModule(
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   Chat: "moz-src:///browser/components/aiwindow/models/Chat.sys.mjs",
+  GET_PAGE_CONTENT:
+    "moz-src:///browser/components/aiwindow/models/Tools.sys.mjs",
   FEATURE_MAJOR_VERSIONS:
     "moz-src:///browser/components/aiwindow/models/Utils.sys.mjs",
   MODEL_FEATURES: "moz-src:///browser/components/aiwindow/models/Utils.sys.mjs",
@@ -408,9 +410,6 @@ export class AIWindow extends MozLitElement {
       "chat-conversation:seen-urls-updated",
       this.#onSeenUrlsUpdated
     );
-    this.#conversation.setHistoryResultsDispatcher(
-      this.#dispatchHistoryResults
-    );
   }
 
   #removeConversationListeners() {
@@ -430,7 +429,6 @@ export class AIWindow extends MozLitElement {
       "chat-conversation:seen-urls-updated",
       this.#onSeenUrlsUpdated
     );
-    this.#conversation.setHistoryResultsDispatcher(null);
   }
 
   #onSeenUrlsUpdated = () => {
@@ -439,9 +437,6 @@ export class AIWindow extends MozLitElement {
       this.#dispatchSeenUrls(actor);
     }
   };
-
-  #dispatchHistoryResults = payload =>
-    this.#getAIChatContentActor()?.dispatchHistoryResultsToChatContent(payload);
 
   #onMessageUpdate = (_event, message) => {
     if (message.toolUIData) {
@@ -1188,7 +1183,6 @@ export class AIWindow extends MozLitElement {
     this.#dispatchMessageToChatContent({
       role: "assistant-message-complete",
       content: { id: lastAssistant?.id },
-      historyResults: this.#conversation?.getHistoryResultsSnapshot() ?? [],
     });
   };
 
@@ -1739,10 +1733,6 @@ export class AIWindow extends MozLitElement {
       content: {
         id: msg?.id,
       },
-      // Carry the history results snapshot with completion so the content page
-      // renders the grid even if the streaming-time dispatch was delayed or
-      // missed (its delivery races the message lifecycle).
-      historyResults: this.#conversation?.getHistoryResultsSnapshot() ?? [],
     });
     const followupCount = msg?.tokens?.followup?.length;
     if (followupCount) {
@@ -2301,17 +2291,53 @@ export class AIWindow extends MozLitElement {
     }
   }
 
+  #buildChatLogPayload() {
+    const messages = this.#conversation?.messages ?? [];
+
+    // Build a version of the log without page content by dropping:
+    // - tool result messages that are get_page_content responses (the raw page text)
+    // - assistant messages whose only tool call was get_page_content (the request to fetch it)
+    const withoutPageContent = messages.filter(msg => {
+      if (
+        msg.role === lazy.MESSAGE_ROLE.TOOL &&
+        msg.content?.name === lazy.GET_PAGE_CONTENT
+      ) {
+        return false;
+      }
+      if (msg.content?.body?.tool_calls?.length) {
+        const remaining = msg.content.body.tool_calls.filter(
+          tc => tc.function?.name !== lazy.GET_PAGE_CONTENT
+        );
+        if (!remaining.length) {
+          return false;
+        }
+      }
+      return true;
+    });
+
+    const hasPageContent = withoutPageContent.length < messages.length;
+    return {
+      withPageContent: { log: messages },
+      withoutPageContent: hasPageContent ? { log: withoutPageContent } : null,
+    };
+  }
+
   #openFeedbackModal(type) {
     const browser = this.#topChromeWindow?.gBrowser?.selectedBrowser;
     if (!browser) {
       return;
     }
+    // Two versions of the chat log are built so the user can toggle whether to
+    // include page content in the submitted report via the preview checkbox.
+    const { withPageContent, withoutPageContent } = this.#buildChatLogPayload();
     const metadata = {
       metadata: {
         model: this.modelName,
         turn_count: this.#conversation?.messageCount ?? 0,
         prompt_version: lazy.FEATURE_MAJOR_VERSIONS[lazy.MODEL_FEATURES.CHAT],
       },
+      chatLog: withPageContent,
+      chatLogWithoutPageContent: withoutPageContent,
     };
     lazy.FeedbackModal.open(browser, type, metadata);
   }

@@ -2305,6 +2305,29 @@ html {
     }
   }
 
+  .content-toggle-label {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xsmall);
+    padding-block: var(--space-small);
+    font-size: 14px;
+  }
+
+  .textbox-container {
+    display: flex;
+    flex-direction: column;
+    padding: var(--space-small) var(--space-large);
+
+    .textbox-input {
+      overflow-y: auto;
+      white-space: pre-wrap;
+      user-select: none;
+      cursor: default;
+      text-align: start;
+      border-radius: var(--input-text-border-radius);
+    }
+  }
+
   .confirmation-checklist-section {
     display: flex;
     flex-direction: column;
