@@ -71,6 +71,98 @@ describe("sidebar auto-open pref prompt", () => {
     });
   });
 
+  describe("when the closed sidebar has a started conversation", () => {
+    async function openSidebarAndGetAIWindow() {
+      if (!AIWindowUI.isSidebarOpen(win)) {
+        EventUtils.synthesizeMouseAtCenter(askButton, {}, win);
+      }
+      await BrowserTestUtils.waitForMutationCondition(
+        win.document.getElementById(AIWindowUI.BOX_ID),
+        { attributes: true, attributeFilter: ["collapsed"] },
+        () => AIWindowUI.isSidebarOpen(win)
+      );
+
+      const sidebarBrowser = win.document.getElementById("ai-window-browser");
+      return TestUtils.waitForCondition(() => {
+        const el =
+          sidebarBrowser.contentDocument?.querySelector("ai-window:defined");
+        return el?.conversation ? el : null;
+      }, "Sidebar ai-window should be loaded with a conversation");
+    }
+
+    it("resets the empty-close count when closing below the trigger", async () => {
+      // One prior empty close, a single close away from the trigger count.
+      Services.prefs.setIntPref(
+        "browser.smartwindow.sidebar.emptyCloseCount",
+        1
+      );
+
+      const aiWindow = await openSidebarAndGetAIWindow();
+
+      // Simulate a started conversation in this tab's sidebar.
+      aiWindow.conversation.addUserMessage("Hello");
+      Assert.greater(
+        aiWindow.conversation.messageCount,
+        0,
+        "The sidebar conversation should have a chat message"
+      );
+
+      // Close the non-empty sidebar.
+      EventUtils.synthesizeMouseAtCenter(askButton, {}, win);
+      await BrowserTestUtils.waitForMutationCondition(
+        win.document.getElementById(AIWindowUI.BOX_ID),
+        { attributes: true, attributeFilter: ["collapsed"] },
+        () => !AIWindowUI.isSidebarOpen(win)
+      );
+
+      Assert.equal(
+        Services.prefs.getIntPref(
+          "browser.smartwindow.sidebar.emptyCloseCount"
+        ),
+        0,
+        "Closing a non-empty sidebar should reset the empty-close count"
+      );
+      Assert.ok(
+        !win.document.querySelector(promptShowingSelector),
+        "The keep-closed callout should not appear for a non-empty sidebar"
+      );
+    });
+
+    it("resets the empty-close count even once the trigger count is reached", async () => {
+      // Already at the trigger count from prior empty closes. The original bug:
+      // engaging with a conversation could no longer pull the count back down,
+      // so the prompt kept targeting an active user.
+      Services.prefs.setIntPref(
+        "browser.smartwindow.sidebar.emptyCloseCount",
+        2
+      );
+
+      const aiWindow = await openSidebarAndGetAIWindow();
+
+      aiWindow.conversation.addUserMessage("Hello");
+      Assert.greater(
+        aiWindow.conversation.messageCount,
+        0,
+        "The sidebar conversation should have a chat message"
+      );
+
+      EventUtils.synthesizeMouseAtCenter(askButton, {}, win);
+      await BrowserTestUtils.waitForMutationCondition(
+        win.document.getElementById(AIWindowUI.BOX_ID),
+        { attributes: true, attributeFilter: ["collapsed"] },
+        () => !AIWindowUI.isSidebarOpen(win)
+      );
+
+      Assert.equal(
+        Services.prefs.getIntPref(
+          "browser.smartwindow.sidebar.emptyCloseCount"
+        ),
+        0,
+        "A non-empty close at the trigger count should still reset to 0"
+      );
+    });
+  });
+
   describe("when the user accepts the prompt", () => {
     let callout, newTab;
 

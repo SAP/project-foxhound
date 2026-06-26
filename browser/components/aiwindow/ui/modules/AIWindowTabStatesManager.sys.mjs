@@ -727,14 +727,23 @@ export class AIWindowTabStatesManager {
 
   /**
    * Handles ai-window:conversation-changed events dispatched whenever
-   * an ai-window's active conversation is swapped. Triggers starter
-   * prompt loading when the conversation is empty and the current page
-   * URL differs from the one starters were already loaded for.
+   * an ai-window's active conversation is swapped. Keeps the tab state's
+   * conversation in sync with the live ai-window so consumers (e.g. the
+   * empty-close count) read the conversation the user actually engaged with,
+   * then triggers starter prompt loading when the conversation is empty and
+   * the current page URL differs from the one starters were already loaded for.
    *
    * @param {TabStateEvent} event
    */
   #onConversationChanged = event => {
     const { conversation, mode, tab } = event.detail;
+
+    if (tab && conversation) {
+      this.#getTabState(tab, {
+        conversation,
+        conversationId: conversation.id,
+      });
+    }
 
     if (!conversation || conversation.messageCount) {
       return;
@@ -768,8 +777,6 @@ export class AIWindowTabStatesManager {
       });
     }
 
-    const { conversation } = currentTabState.state;
-
     if (isOpen) {
       if (source === "toggle") {
         lazy.AIWindowUI.openSidebar(
@@ -782,23 +789,37 @@ export class AIWindowTabStatesManager {
         currentTabState?.state?.input ?? EMPTY_SMARTBAR_INPUT_STATE
       );
     } else {
-      this.#updateEmptyCloseCount(conversation, isOpen, source);
+      this.#updateEmptyCloseCount(
+        currentTabState?.state?.conversation ?? null,
+        source
+      );
     }
   };
 
   /**
-   * Updates the empty-close count when the sidebar closes. Resets to 0
-   * if the user engaged in a conversation, otherwise increments.
-   * No-op once the prompt trigger count is reached.
+   * Updates the empty-close count when the sidebar closes. A started
+   * conversation means the user engaged with the sidebar, so the count is reset
+   * to 0 to keep the "keep closed" prompt from targeting active users. This
+   * reset runs even once the trigger count is reached, otherwise an engaged user
+   * stays stuck at the trigger and keeps seeing the prompt. An empty close
+   * increments the count, capped at the trigger.
    *
-   * @param {ChatConversation} conversation
-   * @param {boolean} isOpen
+   * @param {?ChatConversation} conversation The closed sidebar's conversation.
    * @param {'close' | 'toggle'} source
    */
-  #updateEmptyCloseCount(conversation, isOpen, source) {
+  #updateEmptyCloseCount(conversation, source) {
+    if (!["close", "toggle"].includes(source)) {
+      return;
+    }
+
+    if (conversation?.messageCount) {
+      if (lazy.sidebarEmptyCloseCount !== 0) {
+        Services.prefs.setIntPref(SIDEBAR_EMPTY_CLOSE_COUNT_PREF, 0);
+      }
+      return;
+    }
+
     if (
-      isOpen ||
-      !["close", "toggle"].includes(source) ||
       lazy.sidebarEmptyCloseCount >= SIDEBAR_EMPTY_CLOSE_PROMPT_TRIGGER_COUNT
     ) {
       return;
@@ -806,7 +827,7 @@ export class AIWindowTabStatesManager {
 
     Services.prefs.setIntPref(
       SIDEBAR_EMPTY_CLOSE_COUNT_PREF,
-      conversation?.messages?.length ? 0 : lazy.sidebarEmptyCloseCount + 1
+      lazy.sidebarEmptyCloseCount + 1
     );
   }
 
