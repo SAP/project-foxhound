@@ -974,13 +974,33 @@ microsurvey:
     send_in_pings:
       - microsurvey
 
-  smart_window_user_feedback_data:
-    type: object
+  app_build_id:
+    type: string
+    lifetime: ping
     description: |
-      Structured feedback and session metadata submitted via the Smart Window
-      feedback modal.
+      The build ID of the application. Included because the microsurvey ping
+      uses OHTTP and excludes standard client_info metadata.
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=2036194
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2036194
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - pmcmanis@mozilla.com
+      - dmosedale@mozilla.com
+    expires: never
+    send_in_pings:
+      - microsurvey
+
+microsurvey.smart_window:
+  user_feedback_data:
+    type: object
+    description: |
+      Session metadata submitted via the Smart Window feedback modal.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2036194
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2034541
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=2036194
     data_sensitivity:
@@ -1011,6 +1031,254 @@ microsurvey:
             prompt_version:
               type: number
               description: The prompt version used during the chat session.
+
+  chat:
+    type: object
+    description: |
+      The conversation log at the time of feedback submission.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2034541
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2034541
+    data_sensitivity:
+      - highly_sensitive
+    notification_emails:
+      - firefox-ai-and-ml@mozilla.com
+    expires: never
+    send_in_pings:
+      - microsurvey
+    structure:
+      type: object
+      properties:
+        log:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                description: Unique message identifier (UUID).
+              createdDate:
+                type: number
+                description: Unix timestamp when the message was created.
+              parentMessageId:
+                type: string
+                description: ID of the preceding message in the conversation.
+              revisionRootMessageId:
+                type: string
+                description: >
+                  ID of the root message of this revision branch. Stays
+                  constant across edits/regenerations of the same turn.
+              ordinal:
+                type: number
+                description: Sequence position of the message in the conversation.
+              isActiveBranch:
+                type: boolean
+                description: >
+                  Whether this message is on the active branch. False for
+                  messages superseded by an edit or regeneration.
+              role:
+                type: number
+                description: >
+                  The speaker role. 0 = user, 1 = assistant, 2 = system,
+                  3 = tool.
+              modelId:
+                type: string
+                description: The model that produced this message.
+              content:
+                type: object
+                description: >
+                  The message content. Varies by role: TextContent for
+                  user/assistant/system messages, FunctionContent for tool
+                  call messages, ToolResultContent for tool result messages.
+                properties:
+                  content_type:
+                    type: string
+                    description: >
+                      Content type discriminator ("text" or "function").
+                      Absent on tool result messages (role 3).
+                  tool_call_id:
+                    type: string
+                    description: >
+                      Tool call ID this result corresponds to. Present only
+                      on tool result messages (role 3).
+                  body:
+                    type: object
+                    description: >
+                      Normalized message body. Text messages have
+                      { text }, function messages have { tool_calls },
+                      tool result messages have { result }.
+                    properties:
+                      text:
+                        type: string
+                        description: Body text for text content messages.
+                      tool_calls:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                              description: Tool call identifier.
+                            call_type:
+                              type: string
+                              description: Tool call type.
+                            function:
+                              type: object
+                              properties:
+                                name:
+                                  type: string
+                                  description: Name of the function called.
+                                arguments:
+                                  type: string
+                                  description: >
+                                    JSON-encoded arguments passed to the
+                                    function.
+                        description: Tool calls issued by the model.
+                      result:
+                        type: array
+                        items:
+                          type: string
+                        description: Tool result content, e.g. fetched page text.
+                  name:
+                    type: string
+                    description: >
+                      Function name for tool result messages (role 3).
+                  userContext:
+                    type: object
+                    description: Real-time browser context injected for user messages.
+                    properties:
+                      realTimeContext:
+                        type: string
+                        description: >
+                          Serialized browser context: locale, timezone,
+                          active tab, and selected tab details.
+                  contextMentions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        mention_type:
+                          type: string
+                          description: >
+                            Mention type, e.g. "currentTab" or "tab".
+                        url:
+                          type: string
+                          description: URL of the mentioned tab.
+                        label:
+                          type: string
+                          description: Display label for the mentioned tab.
+                        iconSrc:
+                          type: string
+                          description: Favicon URL for the mentioned tab.
+                    description: Tabs mentioned as context in user messages.
+                  contextPageUrl:
+                    type: string
+                    description: URL of the page in context for user messages.
+              convId:
+                type: string
+                description: ID of the conversation this message belongs to.
+              pageUrl:
+                type: string
+                description: URL of the active tab when the user sent this message.
+              turnIndex:
+                type: number
+                description: Zero-based turn index in the conversation.
+              memoriesEnabled:
+                type: boolean
+                description: Whether memories were enabled for this message.
+              memoriesFlagSource:
+                type: string
+                description: How the memoriesEnabled flag was determined.
+              memoriesApplied:
+                type: array
+                items:
+                  type: string
+                description: Memory strings applied to this response.
+              webSearchQueries:
+                type: array
+                items:
+                  type: string
+                description: Web search queries issued for this response.
+              followUpSuggestions:
+                type: array
+                items:
+                  type: string
+                description: Follow-up question suggestions generated with this response.
+              pageHistoryDeleted:
+                type: boolean
+                description: Whether the page URL was removed by a history deletion.
+              tokens:
+                type: object
+                description: Response stream tokens grouped by label.
+                properties:
+                  search:
+                    type: array
+                    items:
+                      type: string
+                    description: Web search token values.
+                  existing_memory:
+                    type: array
+                    items:
+                      type: string
+                    description: Memory token values applied to this response.
+                  followup:
+                    type: array
+                    items:
+                      type: string
+                    description: Follow-up suggestion token values.
+              toolUIData:
+                type: object
+                description: >
+                  Data for rendering an interactive UI component alongside
+                  this message, e.g. a tab-close confirmation dialog or a
+                  retry prompt shown after a cancelled action.
+                properties:
+                  uiType:
+                    type: string
+                    description: >
+                      The UI component to render, e.g.
+                      "website-confirmation", "ai-action-result",
+                      "cancelled-component", or "retry-component".
+                  toolCallId:
+                    type: string
+                    description: The tool call ID this UI component is associated with.
+                  properties:
+                    type: object
+                    description: >
+                      Component-specific data. "website-confirmation"
+                      includes tabs (proposed for closing) and
+                      originalUserPrompt. "retry-component" includes
+                      originalUserPrompt only.
+                    properties:
+                      originalUserPrompt:
+                        type: string
+                        description: >
+                          The user prompt that triggered the tool action.
+                          Used to re-submit after cancellation.
+                      tabs:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            linkedPanel:
+                              type: string
+                              description: ID of the tab's linked panel.
+                            url:
+                              type: string
+                              description: URL of the tab.
+                            title:
+                              type: string
+                              description: Display title of the tab.
+                            iconSrc:
+                              type: string
+                              description: Favicon URL of the tab.
+                            checked:
+                              type: boolean
+                              description: >
+                                Whether the tab is selected in the
+                                confirmation UI.
+                        description: Tabs proposed for a website confirmation action.
 
 microsurvey.attribution:
   source:

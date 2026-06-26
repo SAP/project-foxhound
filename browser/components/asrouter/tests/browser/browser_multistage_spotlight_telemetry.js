@@ -187,3 +187,111 @@ add_task(async function feedback_data_only_sent_on_primary_button_submit() {
 
   sandbox.restore();
 });
+
+add_task(async function feedback_chat_selection_based_on_content_toggle() {
+  let baseMessage = (await PanelTestProvider.getMessages()).find(
+    m => m.id === "MULTISTAGE_SPOTLIGHT_MESSAGE"
+  );
+  const chatLog = { log: [{ role: 0, content: { type: "text", body: "hi" } }] };
+  const chatLogWithoutPageContent = { log: [] };
+  const feedbackData = {
+    metadata: { model: "test-model", turn_count: 1 },
+    chat: chatLog,
+    chatWithoutPageContent: chatLogWithoutPageContent,
+  };
+  let message = {
+    ...baseMessage,
+    content: {
+      ...baseMessage.content,
+      write_in_microsurvey: true,
+      feedbackData,
+    },
+  };
+  let browser = BrowserWindowTracker.getTopWindow().gBrowser.selectedBrowser;
+
+  await showAndWaitForDialog({ message, browser }, async win => {
+    // Toggle checked (include page content): sends full chat, strips chatWithoutPageContent
+    let submitWithToggle = {
+      event: "CLICK_BUTTON",
+      event_context: {
+        source: "primary_button",
+        page: "spotlight",
+        contentToggleState: true,
+      },
+    };
+    win.AWSendEventTelemetry(submitWithToggle);
+    Assert.deepEqual(
+      submitWithToggle.event_context.smart_window_user_feedback_data,
+      { metadata: feedbackData.metadata, chat: chatLog },
+      "full chat is sent when toggle is checked"
+    );
+    Assert.ok(
+      !(
+        "chatWithoutPageContent" in
+        submitWithToggle.event_context.smart_window_user_feedback_data
+      ),
+      "chatWithoutPageContent is stripped from sent data"
+    );
+
+    // Toggle unchecked (exclude page content): chat is replaced with chatWithoutPageContent
+    let submitWithoutToggle = {
+      event: "CLICK_BUTTON",
+      event_context: {
+        source: "primary_button",
+        page: "spotlight",
+        contentToggleState: false,
+      },
+    };
+    win.AWSendEventTelemetry(submitWithoutToggle);
+    Assert.deepEqual(
+      submitWithoutToggle.event_context.smart_window_user_feedback_data,
+      { metadata: feedbackData.metadata, chat: chatLogWithoutPageContent },
+      "chatWithoutPageContent replaces chat when toggle is unchecked"
+    );
+
+    win.close();
+  });
+});
+
+add_task(
+  async function feedback_full_chat_sent_when_no_alternate_and_toggle_unchecked() {
+    let baseMessage = (await PanelTestProvider.getMessages()).find(
+      m => m.id === "MULTISTAGE_SPOTLIGHT_MESSAGE"
+    );
+    const chatLog = {
+      log: [{ role: 0, content: { type: "text", body: "hi" } }],
+    };
+    const feedbackData = {
+      metadata: { model: "test-model", turn_count: 1 },
+      chat: chatLog,
+    };
+    let message = {
+      ...baseMessage,
+      content: {
+        ...baseMessage.content,
+        write_in_microsurvey: true,
+        feedbackData,
+      },
+    };
+    let browser = BrowserWindowTracker.getTopWindow().gBrowser.selectedBrowser;
+
+    await showAndWaitForDialog({ message, browser }, async win => {
+      let submitData = {
+        event: "CLICK_BUTTON",
+        event_context: {
+          source: "primary_button",
+          page: "spotlight",
+          contentToggleState: false,
+        },
+      };
+      win.AWSendEventTelemetry(submitData);
+      Assert.deepEqual(
+        submitData.event_context.smart_window_user_feedback_data,
+        { metadata: feedbackData.metadata, chat: chatLog },
+        "full chat is sent when toggle is unchecked but no alternate exists"
+      );
+
+      win.close();
+    });
+  }
+);
