@@ -7,6 +7,8 @@ browser.jar:
   content/browser/aiwindow/aiWindow.html                            (content/aiWindow.html)
   content/browser/aiwindow/assets/ask-icon.svg                      (assets/ask-icon.svg)
   content/browser/aiwindow/assets/stop-generation.svg               (assets/stop-generation.svg)
+  content/browser/aiwindow/components/ai-chat-card.css              (components/ai-chat-card/ai-chat-card.css)
+  content/browser/aiwindow/components/ai-chat-card.mjs              (components/ai-chat-card/ai-chat-card.mjs)
   content/browser/aiwindow/components/ai-chat-content.mjs           (components/ai-chat-content/ai-chat-content.mjs)
   content/browser/aiwindow/components/ai-chat-content.css           (components/ai-chat-content/ai-chat-content.css)
   content/browser/aiwindow/components/chat-assistant-loader.mjs     (components/ai-chat-content/chat-assistant-loader/chat-assistant-loader.mjs)
