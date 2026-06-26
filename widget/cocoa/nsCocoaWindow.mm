@@ -3078,6 +3078,31 @@ static gfx::IntPoint GetIntegerDeltaForEvent(NSEvent* aEvent) {
   NS_OBJC_END_TRY_IGNORE_BLOCK;
 }
 
+// Override NSResponder's default undo:/redo: implementations. The defaults
+// look up the responder's undoManager property and silently no-op when it is
+// nil, which it always is in Gecko (we use our own TransactionManager rather
+// than NSUndoManager). Without this override, clicking Edit > Undo or Edit >
+// Redo in the macOS system menu bar would dispatch through the responder
+// chain, be "claimed" by the default NSResponder implementation, and do
+// nothing. Forwarding via menuItemHit: routes the click through Gecko's
+// command system, which fires cmd_undo / cmd_redo on the focused editor
+// (bug 2040844).
+//
+// The standard Edit menu items have action=@selector(undo:)/(redo:) with
+// target=nil (see nsMenuItemX.mm) so that macOS 26+ injects SF Symbol icons
+// and so that native NSText fields inside NSSavePanel/NSOpenPanel sheets keep
+// receiving these actions natively when they are the first responder. Those
+// sheets are not in this view's responder chain, so the overrides below only
+// kick in when ChildView is the first responder -- i.e. when focus is in
+// Gecko content or chrome.
+- (void)undo:(id)aSender {
+  [nsMenuBarX::sNativeEventTarget menuItemHit:aSender];
+}
+
+- (void)redo:(id)aSender {
+  [nsMenuBarX::sNativeEventTarget menuItemHit:aSender];
+}
+
 - (void)unmarkText {
   NS_ENSURE_TRUE_VOID(mTextInputHandler);
   mTextInputHandler->CommitIMEComposition();
