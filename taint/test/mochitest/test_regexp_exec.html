@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>
+      Check that the RegExp.prototype.exec taint operation records both the
+      regular expression body and its flags
+    </title>
+    <script src="/tests/SimpleTest/SimpleTest.js"></script>
+    <link rel="stylesheet" href="/tests/SimpleTest/test.css" />
+
+    <script type="text/javascript">
+      // Returns the last "RegExp.prototype.exec" operation in the taint flow of
+      // the given tainted string, or undefined if there is none.
+      function getExecOperation(str) {
+        return str.taint[0].flow.find(
+          (op) => op.operation === "RegExp.prototype.exec"
+        );
+      }
+
+      add_task(function test_exec_records_body_and_flags() {
+        const input = String.tainted("hello world", "src");
+        const match = /\w+/g.exec(input);
+
+        check_tainted(match[0]);
+        const op = getExecOperation(match[0]);
+        SimpleTest.ok(op, "Found RegExp.prototype.exec operation in taint flow");
+        SimpleTest.is(op.arguments[0], "\\w+", "Operation records regex body");
+        SimpleTest.is(op.arguments[1], "g", "Operation records regex flags");
+      });
+
+      add_task(function test_exec_records_no_flags() {
+        const input = String.tainted("hello world", "src");
+        const match = /\w+/.exec(input);
+
+        check_tainted(match[0]);
+        const op = getExecOperation(match[0]);
+        SimpleTest.ok(op, "Found RegExp.prototype.exec operation in taint flow");
+        SimpleTest.is(op.arguments[0], "\\w+", "Operation records regex body");
+        SimpleTest.is(
+          op.arguments[1],
+          "",
+          "Operation records empty flags when none are set"
+        );
+      });
+
+      add_task(function test_exec_records_flags_in_canonical_order() {
+        const input = String.tainted("hello world", "src");
+        // Flags supplied out of order; they must be recorded as "gi".
+        const match = /\w+/ig.exec(input);
+
+        check_tainted(match[0]);
+        const op = getExecOperation(match[0]);
+        SimpleTest.ok(op, "Found RegExp.prototype.exec operation in taint flow");
+        SimpleTest.is(
+          op.arguments[1],
+          "gi",
+          "Operation records flags in canonical order"
+        );
+      });
+    </script>
+  </head>
+
+  <body></body>
+</html>

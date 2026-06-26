@@ -132,6 +132,18 @@ bool js::CreateRegExpMatchResult(JSContext* cx, HandleRegExpShared re,
   Rooted<JSAtom*> src(cx, re->getSource());
   RootedString srcStr(cx, EscapeRegExpPattern(cx, src));
 
+  // Foxhound: build the flags string in canonical order (dgimsuvy) so the
+  // taint operation records the full regular expression, not just its body.
+  std::u16string flagsStr;
+  if (re->hasIndices()) flagsStr += 'd';
+  if (re->global()) flagsStr += 'g';
+  if (re->ignoreCase()) flagsStr += 'i';
+  if (re->multiline()) flagsStr += 'm';
+  if (re->dotAll()) flagsStr += 's';
+  if (re->unicode()) flagsStr += 'u';
+  if (re->unicodeSets()) flagsStr += 'v';
+  if (re->sticky()) flagsStr += 'y';
+
   // Steps 28-29 and 33 a-d: Initialize the elements of the match result.
   // Store a Value for each match pair.
   for (size_t i = 0; i < numPairs; i++) {
@@ -153,7 +165,7 @@ bool js::CreateRegExpMatchResult(JSContext* cx, HandleRegExpShared re,
       if (str->taint().hasTaint()) {
         str->taint().extend(
           TaintOperation("RegExp.prototype.exec", TaintLocationFromContext(cx),
-                         { taintarg_jsstring_full(cx, srcStr), taintarg_jsstring(cx, str), taintarg(cx, i) }));
+                         { taintarg_jsstring_full(cx, srcStr), flagsStr, taintarg_jsstring(cx, str), taintarg(cx, i) }));
       }
       arr->setDenseInitializedLength(i + 1);
       arr->initDenseElement(i, StringValue(str));
