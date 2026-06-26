@@ -299,3 +299,14 @@ aiwindow-feedback-reason-lacks-personalization = Lacks personalization or contex
 aiwindow-feedback-reason-performance-or-usability = Performance or usability issue
 aiwindow-feedback-reason-harmful-or-offensive = Harmful or offensive
 aiwindow-feedback-reason-other = Other
+
+## Smart Window ai-chat-grid
+
+aiwindow-ai-chat-grid-view-controls =
+    .aria-label = Switch view layout
+aiwindow-ai-chat-grid-list-view =
+    .aria-label = Switch mode: List View
+    .tooltiptext = List View
+aiwindow-ai-chat-grid-grid-view =
+    .aria-label = Switch mode: Grid View
+    .tooltiptext = Grid View

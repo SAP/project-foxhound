@@ -15,6 +15,8 @@
   --box-shadow-color-lighter-layer-2: color-mix(in srgb, var(--color-violet-50) 25%, transparent);
   --smartwindow-shadow: var(--box-shadow-level-2);
 
+  --smartwindow-ai-chat-grid-border-color: light-dark(var(--color-violet-10), var(--container-bg, rgba(191, 143, 204, 0.2)));
+
   /* stylelint-disable-next-line media-query-no-invalid */
   @media -moz-pref("browser.nova.enabled") {
     /* HCM Default */

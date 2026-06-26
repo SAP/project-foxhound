@@ -1,0 +1,138 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+:host {
+  display: block;
+  --ai-chat-grid-columns: repeat(3, minmax(0, 1fr));
+}
+
+.ai-chat-grid {
+  --border-color: var(--smartwindow-ai-chat-grid-border-color);
+  --space-xsmall: var(--dimension-4);
+  --icon-size-medium: var(--border-radius-large);
+  --icon-size-large: calc(var(--border-radius-large) * 1.5);
+
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  container-type: inline-size;
+  container-name: ai-chat-grid;
+
+  .header {
+    display: flex;
+    justify-content: end;
+
+    .list-controls {
+      /* nova? --color-gray-15, in Figma */
+      --background-color: light-dark(var(--color-gray-20), var(--color-gray-90));
+
+      display: flex;
+      margin-bottom: var(--panel-padding-block);
+
+      border: var(--border-width) solid var(--border-color);
+
+      border-radius: var(--border-radius-large);
+      padding: var(--space-xsmall);
+      box-shadow: var(--box-shadow-level-2);
+
+      background-color: var(--background-color);
+      height: var(--icon-size-large);
+    }
+  }
+
+  .scroll-area.grid {
+    display: grid;
+    gap: var(--panel-padding-block);
+    grid-template-columns: var(--ai-chat-grid-columns);
+  }
+
+  .scroll-area.list {
+    display: flex;
+    flex-direction: column;
+  }
+
+  &.loading {
+    .loading-skeleton {
+      width: 100%;
+      /* stylelint-disable-next-line -- Figma design */
+      height: 255px;
+    }
+  }
+}
+
+ai-chat-grid {
+  --ai-chat-grid-columns: repeat(2, minmax(0, 1fr));
+}
+
+ai-chat-grid::part(row) {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-small);
+  padding: var(--space-medium) 0;
+  text-decoration: none;
+}
+
+[part~="row"]:first-child {
+  padding-top: 0;
+}
+
+ai-chat-grid::part(scrollarea-grid) {
+  background-color: transparent;
+  margin-top: var(--space-medium);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.5) transparent;
+}
+
+ai-chat-grid::part(scrollarea-list) {
+  --background-color: light-dark(var(--color-violet-10), var(--color-violet-80));
+  --card-border: var(--card-border-radius) solid light-dark(var(--color-violet-10), var(--color-violet-80));
+
+  box-sizing: border-box;
+  background-color: var(--background-color);
+  border-radius: var(--card-border-radius);
+  padding: 0 var(--space-xlarge);
+  margin-top: var(--space-medium);
+  /* stylelint-disable-next-line -- Figma design */
+  height: 255px;
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.5) transparent;
+  border-inline-end: var(--card-border);
+  border-block: var(--card-border);
+}
+
+.list-controls moz-button {
+  --button-icon-fill: light-dark(var(--color-black-alpha-40), var(--color-white-alpha-20));
+  --button-background-color-ghost-selected: light-dark(var(--color-violet-10), var(--color-violet-80));
+}
+
+.list-controls moz-button:first-child {
+  margin-inline-end: var(--space-xsmall);
+}
+
+.list-controls moz-button::part(button) {
+  border-radius: var(--border-radius-large);
+  min-width: var(--icon-size-large);
+  width: var(--icon-size-medium);
+  height: var(--icon-size-medium);
+}
+
+:host([view="list"]) #list,
+:host([view="grid"]) #grid {
+  --button-icon-fill: light-dark(var(--color-black), var(--color-white));
+
+  /* The selected button stays selected, so suppress the hover/active feedback
+     to avoid implying it can be pressed again. */
+  --button-background-color-ghost-hover: var(--button-background-color-ghost-selected);
+  --button-background-color-ghost-active: var(--button-background-color-ghost-selected);
+}
+
+:host([view="list"]) #list::part(button),
+:host([view="grid"]) #grid::part(button) {
+  --border-color: 1px solid var(--chrome-content-separator-color);
+
+  border: var(--border-color);
+  cursor: default;
+}
