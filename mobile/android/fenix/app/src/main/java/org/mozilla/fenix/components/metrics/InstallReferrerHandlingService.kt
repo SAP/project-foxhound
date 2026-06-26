@@ -151,6 +151,7 @@ class InstallReferrerHandlingService(
         private const val ADJUST_EXTERNAL_CLICK_ID = "adjust_external_click_id"
         private val TIKTOK_EXTERNAL_CLICK_ID_PREFIXES = listOf("E.C.P.C", "E_C_P_C")
         private const val REDDIT_EXTERNAL_CLICK_ID_PREFIX = "reddit_"
+        private const val REDDIT_UTM_SOURCE = "reddit"
         private const val X_TWITTER_UTM_SOURCE = "x"
 
         @VisibleForTesting
@@ -171,6 +172,7 @@ class InstallReferrerHandlingService(
             return TIKTOK_EXTERNAL_CLICK_ID_PREFIXES.any { clickId.startsWith(it, ignoreCase = true) }
         }
 
+        @Suppress("ReturnCount", "TooManyReturns")
         @VisibleForTesting
         internal fun isRedditAttribution(installReferrerResponse: String?): Boolean {
             if (installReferrerResponse.isNullOrBlank()) return false
@@ -181,6 +183,10 @@ class InstallReferrerHandlingService(
                 Logger.error("isRedditAttribution() - bad installReferrerResponse", e)
 
                 installReferrerResponse
+            }
+
+            if (UTMParams.parseUTMParameters(decoded).source.equals(REDDIT_UTM_SOURCE, ignoreCase = true)) {
+                return true
             }
 
             val clickId = UTMParams.parseInstallReferrer(decoded)[ADJUST_EXTERNAL_CLICK_ID]
