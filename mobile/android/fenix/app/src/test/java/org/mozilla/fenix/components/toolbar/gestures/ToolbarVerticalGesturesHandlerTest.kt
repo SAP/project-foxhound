@@ -30,6 +30,7 @@ import org.mozilla.fenix.browser.browsingmode.BrowsingMode.Normal
 import org.mozilla.fenix.browser.browsingmode.BrowsingMode.Private
 import org.mozilla.fenix.components.AppStore
 import org.mozilla.fenix.components.appstate.AppState
+import org.mozilla.fenix.components.appstate.search.SearchState
 import org.mozilla.fenix.components.toolbar.ToolbarPosition
 import org.mozilla.fenix.components.toolbar.ToolbarPosition.BOTTOM
 import org.mozilla.fenix.components.toolbar.ToolbarPosition.TOP
@@ -52,7 +53,12 @@ class ToolbarVerticalGesturesHandlerTest(private val scenario: Scenario) {
 
     private val toolbarLayout = spyk(View(testContext))
     private var navbarLayout: View? = null
-    private val appStore = AppStore(AppState(mode = scenario.browsingMode))
+    private val appStore = AppStore(
+        AppState(
+            mode = scenario.browsingMode,
+            searchState = SearchState.EMPTY.copy(isSearchActive = scenario.isSearchActive),
+        ),
+    )
     private val navController: NavController = mockk(relaxed = true)
 
     @Before
@@ -317,6 +323,21 @@ class ToolbarVerticalGesturesHandlerTest(private val scenario: Scenario) {
                 isNavbarShown = true,
                 systemGestureInsetBottom = TOOLBAR_HEIGHT - 10,
                 shouldOpenTabsTray = true,
+            ),
+            // ///////////////////////////////////////////////////////////////////////////////////
+            // Scenarios where a search is active. The toolbar expands over the search results, //
+            // so an otherwise valid swipe must not open the tabs tray.                         //
+            // ///////////////////////////////////////////////////////////////////////////////////
+            BottomToolbarSwipe.copy(
+                initialSwipe = swipeUp(fromScreenTop = false),
+                isNavbarShown = false,
+                isSearchActive = true,
+                shouldOpenTabsTray = false,
+            ),
+            TopToolbarSwipe.copy(
+                initialSwipe = swipeDown(fromScreenTop = true),
+                isSearchActive = true,
+                shouldOpenTabsTray = false,
             ),
             // /////////////////////////////////////////////////////////////
             // Scenarios where the initial vertical swipe is not enough. //
@@ -643,6 +664,7 @@ class ToolbarVerticalGesturesHandlerTest(private val scenario: Scenario) {
         val initialSwipe: Swipe,
         val followupSwipe: Swipe? = null,
         val systemGestureInsetBottom: Int = 0,
+        val isSearchActive: Boolean = false,
         val shouldOpenTabsTray: Boolean,
     )
 

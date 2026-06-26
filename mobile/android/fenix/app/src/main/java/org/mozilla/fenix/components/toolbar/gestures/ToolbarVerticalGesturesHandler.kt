@@ -80,7 +80,9 @@ class ToolbarVerticalGesturesHandler(
         val isCurrentDestinationValid =
             currentDestinationId == R.id.browserFragment || currentDestinationId == R.id.homeFragment
 
+        @Suppress("ComplexCondition")
         if (!isCurrentDestinationValid ||
+            appStore.state.searchState.isSearchActive ||
             startTouchPoint.isInSystemGestureInset() ||
             !startTouchPoint.isSwipeValid(currentSwipeYDistance)
         ) {
