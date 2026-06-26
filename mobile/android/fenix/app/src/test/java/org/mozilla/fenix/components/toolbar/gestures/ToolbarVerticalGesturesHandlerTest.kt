@@ -6,6 +6,8 @@ package org.mozilla.fenix.components.toolbar.gestures
 
 import android.graphics.PointF
 import android.view.View
+import androidx.core.graphics.Insets
+import androidx.core.view.WindowInsetsCompat
 import androidx.navigation.NavController
 import androidx.navigation.NavDestination
 import androidx.navigation.NavDirections
@@ -70,6 +72,24 @@ class ToolbarVerticalGesturesHandlerTest(private val scenario: Scenario) {
         val mockDestination: NavDestination = mockk()
         every { mockDestination.id } returns R.id.browserFragment
         every { navController.currentDestination } returns mockDestination
+
+        val rootView = spyk(View(testContext)).also {
+            every { it.height } returns SCREEN_HEIGHT
+            every { it.getLocationOnScreen(any()) } answers {
+                val locationArray = arg<IntArray>(0)
+                locationArray[0] = 0
+                locationArray[1] = 0
+            }
+        }
+        every { toolbarLayout.rootView } returns rootView
+
+        every { toolbarLayout.rootWindowInsets } returns WindowInsetsCompat.Builder()
+            .setInsets(
+                WindowInsetsCompat.Type.systemGestures(),
+                Insets.of(0, 0, 0, scenario.systemGestureInsetBottom),
+            )
+            .build()
+            .toWindowInsets()
     }
 
     @Test
@@ -271,6 +291,32 @@ class ToolbarVerticalGesturesHandlerTest(private val scenario: Scenario) {
                 initialSwipe = swipeRight(fromScreenTop = false),
                 isNavbarShown = false,
                 shouldOpenTabsTray = false,
+            ),
+            // ///////////////////////////////////////////////////////////////////////////////////
+            // Scenarios where the swipe starts inside the bottom system gesture inset region. //
+            // A swipe up from the very bottom edge is the OS "go home/background" gesture and  //
+            // must not open the tabs tray, while a swipe starting above the inset still should. //
+            // ///////////////////////////////////////////////////////////////////////////////////
+            // Swipe up from the bottom edge of the bottom toolbar with navbar not shown.
+            BottomToolbarSwipe.copy(
+                initialSwipe = swipeUp(fromScreenTop = false),
+                isNavbarShown = false,
+                systemGestureInsetBottom = TOOLBAR_HEIGHT - 10,
+                shouldOpenTabsTray = false,
+            ),
+            // Swipe up from the bottom edge while the navbar is also shown.
+            BottomToolbarSwipe.copy(
+                initialSwipe = swipeUp(fromScreenTop = false, toolbarHeight = TOOLBAR_HEIGHT * 2),
+                isNavbarShown = true,
+                systemGestureInsetBottom = TOOLBAR_HEIGHT - 10,
+                shouldOpenTabsTray = false,
+            ),
+            // Swipe up starting above the inset still opens the tabs tray even when an inset is present.
+            BottomToolbarSwipe.copy(
+                initialSwipe = swipeUp(fromScreenTop = false, toolbarHeight = TOOLBAR_HEIGHT * 2, yOffset = -TOOLBAR_HEIGHT),
+                isNavbarShown = true,
+                systemGestureInsetBottom = TOOLBAR_HEIGHT - 10,
+                shouldOpenTabsTray = true,
             ),
             // /////////////////////////////////////////////////////////////
             // Scenarios where the initial vertical swipe is not enough. //
@@ -596,6 +642,7 @@ class ToolbarVerticalGesturesHandlerTest(private val scenario: Scenario) {
         val browsingMode: BrowsingMode,
         val initialSwipe: Swipe,
         val followupSwipe: Swipe? = null,
+        val systemGestureInsetBottom: Int = 0,
         val shouldOpenTabsTray: Boolean,
     )
 

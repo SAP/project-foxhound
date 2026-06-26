@@ -9,6 +9,8 @@ import android.view.View
 import android.view.ViewConfiguration
 import androidx.core.graphics.contains
 import androidx.core.graphics.toPoint
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.navigation.NavController
 import mozilla.telemetry.glean.private.NoExtras
 import org.mozilla.fenix.GleanMetrics.Events
@@ -78,7 +80,10 @@ class ToolbarVerticalGesturesHandler(
         val isCurrentDestinationValid =
             currentDestinationId == R.id.browserFragment || currentDestinationId == R.id.homeFragment
 
-        if (!isCurrentDestinationValid || !startTouchPoint.isSwipeValid(currentSwipeYDistance)) {
+        if (!isCurrentDestinationValid ||
+            startTouchPoint.isInSystemGestureInset() ||
+            !startTouchPoint.isSwipeValid(currentSwipeYDistance)
+        ) {
             return false
         }
 
@@ -127,6 +132,25 @@ class ToolbarVerticalGesturesHandler(
             BOTTOM -> distanceY.isSwipeUp
         }
         return isToolbarSwipeDirectionValid && isInTarget(toolbarLayout)
+    }
+
+    /**
+     * Check if the swipe started inside the bottom system gesture inset - the screen-edge region
+     * the OS reserves for the "swipe up to go home/background the app" gesture when gesture-based
+     * navigation is used.
+     * A bottom toolbar/navbar overlaps this region, so swipes originating there
+     * must be ignored to avoid mistaking the system gesture for a tabs tray swipe.
+     */
+    private fun PointF.isInSystemGestureInset(): Boolean {
+        val bottomInsets = ViewCompat.getRootWindowInsets(toolbarLayout)
+            ?.getInsets(WindowInsetsCompat.Type.systemGestures())
+            ?.bottom ?: 0
+
+        if (bottomInsets <= 0) return false
+
+        val rootView = toolbarLayout.rootView
+        val screenBottom = IntArray(2).apply { rootView.getLocationOnScreen(this) }[1] + rootView.height
+        return y >= screenBottom - bottomInsets
     }
 
     private fun getTargetView() = when ((navBarLayout?.height ?: 0) > 0) {
