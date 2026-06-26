@@ -104,7 +104,11 @@ function normalizeContent(content) {
   if (typeof body === "string") {
     normalizedBody = { text: body };
   } else if (Array.isArray(body)) {
-    normalizedBody = { result: body };
+    normalizedBody = {
+      result: body.map(item =>
+        typeof item === "string" ? item : JSON.stringify(item)
+      ),
+    };
   } else if (body?.tool_calls) {
     normalizedBody = { tool_calls: normalizeToolCalls(body.tool_calls) };
   }
@@ -135,7 +139,8 @@ function normalizeContent(content) {
  * schema-mismatch errors from undeclared fields, and normalizes content.body
  * to always be an object (Glean object metrics require a single declared type):
  *   - string bodies (text messages) become { text: body }
- *   - array bodies (tool result messages) become { result: body }
+ *   - array bodies (tool result messages) become { result: string[] },
+ *     stringifying any non-string items to satisfy the schema
  *   - object bodies (function messages) have tool_calls[].type renamed to
  *     call_type (Bug 1945220)
  */

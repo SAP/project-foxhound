@@ -1188,7 +1188,7 @@ microsurvey.smart_window:
                 type: boolean
                 description: Whether memories were enabled for this message.
               memoriesFlagSource:
-                type: string
+                type: number
                 description: How the memoriesEnabled flag was determined.
               memoriesApplied:
                 type: array
