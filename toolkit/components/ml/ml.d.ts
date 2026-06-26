@@ -42,6 +42,7 @@ export type EngineRequests = EnsureAllFeatures<{
   "smart-tab-embedding": UntypedEngineRequest;
   "smart-tab-topic": UntypedEngineRequest;
   "formfill-classification": UntypedEngineRequest;
+  chat: UntypedEngineRequest;
 
   "suggest-intent-classification": {
     /**
@@ -135,6 +136,11 @@ type UntypedEngineResponse = {
   resourcesAfter: ResourceMeasurement;
 };
 
+type ChatEngineResponse = {
+  finalOutput: string;
+  metrics: unknown;
+} & UntypedEngineResponse;
+
 /**
  * Base metrics common to all pipeline runs.
  */
@@ -156,6 +162,7 @@ interface ClassificationMetrics extends BaseMetrics {
 
 export type EngineResponses = EnsureAllFeatures<{
   "about-inference": UntypedEngineResponse;
+  chat: ChatEngineResponse;
   "link-preview": UntypedEngineResponse;
   "pdfjs-alt-text": UntypedEngineResponse;
   "simple-text-embedder": UntypedEngineResponse;

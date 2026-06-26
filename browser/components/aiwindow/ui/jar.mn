@@ -9,7 +9,6 @@ browser.jar:
   content/browser/aiwindow/assets/ask-icon.svg                      (assets/ask-icon.svg)
   content/browser/aiwindow/assets/icon-grid-view.svg                (assets/icon-grid-view.svg)
   content/browser/aiwindow/assets/icon-list-view.svg                (assets/icon-list-view.svg)
-  content/browser/aiwindow/assets/kit.svg                           (assets/kit.svg)
   content/browser/aiwindow/assets/stop-generation.svg               (assets/stop-generation.svg)
   content/browser/aiwindow/components/ai-chat-card.css              (components/ai-chat-card/ai-chat-card.css)
   content/browser/aiwindow/components/ai-chat-card.mjs              (components/ai-chat-card/ai-chat-card.mjs)

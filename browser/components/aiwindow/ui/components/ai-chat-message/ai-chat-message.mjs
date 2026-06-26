@@ -611,7 +611,7 @@ export class AIChatMessage extends MozLitElement {
    */
   static #chatMessageSanitizer;
   static {
-    this.#chatMessageSanitizer = new Sanitizer();
+    this.#chatMessageSanitizer = new globalThis.Sanitizer();
     for (const element of Object.values(CHAT_WRAPPER_ELEMENTS)) {
       this.#chatMessageSanitizer.allowElement(element);
     }

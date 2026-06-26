@@ -46,6 +46,15 @@ describe("Sanitize chat conversations", () => {
   beforeEach(async () => {
     await ChatStore.destroyDatabase();
     enableConsent();
+
+    // Clear storage activity recorded by earlier tests in this manifest. The
+    // cookiesAndStorage range cleaner reads it via getActiveOrigins(), and a
+    // Gecko bug there throws NS_ERROR_ILLEGAL_VALUE on certain stale origins
+    // Fixes an intermittent test failure in:
+    // "clears chats by range via browsingHistoryAndDownloads"
+    Cc["@mozilla.org/storage/activity-service;1"]
+      .getService(Ci.nsIStorageActivityService)
+      .testOnlyReset();
   });
 
   afterEach(async () => {
