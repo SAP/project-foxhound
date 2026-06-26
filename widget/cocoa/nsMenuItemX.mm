@@ -26,6 +26,31 @@ using namespace mozilla;
 using mozilla::dom::CallerType;
 using mozilla::dom::Event;
 
+// Standard text-editing menu items that route through the macOS responder
+// chain via NSResponder-default selectors (cut:, copy:, paste:, undo:, etc.)
+// rather than through Gecko's command system. See the action-setup block in
+// the constructor.
+static bool IsStandardEditMenuItem(nsIContent* aContent) {
+  if (!aContent || !aContent->IsElement()) {
+    return false;
+  }
+  dom::Element* element = aContent->AsElement();
+  return element->AttrValueIs(kNameSpaceID_None, nsGkAtoms::id, u"menu_undo"_ns,
+                              eCaseMatters) ||
+         element->AttrValueIs(kNameSpaceID_None, nsGkAtoms::id, u"menu_redo"_ns,
+                              eCaseMatters) ||
+         element->AttrValueIs(kNameSpaceID_None, nsGkAtoms::id, u"menu_cut"_ns,
+                              eCaseMatters) ||
+         element->AttrValueIs(kNameSpaceID_None, nsGkAtoms::id, u"menu_copy"_ns,
+                              eCaseMatters) ||
+         element->AttrValueIs(kNameSpaceID_None, nsGkAtoms::id,
+                              u"menu_paste"_ns, eCaseMatters) ||
+         element->AttrValueIs(kNameSpaceID_None, nsGkAtoms::id,
+                              u"menu_delete"_ns, eCaseMatters) ||
+         element->AttrValueIs(kNameSpaceID_None, nsGkAtoms::id,
+                              u"menu_selectAll"_ns, eCaseMatters);
+}
+
 nsMenuItemX::nsMenuItemX(nsMenuX* aParent, const nsString& aLabel,
                          EMenuItemType aItemType,
                          nsMenuGroupOwnerX* aMenuGroupOwner, nsIContent* aNode)
@@ -402,10 +427,18 @@ void nsMenuItemX::SetChecked() {
 void nsMenuItemX::SetEnabled() {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK;
 
-  // decide enabled state based on command content if it exists, otherwise do it
-  // based on our own content
   bool isEnabled;
-  if (mCommandElement) {
+  if (IsStandardEditMenuItem(mContent)) {
+    // Standard Edit menu items dispatch via the macOS responder chain, so let
+    // AppKit's automatic validateUserInterfaceItem: walk decide the real
+    // enable/disable state. Mirroring the XUL command's `disabled` attribute
+    // here would suppress that walk -- AppKit's performKeyEquivalent: also
+    // *consumes* the keystroke for a disabled matching menu item without
+    // firing the action, so a stale XUL-disabled state would silently kill
+    // shortcuts like Cmd+Shift+Z inside a native sheet, not just grey the
+    // menu out (bug 2040851).
+    isEnabled = true;
+  } else if (mCommandElement) {
     isEnabled = !mCommandElement->GetBoolAttr(nsGkAtoms::disabled);
   } else if (mContent->IsXULElement(nsGkAtoms::menucaption)) {
     isEnabled = false;
