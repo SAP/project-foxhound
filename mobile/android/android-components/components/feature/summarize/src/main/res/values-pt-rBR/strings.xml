@@ -75,6 +75,10 @@
   <string name="mozac_summarize_settings_shake_to_summarize">Balançar para resumir</string>
   <!-- Description for the shake to summarize toggle in settings -->
   <string name="mozac_summarize_settings_shake_to_summarize_description">Balançar o dispositivo de um lado para outro para resumir a página.</string>
+  <!-- Label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity">Sensibilidade de balançar</string>
+  <!-- Description for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_description">Ajustar a intensidade de balançar para gerar resumo.</string>
   <!-- Low option label for the shake sensitivity slider in settings -->
   <string name="mozac_summarize_settings_shake_sensitivity_low">Baixa</string>
   <!-- Medium option label for the shake sensitivity slider in settings -->

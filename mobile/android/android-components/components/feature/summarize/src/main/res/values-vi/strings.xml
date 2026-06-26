@@ -75,6 +75,10 @@
   <string name="mozac_summarize_settings_shake_to_summarize">Lắc để tóm tắt</string>
   <!-- Description for the shake to summarize toggle in settings -->
   <string name="mozac_summarize_settings_shake_to_summarize_description">Lắc thiết bị của bạn từ bên này sang bên kia để tóm tắt một trang.</string>
+  <!-- Label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity">Độ nhạy lực lắc</string>
+  <!-- Description for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_description">Điều chỉnh lực lắc cần thiết để kích hoạt tính năng tóm tắt.</string>
   <!-- Low option label for the shake sensitivity slider in settings -->
   <string name="mozac_summarize_settings_shake_sensitivity_low">Thấp</string>
   <!-- Medium option label for the shake sensitivity slider in settings -->

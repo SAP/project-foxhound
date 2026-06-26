@@ -20,8 +20,8 @@
   </plurals>
   <plurals name="mozac_protections_dashboard_data_saved">
     <!-- Label showing data saved in megabytes. %1$d is the number of MB saved -->
-    <item quantity="one">MB %1$d زفت وابیڌه</item>
-    <item quantity="other">MB %1$d زفت وابیڌه</item>
+    <item quantity="one">%1$d مگابایت زفت وابیڌه</item>
+    <item quantity="other">%1$d مگابایت زفت وابیڌه</item>
   </plurals>
   <!-- Section header for tracker category breakdown -->
   <string name="protections_dashboard_where_they_came_from">ز کویه ٱووڌنه</string>

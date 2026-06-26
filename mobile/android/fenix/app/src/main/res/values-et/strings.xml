@@ -1258,6 +1258,24 @@
   <string name="preference_enhanced_tracking_protection_explanation_2">%s kaitseb sind paljude tuntud jälitajate eest, kes jälgivad, mida sa võrgus olles teed.</string>
   <!-- Text displayed that links to website about enhanced tracking protection -->
   <string name="preference_enhanced_tracking_protection_explanation_learn_more">Rohkem teavet</string>
+  <plurals name="trackers_blocked_count_2">
+    <!--
+      Trackers blocked card on homepage
+
+      Text shown on the trackers blocked card. %d is the number of trackers blocked.
+    -->
+    <item quantity="one">%d jälitajat blokeeriti</item>
+    <item quantity="other">%d jälitajat blokeeriti</item>
+  </plurals>
+  <plurals name="trackers_blocked_count">
+    <!--
+      Trackers blocked card on homepage
+
+      Text shown on the trackers blocked card. %d is the number of trackers blocked.
+    -->
+    <item quantity="one">%d jälitajat blokeeriti</item>
+    <item quantity="other">%d jälitajat blokeeriti</item>
+  </plurals>
   <!-- Preference for enhanced tracking protection for the standard protection settings -->
   <string name="preference_enhanced_tracking_protection_standard_default_1">Tavaline (vaikimisi)</string>
   <!-- Preference description for enhanced tracking protection for the standard protection settings -->
@@ -1748,6 +1766,12 @@
   <string name="synced_tabs_expand_group">Laienda sünkroniseeritud kaartide grupp</string>
   <!-- Content description for collapsing a group of synced tabs. -->
   <string name="synced_tabs_collapse_group">Ahenda sünkroniseeritud kaartide grupp</string>
+  <!--
+    Top Sites
+
+    Title text displayed for the shortcuts home screen section.
+  -->
+  <string name="homepage_shortcuts_title">Otseteed</string>
   <!-- Title text displayed in the dialog when shortcuts limit is reached. -->
   <string name="shortcut_max_limit_title">Otseteede limiit on täis</string>
   <!-- Content description text displayed in the dialog when shortcut limit is reached. -->
@@ -1988,5 +2012,7 @@
 
   <!-- ==== Experiment strings. ==== -->
 
+  <!-- Sports widget menu item to remove the widget from the homepage. -->
+  <string name="sports_widget_remove">Eemalda</string>
   <!-- ==== End of Terms of use popup prompt. ==== -->
 </resources>

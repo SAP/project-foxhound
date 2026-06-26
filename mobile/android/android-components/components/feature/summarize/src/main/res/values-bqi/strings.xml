@@ -38,7 +38,7 @@
   <!-- Message to describe that a download is in progress using an on-device, private model -->
   <string name="mozac_summarize_download_progress_message">دانلود ی بارکی سی خولاسه یل سیخومی.</string>
   <!-- Caption to describe the progress of the download. %1$.2f is bytes downloaded, %2$.2f is total bytes required for download to complete. -->
-  <string name="mozac_summarize_download_progress_caption">%1$.2f MB / %2$.2f MB</string>
+  <string name="mozac_summarize_download_progress_caption">%1$.2f مگابایت / %2$.2f مگابایت</string>
   <!-- Button text shown while a download is in progress to cancel the download -->
   <string name="mozac_summarize_download_progress_button_negative">لقو</string>
   <!-- Title for the download error screen -->
@@ -66,7 +66,7 @@
   <!-- Label for the summarize pages toggle in settings -->
   <string name="mozac_summarize_settings_summarize_pages">خولاسه کردن بلگه یل</string>
   <!-- Description for the summarize pages toggle -->
-  <string name="mozac_summarize_settings_summarize_pages_cloud">خولاسه بلگه یل ن وا هۊش مسنۊعی وورکل کۊنین. بلگه یل وو خولاسه یل سیخومی امهنن وو هرگشت زفت نؽبۊن.</string>
+  <string name="mozac_summarize_settings_summarize_pages_cloud">خولاسه بلگه یل ن وا هۊش مسنۊعی وورکل کۊنین. بلگه یل وو خولاسه یل، سیخومی امهنن وو هرگشت زفت نؽبۊن.</string>
   <!-- Link text to learn more about page summaries in settings -->
   <string name="mozac_summarize_settings_learn_more">قلوه دووسته بۊین</string>
   <!-- Section header for gesture settings -->

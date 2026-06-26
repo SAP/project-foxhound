@@ -655,7 +655,7 @@
     Marketing onboarding additional body text. 'Firefox' is intentionally hardcoded.
     “Allowing” refers to the main button “Allow and Continue”; the ask for the user is to allow communicating back to the platform.
   -->
-  <string name="nova_onboarding_marketing_body_line_three" tools:ignore="BrandUsage">Considerá permitir que Firefox gane.</string>
+  <string name="nova_onboarding_marketing_body_line_three" tools:ignore="BrandUsage">Considerá permitir para ayudar a que Firefox gane.</string>
   <!-- Marketing onboarding body link text. -->
   <string name="nova_onboarding_marketing_body_link_text">Como usamos los datos</string>
   <!-- Marketing onboarding body link text. -->

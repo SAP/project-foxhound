@@ -172,6 +172,8 @@
   <string name="mozac_feature_prompts_collapse_address_content_description_2">저장된 주소 접기</string>
   <!-- Text for the manage addresses button. -->
   <string name="mozac_feature_prompts_manage_address">주소 관리</string>
+  <!-- Text for the title of a save address dialog. -->
+  <string name="mozac_feature_prompts_save_address_prompt_title">주소를 저장하시겠습니까?</string>
   <!--
     Federated Credential Management prompts
 

@@ -172,6 +172,8 @@
   <string name="mozac_feature_prompts_collapse_address_content_description_2">ਸੰਭਾਲੇ ਹੋਏ ਸਿਰਨਾਵਿਆਂ ਨੂੰ ਸਮੇਟੋ</string>
   <!-- Text for the manage addresses button. -->
   <string name="mozac_feature_prompts_manage_address">ਸਿਰਨਾਵਿਆਂ ਦਾ ਇੰਤਜ਼ਾਮ ਕਰੋ</string>
+  <!-- Text for the title of a save address dialog. -->
+  <string name="mozac_feature_prompts_save_address_prompt_title">ਸਿਰਨਾਵਾਂ ਸੰਭਾਲਣਾ ਹੈ?</string>
   <!--
     Federated Credential Management prompts
 

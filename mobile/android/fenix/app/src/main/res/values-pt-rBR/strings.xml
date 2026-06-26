@@ -4663,6 +4663,8 @@
   <string name="ai_controls_google_lens_description">Envia imagens e fotos para o Google para pesquisa visual.</string>
   <!-- Content description for the Google Lens half of the camera mode toggle -->
   <string name="lens_camera_mode_lens">Google Lens</string>
+  <!-- Content description for the QR scanner half of the camera mode toggle -->
+  <string name="lens_camera_mode_qr">Leitor de código QR</string>
   <!-- Toast shown when the user picks an image from the gallery in QR mode but no QR code is found in it -->
   <string name="lens_camera_qr_no_code_found">Nenhum código QR encontrado na imagem</string>
   <!--
