@@ -623,6 +623,8 @@
   <string name="nova_onboarding_marketing_body" tools:ignore="BrandUsage,UnusedResources">Firefox نى قانداق بايقىغانلىقىڭىز ۋە ئۇنى ئىشلىتىشنى Mozilla نىڭ بازارچىلىق ھەمكارلاشقۇچىلىرى بىلەن ھەمبەھىرلەڭ. بۇ سانلىق مەلۇماتلار ھەرگىز سېتىلمايدۇ. %1$s</string>
   <!-- Marketing onboarding body link text. -->
   <string name="nova_onboarding_marketing_body_link_text">سانلىق مەلۇماتنى قانداق ئىشلىتىمىز</string>
+  <!-- Marketing onboarding body link text. -->
+  <string name="nova_onboarding_marketing_body_link_text_1">تەپسىلاتى</string>
   <!-- Marketing onboarding primary button text. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage">Firefox ياردەم</string>
   <!-- Marketing onboarding primary button text. -->
@@ -994,6 +996,8 @@
   <string name="customize_toggle_pocket_sponsored">قوللىغان ھېكايىلەر</string>
   <!-- Title for the opening wallpaper settings screen -->
   <string name="customize_wallpapers">تام قەغىزى</string>
+  <!-- Label for the menu item that opens the wallpaper settings screen. -->
+  <string name="browser_menu_change_wallpaper">تام قەغەز ئۆزگەرت</string>
   <!-- Title for the customize home screen section with sponsored shortcuts. -->
   <string name="customize_toggle_contile">قوللايدىغان تېزلەتمىلەر</string>
   <!-- Title for the customize home screen section that toggles the Homepage sports widget. -->
@@ -1572,6 +1576,10 @@
   <string name="tab_group_onboarding_list_item_description">بىر گۇرۇپپا قۇرۇشتا كۆپ بەتكۈچ تاللىنىدۇ.</string>
   <!-- Content description (accessibility label) for button to dismiss the tab group onboarding item. -->
   <string name="tab_group_onboarding_item_dismiss_content_description">بەتكۈچ گۇرۇپپا ئىشلىتىش ئەسكەرتىشىنى ياپىدۇ</string>
+  <!-- The header text displayed on the tab groups page when no tab groups are open -->
+  <string name="tab_manager_empty_tab_groups_page_header">ئازراق سىيرىپ، كۆپرەك تور زىيارەت قىلىش ئۈچۈن بەتكۈچ گۇرۇپپىسىنى سىناپ بېقىڭ</string>
+  <!-- The description displayed on the tab groups page when no tab groups are open -->
+  <string name="tab_manager_empty_tab_groups_page_description">گۇرۇپپىلايدىغان بەتكۈچ تاللىنىدۇ. ئۇلار بۇ جايغا ساقلىنىدۇ، تەييار بولسىلا ئىشلەتكىلى بولىدۇ.</string>
   <!--
     Tab Group
 
@@ -1625,6 +1633,14 @@
   </plurals>
   <!-- Content description for the grabber/handle of the tab group bottom sheet. -->
   <string name="tab_group_sheet_dismiss_description">بەتكۈچ گۇرۇپپىسىنى كۆرسىتىپ، سۆرەش تۇتقۇچىنى يىغىدۇ</string>
+  <plurals name="expanded_tab_group_header_description">
+    <!--
+      Accessibility description for the header of an expanded tab group.
+      %1$s is the group name, %2$d is the number of tabs, %3$s is the color name.
+    -->
+    <item quantity="one">%1$s بەتكۈچ گۇرۇپپىسىدا %2$d بەتكۈچ بار، رەڭگى %3$s</item>
+    <item quantity="other">%1$s بەتكۈچ گۇرۇپپىسىدا %2$d بەتكۈچ بار، رەڭگى %3$s</item>
+  </plurals>
   <!-- Title for the Delete tab group confirmation dialog. -->
   <string name="delete_tab_group_confirmation_dialog_title">بەتكۈچ گۇرۇپپا ئۆچۈرەمدۇ؟</string>
   <!-- Text shown in the body of the Delete tab group confirmation dialog. -->
@@ -1743,6 +1759,11 @@
     This button will dismiss the dialog.
   -->
   <string name="download_file_has_not_enough_storage_dialog_cancel_button_text">ۋاز كەچ</string>
+  <plurals name="downloads_delete_dialog_title">
+    <!-- Title for the download deletion confirmation dialog. The message changes depending on how many files are selected. %d is the number of files to be deleted. -->
+    <item quantity="one">%d ھۆججەت ئۆچۈرەمدۇ؟</item>
+    <item quantity="other">%d ھۆججەت ئۆچۈرەمدۇ؟</item>
+  </plurals>
   <!-- Text for the button to delete a single downloaded file item -->
   <string name="download_delete_item">ئۆچۈر</string>
   <!-- Content description for the toolbar "Navigate back" button -->
@@ -1776,6 +1797,8 @@
   <string name="download_delete_multi_select_dialog_cancel">ۋاز كەچ</string>
   <!-- Alert dialog confirmation before deleting a single download item or many download items, this is one of the radio buttons within the dialog box for the user to select. -->
   <string name="download_delete_dialog_from_device">ئۈسكۈنىدىن ئۆچۈر</string>
+  <!-- Alert dialog confirmation before deleting a single download item or many download items, this is one of the radio buttons within the dialog box for the user to select. -->
+  <string name="download_delete_dialog_from_history">چۈشۈرۈش خاتىرىسىدىنلا ئۆچۈر</string>
   <!-- Alert dialog confirmation before deleting a single download item or many download items, this is the negative action. -->
   <string name="download_delete_dialog_cancel">ۋاز كەچ</string>
   <!-- Alert dialog confirmation before deleting a single download item or many download items, this is the positive action. -->

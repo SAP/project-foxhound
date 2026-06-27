@@ -2137,7 +2137,7 @@
     Bookmark multi select title in app bar
     %1$d is the number of bookmarks selected
   -->
-  <string name="bookmarks_multi_select_title">%1$d выбрана(ы)</string>
+  <string name="bookmarks_multi_select_title">Выбрано %1$d</string>
   <!-- Bookmark editing screen title -->
   <string name="edit_bookmark_fragment_title">Изменить закладку</string>
   <!-- Bookmark folder editing screen title -->

@@ -310,7 +310,7 @@
   -->
   <string name="browser_menu_default_banner_title">%1$s ن پؽش فرز خوتووݩ کۊنین</string>
   <!-- Label text within the set as default banner -->
-  <string name="browser_menu_default_banner_subtitle_2">زل، سیخومی، وو مخسۊس ایسا.</string>
+  <string name="browser_menu_default_banner_subtitle_2">زل، سیخومی وو وورکل وابیڌه مخسۊس ایسا.</string>
   <!-- Content description (not visible, for screen readers etc.) for the button that dismisses the set as default banner in the menu -->
   <string name="browser_menu_default_banner_dismiss_promotion">رڌ کردن تبلیقات</string>
   <!-- Content description (not visible, for screen readers etc.) for recommended extensions in main menu -->
