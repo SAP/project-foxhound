@@ -410,6 +410,9 @@ export class AIWindow extends MozLitElement {
       "chat-conversation:seen-urls-updated",
       this.#onSeenUrlsUpdated
     );
+    this.#conversation.setHistoryResultsDispatcher(
+      this.#dispatchHistoryResults
+    );
   }
 
   #removeConversationListeners() {
@@ -429,6 +432,7 @@ export class AIWindow extends MozLitElement {
       "chat-conversation:seen-urls-updated",
       this.#onSeenUrlsUpdated
     );
+    this.#conversation.setHistoryResultsDispatcher(null);
   }
 
   #onSeenUrlsUpdated = () => {
@@ -437,6 +441,9 @@ export class AIWindow extends MozLitElement {
       this.#dispatchSeenUrls(actor);
     }
   };
+
+  #dispatchHistoryResults = payload =>
+    this.#getAIChatContentActor()?.dispatchHistoryResultsToChatContent(payload);
 
   #onMessageUpdate = (_event, message) => {
     if (message.toolUIData) {
@@ -1183,6 +1190,7 @@ export class AIWindow extends MozLitElement {
     this.#dispatchMessageToChatContent({
       role: "assistant-message-complete",
       content: { id: lastAssistant?.id },
+      historyResults: this.#conversation?.getHistoryResultsSnapshot() ?? [],
     });
   };
 
@@ -1733,6 +1741,10 @@ export class AIWindow extends MozLitElement {
       content: {
         id: msg?.id,
       },
+      // Carry the history results snapshot with completion so the content page
+      // renders the grid even if the streaming-time dispatch was delayed or
+      // missed (its delivery races the message lifecycle).
+      historyResults: this.#conversation?.getHistoryResultsSnapshot() ?? [],
     });
     const followupCount = msg?.tokens?.followup?.length;
     if (followupCount) {
