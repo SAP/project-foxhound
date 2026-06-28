@@ -790,6 +790,10 @@ nsIContent* nsHtml5TreeOperation::CreateMathMLElement(
 
 void nsHtml5TreeOperation::SetFormElement(nsIContent* aNode, nsIContent* aForm,
                                           nsIContent* aParent) {
+  if (aForm->SubtreeRoot() != aParent->SubtreeRoot()) {
+    return;
+  }
+
   RefPtr formElement = HTMLFormElement::FromNodeOrNull(aForm);
   NS_ASSERTION(formElement,
                "The form element doesn't implement HTMLFormElement.");
@@ -798,8 +802,7 @@ void nsHtml5TreeOperation::SetFormElement(nsIContent* aNode, nsIContent* aForm,
       formControl->ControlType() !=
           FormControlType::FormAssociatedCustomElement &&
       !formControl->GetFormInternal() &&
-      !aNode->AsElement()->HasAttr(nsGkAtoms::form) &&
-      aForm->SubtreeRoot() == aParent->SubtreeRoot()) {
+      !aNode->AsElement()->HasAttr(nsGkAtoms::form)) {
     formControl->SetForm(formElement);
   } else if (auto* image = HTMLImageElement::FromNodeOrNull(aNode)) {
     if (!image->GetFormInternal()) {
