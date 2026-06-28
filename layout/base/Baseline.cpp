@@ -56,19 +56,23 @@ static nscoord SynthesizeBOffsetFromInnerBox(const nsIFrame* aFrame,
     MOZ_CRASH();
   })();
 
-  StyleAlignmentBaseline baseline = aFrame->AlignmentBaseline();
-  if (baseline == StyleAlignmentBaseline::Baseline) {
-    baseline = aWM.IsCentralBaseline() ? StyleAlignmentBaseline::Central
-                                       : StyleAlignmentBaseline::Alphabetic;
-  }
-
   BaselineSharingGroup group = aGroup;
   if (aWM.IsLineInverted()) {
     group = GetOppositeBaselineSharingGroup(aGroup);
   }
 
-  // Synthesize the inline baseline for an atomic inline from its margin box.
-  // See: https://www.w3.org/TR/css-inline-3/#baseline-synthesis-box
+  // Atomic inlines (inline boxes that are either replaced or which establish
+  // new non-inline formatting contexts) can synthesize a baseline according to
+  // its `alignment-baseline` property. Otherwise, synthesize the baseline
+  // using the default dominant baseline defined by the writing mode.
+  StyleAlignmentBaseline baseline = aFrame->AlignmentBaseline();
+  if (!aFrame->IsAtomicInline() ||
+      baseline == StyleAlignmentBaseline::Baseline) {
+    baseline = aWM.IsCentralBaseline() ? StyleAlignmentBaseline::Central
+                                       : StyleAlignmentBaseline::Alphabetic;
+  }
+
+  // See: https://drafts.csswg.org/css-inline-3/#baseline-synthesis-box
   switch (baseline) {
     case StyleAlignmentBaseline::Baseline:
       MOZ_ASSERT_UNREACHABLE("Baseline is already handled");
