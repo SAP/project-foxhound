@@ -891,18 +891,41 @@ add_task(async function doNotShowInSearchMode() {
   );
 });
 
-// Tests that we select the right engine when entering a duplicate alias.
-add_task(async function duplicateAliases() {
+/**
+ * Installs an add-on engine that has the same alias as a config engine.
+ * The caller is responsible for unloading the add-on via the returned
+ * `extension`.
+ *
+ * @param {string} extensionName
+ *   The name of the add-on engine to install.
+ * @param {string} engineAlias
+ *   The alias to assign to the add-on engine, e.g. "@test".
+ * @param {string} configEngineId
+ *   The identifier of the config engine with the same alias.
+ */
+async function createDuplicateAliasEngines(
+  extensionName,
+  engineAlias,
+  configEngineId
+) {
   let extension = await SearchTestUtils.installSearchExtension(
     {
-      name: "TestFoo",
-      keyword: ALIAS,
+      name: extensionName,
+      keyword: engineAlias,
     },
     { skipUnload: true }
   );
 
-  let testConfigEngine = SearchService.getEngineById(TEST_ALIAS_ENGINE_NAME);
-  let addonEngine = SearchService.getEngineByName("TestFoo");
+  let testConfigEngine = SearchService.getEngineById(configEngineId);
+  let addonEngine = SearchService.getEngineByName(extensionName);
+
+  return { testConfigEngine, addonEngine, extension };
+}
+
+// Tests that we select the right engine when entering a duplicate alias.
+add_task(async function duplicateAliases() {
+  let { testConfigEngine, addonEngine, extension } =
+    await createDuplicateAliasEngines("TestFoo", ALIAS, TEST_ALIAS_ENGINE_NAME);
 
   // Set the add-on engine as default, so the alias should use this engine.
   await SearchService.setDefault(
@@ -990,16 +1013,12 @@ add_task(async function duplicateAliases() {
 // A cut down version of the previous test that checks we use the correct alias
 // when the default engine is set for private browsing mode.
 add_task(async function duplicateAliases_private() {
-  let extension = await SearchTestUtils.installSearchExtension(
-    {
-      name: "OtherFoo",
-      keyword: ALIAS2,
-    },
-    { skipUnload: true }
-  );
-
-  let testConfigEngine = SearchService.getEngineById(TEST_ALIAS2_ENGINE_NAME);
-  let addonEngine = SearchService.getEngineByName("OtherFoo");
+  let { testConfigEngine, addonEngine, extension } =
+    await createDuplicateAliasEngines(
+      "OtherFoo",
+      ALIAS2,
+      TEST_ALIAS2_ENGINE_NAME
+    );
 
   // Set the add-on engine as default, so the alias should use this engine.
   await SearchService.setDefaultPrivate(
@@ -1039,6 +1058,74 @@ add_task(async function duplicateAliases_private() {
   await UrlbarTestUtils.exitSearchMode(window);
 
   await extension.unload();
+});
+
+add_task(async function duplicateAliases_results_order() {
+  let {
+    testConfigEngine,
+    addonEngine: addonEngine1,
+    extension: extension1,
+  } = await createDuplicateAliasEngines(
+    "TestDefault",
+    ALIAS,
+    TEST_ALIAS_ENGINE_NAME
+  );
+
+  let { addonEngine: addonEngine2, extension: extension2 } =
+    await createDuplicateAliasEngines(
+      "TestPrivateDefault",
+      ALIAS,
+      TEST_ALIAS_ENGINE_NAME
+    );
+
+  let { addonEngine: addonEngine3, extension: extension3 } =
+    await createDuplicateAliasEngines(
+      "TestOther",
+      ALIAS,
+      TEST_ALIAS_ENGINE_NAME
+    );
+
+  await SearchService.setDefault(
+    addonEngine1,
+    SearchService.CHANGE_REASON.UNKNOWN
+  );
+  await SearchService.setDefaultPrivate(
+    addonEngine2,
+    SearchService.CHANGE_REASON.UNKNOWN
+  );
+
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    value: "@tes",
+  });
+
+  let expectedOrder = [
+    addonEngine1.name, // 1. default
+    addonEngine2.name, // 2. private default
+    testConfigEngine.name, // 3. config engine
+    addonEngine3.name, // 4. add-on
+  ];
+
+  let actualOrder = [];
+  let resultCount = UrlbarTestUtils.getResultCount(window);
+  for (let i = 0; i < resultCount; i++) {
+    let details = await UrlbarTestUtils.getDetailsOfResultAt(window, i);
+    if (details.result.providerName == "UrlbarProviderTokenAliasEngines") {
+      actualOrder.push(details.searchParams.engine);
+    }
+  }
+
+  Assert.deepEqual(
+    actualOrder,
+    expectedOrder,
+    "Duplicate alias engines appear in correct default, private default, app-provided, add-on order."
+  );
+
+  await extension1.unload();
+  await extension2.unload();
+  await extension3.unload();
+
+  await SearchService.moveEngine(SearchService.getEngineById("default"), 0);
 });
 
 async function assertFirstResultIsAlias(isAlias, expectedAlias) {
