@@ -3157,7 +3157,8 @@ class js::gc::UnmarkGrayTracer final
   // collector will fix up any color mismatches involving weakmaps when it runs.
   explicit UnmarkGrayTracer(BarrierTracer* barrierTracer)
       : Base(barrierTracer->runtime(), JS::TracerKind::UnmarkGray,
-             JS::WeakMapTraceAction::Skip),
+             JS::TraceOptions(JS::WeakMapTraceAction::Skip,
+                              JS::WeakEdgeTraceAction::Skip)),
         unmarkedAny(false),
         oom(false),
         barrierTracer(barrierTracer),
