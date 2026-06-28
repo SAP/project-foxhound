@@ -310,42 +310,53 @@ bool RenderDXGITextureHost::EnsureD3D11Texture2D(ID3D11Device* aDevice) {
       RefPtr<ID3D11Texture2D> texture;
       textureMap->WaitTextureReady(mGpuProcessTextureId.ref());
       mTexture = textureMap->GetTexture(mGpuProcessTextureId.ref());
-      if (mTexture) {
-        return true;
-      } else {
-        gfxCriticalNote << "GpuProcessTextureId is not valid";
-      }
     }
+    if (!mTexture) {
+      gfxCriticalNote << "GpuProcessTextureId is not valid";
+      return false;
+    }
+  } else {
+    RefPtr<ID3D11Device1> device1;
+    aDevice->QueryInterface((ID3D11Device1**)getter_AddRefs(device1));
+    if (!device1) {
+      gfxCriticalNoteOnce << "Failed to get ID3D11Device1";
+      return 0;
+    }
+
+    // Get the D3D11 texture from shared handle.
+    HRESULT hr = device1->OpenSharedResource1(
+        (HANDLE)mHandle->GetHandle(), __uuidof(ID3D11Texture2D),
+        (void**)(ID3D11Texture2D**)getter_AddRefs(mTexture));
+    if (FAILED(hr)) {
+      MOZ_ASSERT(false,
+                 "RenderDXGITextureHost::EnsureLockable(): Failed to open "
+                 "shared texture");
+      gfxCriticalNote
+          << "RenderDXGITextureHost Failed to open shared texture, hr="
+          << gfx::hexa(hr);
+      return false;
+    }
+    MOZ_ASSERT(mTexture.get());
+    mTexture->QueryInterface((IDXGIKeyedMutex**)getter_AddRefs(mKeyedMutex));
+
+    MOZ_ASSERT(mHasKeyedMutex == !!mKeyedMutex);
+    if (mHasKeyedMutex != !!mKeyedMutex) {
+      gfxCriticalNoteOnce << "KeyedMutex mismatch";
+    }
+  }
+
+  D3D11_TEXTURE2D_DESC desc{};
+  mTexture->GetDesc(&desc);
+  if (uint32_t(mSize.width) > desc.Width ||
+      uint32_t(mSize.height) > desc.Height) {
+    gfxCriticalNote << "RenderDXGITextureHost descriptor size " << mSize.width
+                    << "x" << mSize.height << " exceeds resource size "
+                    << desc.Width << "x" << desc.Height;
+    mTexture = nullptr;
+    mKeyedMutex = nullptr;
     return false;
   }
 
-  RefPtr<ID3D11Device1> device1;
-  aDevice->QueryInterface((ID3D11Device1**)getter_AddRefs(device1));
-  if (!device1) {
-    gfxCriticalNoteOnce << "Failed to get ID3D11Device1";
-    return 0;
-  }
-
-  // Get the D3D11 texture from shared handle.
-  HRESULT hr = device1->OpenSharedResource1(
-      (HANDLE)mHandle->GetHandle(), __uuidof(ID3D11Texture2D),
-      (void**)(ID3D11Texture2D**)getter_AddRefs(mTexture));
-  if (FAILED(hr)) {
-    MOZ_ASSERT(false,
-               "RenderDXGITextureHost::EnsureLockable(): Failed to open shared "
-               "texture");
-    gfxCriticalNote
-        << "RenderDXGITextureHost Failed to open shared texture, hr="
-        << gfx::hexa(hr);
-    return false;
-  }
-  MOZ_ASSERT(mTexture.get());
-  mTexture->QueryInterface((IDXGIKeyedMutex**)getter_AddRefs(mKeyedMutex));
-
-  MOZ_ASSERT(mHasKeyedMutex == !!mKeyedMutex);
-  if (mHasKeyedMutex != !!mKeyedMutex) {
-    gfxCriticalNoteOnce << "KeyedMutex mismatch";
-  }
   return true;
 }
 
@@ -737,6 +748,21 @@ bool RenderDXGIYCbCrTextureHost::EnsureD3D11Texture2D(ID3D11Device* aDevice) {
       gfxCriticalNote
           << "RenderDXGIYCbCrTextureHost Failed to open shared texture, hr="
           << gfx::hexa(hr);
+      return false;
+    }
+
+    D3D11_TEXTURE2D_DESC desc{};
+    mTextures[i]->GetDesc(&desc);
+    const gfx::IntSize& expected = (i == 0) ? mSizeY : mSizeCbCr;
+    if (uint32_t(expected.width) > desc.Width ||
+        uint32_t(expected.height) > desc.Height) {
+      gfxCriticalNote << "RenderDXGIYCbCrTextureHost descriptor size "
+                      << expected.width << "x" << expected.height
+                      << " exceeds resource size " << desc.Width << "x"
+                      << desc.Height;
+      for (auto& tex : mTextures) {
+        tex = nullptr;
+      }
       return false;
     }
   }
