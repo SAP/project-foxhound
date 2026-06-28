@@ -21,6 +21,21 @@ internal fun parseIsoDate(
     null
 }
 
+/**
+ * Parses an ISO-8601 date string while preserving the UTC offset embedded in the string.
+ *
+ * Flight times are provided in the origin/destination airport's local timezone, so the returned
+ * local date/time matches the airport's wall-clock time rather than being re-projected onto the
+ * device's timezone.
+ */
+internal fun parseIsoDatePreservingOffset(
+    date: String,
+): LocalDateTime? = try {
+    OffsetDateTime.parse(date).toLocalDateTime()
+} catch (_: DateTimeParseException) {
+    null
+}
+
 internal fun formatShortTime(
     dateTime: LocalDateTime,
     locale: Locale,

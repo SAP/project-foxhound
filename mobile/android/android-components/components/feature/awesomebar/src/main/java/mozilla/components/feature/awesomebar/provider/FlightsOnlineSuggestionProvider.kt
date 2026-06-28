@@ -13,7 +13,6 @@ import mozilla.components.feature.awesomebar.facts.emitOptimizedSuggestionCardCl
 import mozilla.components.feature.awesomebar.facts.emitOptimizedSuggestionCardDisplayedFact
 import mozilla.components.feature.session.SessionUseCases
 import java.time.DateTimeException
-import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import java.util.UUID
@@ -110,10 +109,9 @@ class FlightsOnlineSuggestionProvider(
         airport: AwesomeBar.FlightItem.Airport,
         time: AwesomeBar.FlightItem.Timing,
         locale: Locale = Locale.getDefault(),
-        timeZone: ZoneId = ZoneId.systemDefault(),
     ): FlightData? {
         val timing = time.estimatedTime ?: time.scheduledTime
-        val parsedDate = parseIsoDate(timing, timeZone) ?: return null
+        val parsedDate = parseIsoDatePreservingOffset(timing) ?: return null
 
         return try {
             val time = formatShortTime(parsedDate, locale)

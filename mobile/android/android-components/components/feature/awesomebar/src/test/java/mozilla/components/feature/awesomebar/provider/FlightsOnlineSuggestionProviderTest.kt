@@ -19,7 +19,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.mockito.Mockito.verify
-import java.time.ZoneId
 import java.util.Locale
 import kotlin.test.assertNotNull
 
@@ -216,7 +215,6 @@ class FlightsOnlineSuggestionProviderTest {
             airport = airport,
             time = timing,
             locale = Locale.US,
-            timeZone = ZoneId.of("UTC-7"),
         )
 
         assertNotNull(result)
@@ -238,7 +236,6 @@ class FlightsOnlineSuggestionProviderTest {
             airport = airport,
             time = timing,
             locale = Locale.US,
-            timeZone = ZoneId.of("UTC-4"),
         )
 
         assertNotNull(result)
@@ -265,31 +262,38 @@ class FlightsOnlineSuggestionProviderTest {
     }
 
     @Test
-    fun `parseFlightData converts timezone correctly`() {
-        val airport = AwesomeBar.FlightItem.Airport(code = "LAX", city = "Los Angeles")
-        val timing = AwesomeBar.FlightItem.Timing(
-            scheduledTime = "2025-10-05T13:05:00-07:00",
+    fun `parseFlightData shows the time in the airport's local timezone`() {
+        // The destination airport is one hour ahead of the departure airport. The arrival time
+        // must be shown in the destination's local time, not re-projected onto another zone.
+        val departureAirport = AwesomeBar.FlightItem.Airport(code = "BNA", city = "Nashville")
+        val departureTiming = AwesomeBar.FlightItem.Timing(
+            scheduledTime = "2025-10-05T22:13:00-06:00",
+            estimatedTime = null,
+        )
+        val arrivalAirport = AwesomeBar.FlightItem.Airport(code = "PHL", city = "Philadelphia")
+        val arrivalTiming = AwesomeBar.FlightItem.Timing(
+            scheduledTime = "2025-10-06T00:13:00-05:00",
             estimatedTime = null,
         )
 
-        val resultPST = provider.parseFlightData(
-            airport = airport,
-            time = timing,
+        val departureResult = provider.parseFlightData(
+            airport = departureAirport,
+            time = departureTiming,
             locale = Locale.US,
-            timeZone = ZoneId.of("UTC-7"),
         )
 
-        val resultEST = provider.parseFlightData(
-            airport = airport,
-            time = timing,
+        val arrivalResult = provider.parseFlightData(
+            airport = arrivalAirport,
+            time = arrivalTiming,
             locale = Locale.US,
-            timeZone = ZoneId.of("UTC-4"),
         )
 
-        assertNotNull(resultPST)
-        assertNotNull(resultEST)
-        assertEquals("1:05 PM", resultPST.time)
-        assertEquals("4:05 PM", resultEST.time)
+        assertNotNull(departureResult)
+        assertNotNull(arrivalResult)
+        assertEquals("10:13 PM", departureResult.time)
+        assertEquals("Oct 5", departureResult.date)
+        assertEquals("12:13 AM", arrivalResult.time)
+        assertEquals("Oct 6", arrivalResult.date)
     }
 
     @Test
@@ -304,14 +308,12 @@ class FlightsOnlineSuggestionProviderTest {
             airport = airport,
             time = timing,
             locale = Locale.US,
-            timeZone = ZoneId.of("UTC+2"),
         )
 
         val resultFrance = provider.parseFlightData(
             airport = airport,
             time = timing,
             locale = Locale.FRANCE,
-            timeZone = ZoneId.of("UTC+2"),
         )
 
         assertNotNull(resultUS)
