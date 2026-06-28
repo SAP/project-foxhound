@@ -795,6 +795,15 @@ enum class ResumeMode : uint8_t {
   // of a proxy get trap aligns with what the spec requires.
   ResumeAfterCheckProxyGetResult,
 
+  // Innermost frame. Resume at the next bytecode op when bailing out, but the
+  // value in the result slot is the internal PropertyIteratorObject created by
+  // the Object.keys scalar-replacement optimization instead of the keys array.
+  // On bailout we convert it back to the keys array so the internal iterator is
+  // never exposed to the baseline frame. This is used when the
+  // MObjectToIterator
+  // VM call bails out (e.g. an invalidation bailout caused by GC).
+  ResumeAfterObjectKeys,
+
   // Innermost frame. Resume at the current bytecode op when bailing out.
   ResumeAt,
 
@@ -826,6 +835,8 @@ inline const char* ResumeModeToString(ResumeMode mode) {
       return "ResumeAfterCheckIsObject";
     case ResumeMode::ResumeAfterCheckProxyGetResult:
       return "ResumeAfterCheckProxyGetResult";
+    case ResumeMode::ResumeAfterObjectKeys:
+      return "ResumeAfterObjectKeys";
   }
   MOZ_CRASH("Invalid mode");
 }
@@ -835,6 +846,7 @@ inline bool IsResumeAfter(ResumeMode mode) {
     case ResumeMode::ResumeAfter:
     case ResumeMode::ResumeAfterCheckIsObject:
     case ResumeMode::ResumeAfterCheckProxyGetResult:
+    case ResumeMode::ResumeAfterObjectKeys:
       return true;
     default:
       return false;

@@ -25,12 +25,14 @@
 #include "jit/RematerializedFrame.h"
 #include "jit/SharedICRegisters.h"
 #include "jit/Simulator.h"
+#include "jit/VMFunctions.h"
 #include "js/friend/StackLimits.h"  // js::AutoCheckRecursionLimit, js::ReportOverRecursed
 #include "js/Utility.h"
 #include "proxy/ScriptedProxyHandler.h"
 #include "util/Memory.h"
 #include "vm/ArgumentsObject.h"
 #include "vm/BytecodeUtil.h"
+#include "vm/Iteration.h"
 #include "vm/JitActivation.h"
 
 #include "jit/JitFrames-inl.h"
@@ -915,6 +917,25 @@ bool BaselineStackBuilder::buildExpressionStack() {
       JitSpew(JitSpew_BaselineBailouts,
               "      Not an object! Overwriting bailout kind");
       bailoutKind_ = BailoutKind::ThrowCheckIsObject;
+    }
+  }
+
+  if (resumeMode() == ResumeMode::ResumeAfterObjectKeys) {
+    JitSpew(JitSpew_BaselineBailouts,
+            "      Converting Object.keys iterator to keys array");
+    // The result slot holds the internal PropertyIteratorObject produced by the
+    // Object.keys scalar-replacement optimization. Convert it back to the keys
+    // array so the internal iterator is never exposed to the baseline frame.
+    Value iterVal;
+    if (peekLastValue(&iterVal) && !iterVal.isMagic(JS_OPTIMIZED_OUT)) {
+      MOZ_RELEASE_ASSERT(iterVal.isObject());
+      MOZ_RELEASE_ASSERT(iterVal.toObject().is<PropertyIteratorObject>());
+      RootedObject iterObj(cx_, &iterVal.toObject());
+      JSObject* keys = ObjectKeysFromIterator(cx_, iterObj);
+      if (!keys) {
+        return false;
+      }
+      valuePointerAtStackOffset(0).set(ObjectValue(*keys));
     }
   }
 
