@@ -158,7 +158,7 @@ class SecretSettingsFragment : PreferenceFragmentCompat(), SystemInsetsPaddedFra
         }
 
         requirePreference<Preference>(R.string.pref_key_search_optimization).apply {
-            isVisible = Config.channel.isNightlyOrDebug
+            isVisible = Config.channel.isNightlyOrDebug || Config.channel.isBeta
         }
 
         requirePreference<SwitchPreferenceCompat>(
