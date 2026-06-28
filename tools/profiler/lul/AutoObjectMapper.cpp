@@ -44,7 +44,7 @@ AutoObjectMapperPOSIX::~AutoObjectMapperPOSIX() {
 }
 
 bool AutoObjectMapperPOSIX::Map(/*OUT*/ void** start, /*OUT*/ size_t* length,
-                                std::string fileName) {
+                                std::string fileName, uint64_t offset) {
   MOZ_ASSERT(!mIsMapped);
 
   int fd = open(fileName.c_str(), O_RDONLY);
@@ -56,13 +56,14 @@ bool AutoObjectMapperPOSIX::Map(/*OUT*/ void** start, /*OUT*/ size_t* length,
   struct stat st;
   int err = fstat(fd, &st);
   size_t sz = (err == 0) ? st.st_size : 0;
-  if (err != 0 || sz == 0) {
+  if (err != 0 || sz == 0 || offset >= sz) {
     failedToMessage(mLog, "fstat", fileName);
     close(fd);
     return false;
   }
 
-  void* image = mmap(nullptr, sz, PROT_READ, MAP_SHARED, fd, 0);
+  size_t mapSize = sz - offset;
+  void* image = mmap(nullptr, mapSize, PROT_READ, MAP_SHARED, fd, offset);
   if (image == MAP_FAILED) {
     failedToMessage(mLog, "mmap", fileName);
     close(fd);
@@ -72,6 +73,6 @@ bool AutoObjectMapperPOSIX::Map(/*OUT*/ void** start, /*OUT*/ size_t* length,
   close(fd);
   mIsMapped = true;
   mImage = *start = image;
-  mSize = *length = sz;
+  mSize = *length = mapSize;
   return true;
 }
