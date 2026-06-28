@@ -289,12 +289,13 @@ void PlatformPipeLink::AdvanceIOLocked() {
 void PlatformPipeLink::OnIOCompleted(MessageLoopForIO::IOContext* aContext,
                                      DWORD aBytesTransferred, DWORD aError) {
   mIOThread.AssertOnCurrentThread();
+  RefPtr<PlatformPipeLink> pending;
   MutexAutoLock lock(mMutex);
   if (aContext != &mIOContext) {
     return;
   }
 
-  RefPtr<PlatformPipeLink> pending = mPending.forget();
+  pending = mPending.forget();
   if (!pending) {
     return;
   }
@@ -327,8 +328,9 @@ void PlatformPipeLink::OnIOCompleted(MessageLoopForIO::IOContext* aContext,
 #else
 void PlatformPipeLink::OnFileCanReadWithoutBlocking(int fd) {
   mIOThread.AssertOnCurrentThread();
+  RefPtr<PlatformPipeLink> pending;
   MutexAutoLock lock(mMutex);
-  RefPtr<PlatformPipeLink> pending = mPending.forget();
+  pending = mPending.forget();
   AdvanceIOLocked();
 }
 
