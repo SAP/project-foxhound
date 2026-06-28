@@ -59,6 +59,7 @@ vendoring:
 
   patches:
     - moz-libsoundtouch.patch
+    - firfilter-max-channels.patch
 
   update-actions:
     - action: move-file
