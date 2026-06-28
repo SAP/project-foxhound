@@ -356,25 +356,23 @@
       ALL_DUPLICATES: 7,
     };
 
-    _lastRelatedTabMap = new WeakMap();
+    #lastRelatedTabMap = new WeakMap();
 
-    _progressListeners = [];
+    #progressListeners = [];
 
-    _tabsProgressListeners = [];
+    #tabsProgressListeners = [];
 
-    _tabListeners = new Map();
+    #tabListeners = new Map();
 
-    _tabFilters = new Map();
+    #tabFilters = new Map();
 
     _isBusy = false;
 
     _awaitingToggleCaretBrowsingPrompt = false;
 
-    _previewMode = false;
+    #previewMode = false;
 
     _lastFindValue = "";
-
-    _contentWaitingCount = 0;
 
     _tabLayerCache = [];
 
@@ -383,7 +381,7 @@
     /**
      * Binding from browser to tab
      */
-    _tabForBrowser = new WeakMap();
+    #tabForBrowser = new WeakMap();
 
     /**
      * `_createLazyBrowser` will define properties on the unbound lazy browser
@@ -394,7 +392,7 @@
      * provides the names of properties that may be called while the browser
      * is in its unbound (lazy) state.
      */
-    _browserBindingProperties = [
+    #browserBindingProperties = [
       "canGoBack",
       "canGoForward",
       "goBack",
@@ -445,25 +443,25 @@
 
     _multiSelectedTabsSet = new WeakSet();
 
-    _lastMultiSelectedTabRef = null;
+    #lastMultiSelectedTabRef = null;
 
-    _clearMultiSelectionLocked = false;
+    #clearMultiSelectionLocked = false;
 
-    _clearMultiSelectionLockedOnce = false;
+    #clearMultiSelectionLockedOnce = false;
 
-    _multiSelectChangeStarted = false;
+    #multiSelectChangeStarted = false;
 
-    _multiSelectChangeAdditions = new Set();
+    #multiSelectChangeAdditions = new Set();
 
-    _multiSelectChangeRemovals = new Set();
+    #multiSelectChangeRemovals = new Set();
 
-    _multiSelectChangeSelected = false;
+    #multiSelectChangeSelected = false;
 
     /**
      * Tab close requests are ignored if the window is closing anyway,
      * e.g. when holding Ctrl+W.
      */
-    _windowIsClosing = false;
+    #windowIsClosing = false;
 
     preloadedBrowser = null;
 
@@ -522,14 +520,10 @@
 
     _switcher = null;
 
-    _soundPlayingAttrRemovalTimer = 0;
-
-    _hoverTabTimer = null;
-
     /**
      * @type {Array<{count: number, uris: [string, string], timestamp: number}>}
      */
-    _tabSelectTimestamps = [];
+    #tabSelectTimestamps = [];
 
     get tabs() {
       return this.tabContainer.allTabs;
@@ -779,7 +773,7 @@
       }
       updateUserContextUIIndicator();
 
-      this._tabForBrowser.set(browser, tab);
+      this.#tabForBrowser.set(browser, tab);
 
       this.appendStatusPanel();
 
@@ -793,8 +787,8 @@
         "@mozilla.org/appshell/component/browser-status-filter;1"
       ].createInstance(Ci.nsIWebProgress);
       filter.addProgressListener(tabListener, Ci.nsIWebProgress.NOTIFY_ALL);
-      this._tabListeners.set(tab, tabListener);
-      this._tabFilters.set(tab, filter);
+      this.#tabListeners.set(tab, tabListener);
+      this.#tabFilters.set(tab, filter);
       browser.webProgress.addProgressListener(
         filter,
         Ci.nsIWebProgress.NOTIFY_ALL
@@ -1172,12 +1166,12 @@
       let currentTab = this.selectedTab;
       try {
         // Suppress focus, ownership and selected tab changes
-        this._previewMode = true;
+        this.#previewMode = true;
         this.selectedTab = aTab;
         aCallback();
       } finally {
         this.selectedTab = currentTab;
-        this._previewMode = false;
+        this.#previewMode = false;
       }
     }
 
@@ -1196,7 +1190,7 @@
     }
 
     getTabForBrowser(aBrowser) {
-      return this._tabForBrowser.get(aBrowser);
+      return this.#tabForBrowser.get(aBrowser);
     }
 
     getPanel(aBrowser) {
@@ -1220,7 +1214,7 @@
       return this._tabNotificationDeck;
     }
 
-    _nextNotificationBoxId = 0;
+    #nextNotificationBoxId = 0;
     getNotificationBox(aBrowser) {
       let browser = aBrowser || this.selectedBrowser;
       if (!browser._notificationBox) {
@@ -1228,7 +1222,7 @@
           element.setAttribute("notificationside", "top");
           element.setAttribute(
             "name",
-            `tab-notification-box-${this._nextNotificationBoxId++}`
+            `tab-notification-box-${this.#nextNotificationBoxId++}`
           );
           this.#insertNotificationBox(browser, element);
         }, this._notificationEnableDelay);
@@ -1340,13 +1334,13 @@
       aBrowser = aBrowser || this.selectedBrowser;
 
       if (aCallGlobalListeners && aBrowser == this.selectedBrowser) {
-        callListeners(this._progressListeners, aArguments);
+        callListeners(this.#progressListeners, aArguments);
       }
 
       if (aCallTabsListeners) {
         aArguments.unshift(aBrowser);
 
-        callListeners(this._tabsProgressListeners, aArguments);
+        callListeners(this.#tabsProgressListeners, aArguments);
       }
 
       return rv;
@@ -1704,17 +1698,17 @@
       let oldTab = this.selectedTab;
 
       // Preview mode should not reset the owner
-      if (!this._previewMode && !oldTab.selected) {
+      if (!this.#previewMode && !oldTab.selected) {
         oldTab.owner = null;
       }
 
-      let lastRelatedTab = this._lastRelatedTabMap.get(oldTab);
+      let lastRelatedTab = this.#lastRelatedTabMap.get(oldTab);
       if (lastRelatedTab) {
         if (!lastRelatedTab.selected) {
           lastRelatedTab.owner = null;
         }
       }
-      this._lastRelatedTabMap = new WeakMap();
+      this.#lastRelatedTabMap = new WeakMap();
 
       if (!gMultiProcessBrowser) {
         oldBrowser.removeAttribute("primary");
@@ -1777,7 +1771,7 @@
         );
       }
 
-      let listener = this._tabListeners.get(newTab);
+      let listener = this.#tabListeners.get(newTab);
       if (listener && listener._stateFlags) {
         this._callProgressListeners(
           null,
@@ -1793,7 +1787,7 @@
         );
       }
 
-      if (!this._previewMode) {
+      if (!this.#previewMode) {
         newTab.recordTimeFromUnloadToReload();
         newTab.updateLastAccessed();
         oldTab.updateLastAccessed();
@@ -1864,7 +1858,7 @@
       // TabSelect events are suppressed during preview mode to avoid confusing extensions and other bits of code
       // that might rely upon the other changes suppressed.
       // Focus is suppressed in the event that the main browser window is minimized - focusing a tab would restore the window
-      if (!this._previewMode) {
+      if (!this.#previewMode) {
         // We've selected the new tab, so go ahead and notify listeners.
         let event = new CustomEvent("TabSelect", {
           bubbles: true,
@@ -1882,9 +1876,9 @@
         this._tabAttrModified(newTab, ["selected"]);
 
         this._startMultiSelectChange();
-        this._multiSelectChangeSelected = true;
+        this.#multiSelectChangeSelected = true;
         this.clearMultiSelectedTabs();
-        if (this._multiSelectChangeAdditions.size) {
+        if (this.#multiSelectChangeAdditions.size) {
           // Some tab has been multiselected just before switching tabs.
           // The tab that was selected at that point should also be multiselected.
           this.addToMultiSelectedTabs(oldTab);
@@ -1953,12 +1947,12 @@
       }
 
       // Only look at entries from the last minute
-      this._tabSelectTimestamps = this._tabSelectTimestamps.filter(
+      this.#tabSelectTimestamps = this.#tabSelectTimestamps.filter(
         entry => now - entry.timestamp < ONE_MINUTE_MS
       );
 
       const sortedUris = [oldTabSpec, newTabSpec].sort();
-      const existingEntry = this._tabSelectTimestamps.find(
+      const existingEntry = this.#tabSelectTimestamps.find(
         entry =>
           entry.uris[0] === sortedUris[0] && entry.uris[1] === sortedUris[1]
       );
@@ -1975,12 +1969,12 @@
               currentTabsOpen: gBrowser.visibleTabs.length,
             },
           });
-          this._tabSelectTimestamps = this._tabSelectTimestamps.filter(
+          this.#tabSelectTimestamps = this.#tabSelectTimestamps.filter(
             entry => entry !== existingEntry
           );
         }
       } else {
-        this._tabSelectTimestamps.push({
+        this.#tabSelectTimestamps.push({
           timestamp: now,
           uris: sortedUris,
           count: 1,
@@ -1989,7 +1983,7 @@
     }
 
     _adjustFocusBeforeTabSwitch(oldTab, newTab) {
-      if (this._previewMode) {
+      if (this.#previewMode) {
         return;
       }
 
@@ -2244,7 +2238,7 @@
       }
     }
 
-    _dataURLRegEx = /^data:[^,]+;base64,/i;
+    #dataURLRegEx = /^data:[^,]+;base64,/i;
 
     // Regex to test if a string (potential tab label) consists of only non-
     // printable characters. We consider Unicode categories Separator
@@ -2259,7 +2253,7 @@
     // We also ignore combining marks, as in the absence of a printable base
     // character they are unlikely to be usefully rendered, and may well be
     // clipped away entirely.
-    _nonPrintingRegEx =
+    #nonPrintingRegEx =
       /^[\p{Z}\p{C}\p{M}\u{115f}\u{1160}\u{2800}\u{3164}\u{ffa0}]*$/u;
 
     setTabTitle(aTab) {
@@ -2288,7 +2282,7 @@
 
       // If the title contains only non-printing characters (or only combining
       // marks, but no base character for them), we won't use it.
-      if (this._nonPrintingRegEx.test(title)) {
+      if (this.#nonPrintingRegEx.test(title)) {
         title = "";
       }
 
@@ -2307,7 +2301,7 @@
 
         if (title && !isBlankPageURL(title)) {
           isURL = true;
-          if (title.length <= 500 || !this._dataURLRegEx.test(title)) {
+          if (title.length <= 500 || !this.#dataURLRegEx.test(title)) {
             // Try to unescape not-ASCII URIs using the current character set.
             try {
               let characterSet = browser.characterSet;
@@ -2348,7 +2342,7 @@
       // we need the trailing characters for display. But a base64-encoded
       // data-URI is plain ASCII, so this is OK for tab-title display.
       // (See bug 1408854.)
-      if (isURL && aLabel.length > 500 && this._dataURLRegEx.test(aLabel)) {
+      if (isURL && aLabel.length > 500 && this.#dataURLRegEx.test(aLabel)) {
         aLabel = aLabel.substring(0, 500) + "\u2026";
       }
 
@@ -2592,8 +2586,8 @@
       tab.dispatchEvent(evt);
 
       // Unhook our progress listener.
-      let filter = this._tabFilters.get(tab);
-      let listener = this._tabListeners.get(tab);
+      let filter = this.#tabFilters.get(tab);
+      let listener = this.#tabListeners.get(tab);
       // We should always have a filter, but if we fail to create a content
       // process when creating a new tab, we can end up here trying to switch
       // remoteness to load about:tabcrashed, without a filter/listener.
@@ -2647,12 +2641,12 @@
       // since tab progress listeners have logic for handling the initial about:blank
       // load
       listener = new TabProgressListener(tab, aBrowser, true, false);
-      this._tabListeners.set(tab, listener);
+      this.#tabListeners.set(tab, listener);
       if (!filter) {
         filter = Cc[
           "@mozilla.org/appshell/component/browser-status-filter;1"
         ].createInstance(Ci.nsIWebProgress);
-        this._tabFilters.set(tab, filter);
+        this.#tabFilters.set(tab, filter);
       }
       filter.addProgressListener(listener, Ci.nsIWebProgress.NOTIFY_ALL);
 
@@ -2844,7 +2838,7 @@
     _createLazyBrowser(aTab) {
       let browser = aTab.linkedBrowser;
 
-      let names = this._browserBindingProperties;
+      let names = this.#browserBindingProperties;
 
       for (let i = 0; i < names.length; i++) {
         let name = names[i];
@@ -2954,8 +2948,8 @@
       let browser = aTab.linkedBrowser;
 
       // If browser is a lazy browser, delete the substitute properties.
-      if (this._browserBindingProperties[0] in browser) {
-        for (let name of this._browserBindingProperties) {
+      if (this.#browserBindingProperties[0] in browser) {
+        for (let name of this.#browserBindingProperties) {
           delete browser[name];
         }
       }
@@ -2995,8 +2989,8 @@
         filter,
         Ci.nsIWebProgress.NOTIFY_ALL
       );
-      this._tabListeners.set(aTab, tabListener);
-      this._tabFilters.set(aTab, filter);
+      this.#tabListeners.set(aTab, tabListener);
+      this.#tabFilters.set(aTab, filter);
 
       browser.droppedLinkHandler = this._defaultDropLinkHandler;
       browser.loadURI = URILoadingWrapper.loadURI.bind(
@@ -3063,7 +3057,7 @@
         !aTab ||
         aTab.selected ||
         aTab.closing ||
-        this._windowIsClosing ||
+        this.#windowIsClosing ||
         !browser.isConnected ||
         !browser.isRemoteBrowser ||
         !browser.permitUnload(action).permitUnload
@@ -3089,7 +3083,7 @@
       // doesn't have to be complete (and we want to be sure not to
       // fire the beforeunload event). Calling TabStateFlusher.flush()
       // and then not unloading the browser is fine.
-      if (aTab.closing || this._windowIsClosing || !browser.isRemoteBrowser) {
+      if (aTab.closing || this.#windowIsClosing || !browser.isRemoteBrowser) {
         return;
       }
 
@@ -3131,14 +3125,14 @@
       }
 
       // Remove the tab's filter and progress listener.
-      let filter = this._tabFilters.get(aTab);
-      let listener = this._tabListeners.get(aTab);
+      let filter = this.#tabFilters.get(aTab);
+      let listener = this.#tabListeners.get(aTab);
       browser.webProgress.removeProgressListener(filter);
       filter.removeProgressListener(listener);
       listener.destroy();
 
-      this._tabListeners.delete(aTab);
-      this._tabFilters.delete(aTab);
+      this.#tabListeners.delete(aTab);
+      this.#tabFilters.delete(aTab);
 
       // Reset the findbar and remove it if it is attached to the tab.
       if (aTab._findBar) {
@@ -3476,8 +3470,8 @@
         console.error(e);
         t?.remove();
         if (t?.linkedBrowser) {
-          this._tabFilters.delete(t);
-          this._tabListeners.delete(t);
+          this.#tabFilters.delete(t);
+          this.#tabListeners.delete(t);
           this.getPanel(t.linkedBrowser).remove();
         }
         return null;
@@ -4304,7 +4298,7 @@
 
       tab.linkedBrowser = b;
 
-      this._tabForBrowser.set(b, tab);
+      this.#tabForBrowser.set(b, tab);
       tab.permanentKey = b.permanentKey;
       tab._browserParams = {
         uriIsAboutBlank,
@@ -4852,7 +4846,7 @@
             Services.prefs.getBoolPref("browser.tabs.insertAfterCurrent"))
         ) {
           let lastRelatedTab =
-            openerTab && this._lastRelatedTabMap.get(openerTab);
+            openerTab && this.#lastRelatedTabMap.get(openerTab);
           let previousTab = lastRelatedTab || openerTab || this.selectedTab;
           if (!tabGroup) {
             tabGroup = previousTab.group;
@@ -4882,7 +4876,7 @@
           }
           // Always set related map if opener exists.
           if (openerTab) {
-            this._lastRelatedTabMap.set(openerTab, tab);
+            this.#lastRelatedTabMap.set(openerTab, tab);
           }
         }
       }
@@ -5533,9 +5527,9 @@
       if (!skipSessionStore) {
         SessionStore.resetLastClosedTabCount(window);
       }
-      this._clearMultiSelectionLocked = true;
+      this.#clearMultiSelectionLocked = true;
 
-      // Guarantee that _clearMultiSelectionLocked lock gets released.
+      // Guarantee that #clearMultiSelectionLocked lock gets released.
       try {
         // If selection includes entire groups, we might want to save them
         if (!skipGroupCheck) {
@@ -5609,7 +5603,7 @@
         console.error(e);
       }
 
-      this._clearMultiSelectionLocked = false;
+      this.#clearMultiSelectionLocked = false;
       this._avoidSingleSelectedTab();
     }
 
@@ -5776,7 +5770,7 @@
         telemetrySource,
       } = {}
     ) {
-      if (aTab.closing || this._windowIsClosing) {
+      if (aTab.closing || this.#windowIsClosing) {
         return false;
       }
 
@@ -5853,7 +5847,7 @@
         if (closeWindow && closeWindowFastpath && !this._removingTabs.size) {
           // This call actually closes the window, unless the user
           // cancels the operation.  We are finished here in both cases.
-          this._windowIsClosing = window.closeWindow(
+          this.#windowIsClosing = window.closeWindow(
             true,
             window.warnAboutClosingWindow,
             "close-last-tab"
@@ -5869,13 +5863,13 @@
       if (closeWindow && adoptedByTab) {
         // Remove the tab's filter and progress listener to avoid leaking.
         if (aTab.linkedPanel) {
-          const filter = this._tabFilters.get(aTab);
+          const filter = this.#tabFilters.get(aTab);
           browser.webProgress.removeProgressListener(filter);
-          const listener = this._tabListeners.get(aTab);
+          const listener = this.#tabListeners.get(aTab);
           filter.removeProgressListener(listener);
           listener.destroy();
-          this._tabListeners.delete(aTab);
-          this._tabFilters.delete(aTab);
+          this.#tabListeners.delete(aTab);
+          this.#tabFilters.delete(aTab);
         }
         return true;
       }
@@ -5955,11 +5949,11 @@
         }
 
         // Remove the tab's filter and progress listener.
-        const filter = this._tabFilters.get(aTab);
+        const filter = this.#tabFilters.get(aTab);
 
         browser.webProgress.removeProgressListener(filter);
 
-        const listener = this._tabListeners.get(aTab);
+        const listener = this.#tabListeners.get(aTab);
         filter.removeProgressListener(listener);
         listener.destroy();
       }
@@ -5989,14 +5983,14 @@
       var [aCloseWindow, aNewTab] = aTab._endRemoveArgs;
       aTab._endRemoveArgs = null;
 
-      if (this._windowIsClosing) {
+      if (this.#windowIsClosing) {
         aCloseWindow = false;
         aNewTab = false;
       }
 
       this.tabAnimationsInProgress--;
 
-      this._lastRelatedTabMap = new WeakMap();
+      this.#lastRelatedTabMap = new WeakMap();
 
       // update the UI early for responsiveness
       aTab.collapsed = true;
@@ -6005,19 +5999,19 @@
       this._removingTabs.delete(aTab);
 
       if (aCloseWindow) {
-        this._windowIsClosing = true;
+        this.#windowIsClosing = true;
         for (let tab of this._removingTabs) {
           this._endRemoveTab(tab);
         }
-      } else if (!this._windowIsClosing) {
+      } else if (!this.#windowIsClosing) {
         if (aNewTab) {
           gURLBar.select();
         }
       }
 
       // We're going to remove the tab and the browser now.
-      this._tabFilters.delete(aTab);
-      this._tabListeners.delete(aTab);
+      this.#tabFilters.delete(aTab);
+      this.#tabListeners.delete(aTab);
 
       var browser = this.getBrowserForTab(aTab);
 
@@ -6042,7 +6036,7 @@
         this.tabs[i]._tPos = i;
       }
 
-      if (!this._windowIsClosing) {
+      if (!this.#windowIsClosing) {
         // update tab close buttons state
         this.tabContainer._updateCloseButtons();
 
@@ -6082,7 +6076,7 @@
 
       // Release the browser in case something is erroneously holding a
       // reference to the tab after its removal.
-      this._tabForBrowser.delete(aTab.linkedBrowser);
+      this.#tabForBrowser.delete(aTab.linkedBrowser);
       aTab.linkedBrowser = null;
 
       panel.remove();
@@ -6104,7 +6098,7 @@
       }
 
       if (aCloseWindow) {
-        this._windowIsClosing = closeWindow(
+        this.#windowIsClosing = closeWindow(
           true,
           window.warnAboutClosingWindow,
           "close-last-tab"
@@ -6374,7 +6368,7 @@
       var remoteBrowser = aOtherTab.documentGlobal.gBrowser;
       var isPending = aOtherTab.hasAttribute("pending");
 
-      let otherTabListener = remoteBrowser._tabListeners.get(aOtherTab);
+      let otherTabListener = remoteBrowser._getTabProgressListener(aOtherTab);
       let stateFlags = 0;
       if (otherTabListener) {
         stateFlags = otherTabListener._stateFlags;
@@ -6558,13 +6552,31 @@
       return true;
     }
 
+    // The progress listener and filter Maps are #-private, but tab swapping
+    // reaches across windows: each window evaluates this script separately, so
+    // another window's gBrowser is an instance of a different Tabbrowser class
+    // and its private fields can't be read directly. These thin accessors run
+    // in the owning window's realization, so callers can route through them
+    // (e.g. otherWindowGBrowser._getTabProgressListener(tab)).
+    _getTabProgressListener(aTab) {
+      return this.#tabListeners.get(aTab);
+    }
+
+    _getTabProgressFilter(aTab) {
+      return this.#tabFilters.get(aTab);
+    }
+
+    _setTabProgressListener(aTab, aListener) {
+      this.#tabListeners.set(aTab, aListener);
+    }
+
     swapBrowsers(aOurTab, aOtherTab) {
       let otherBrowser = aOtherTab.linkedBrowser;
       let otherTabBrowser = otherBrowser.getTabBrowser();
 
       // We aren't closing the other tab so, we also need to swap its tablisteners.
-      let filter = otherTabBrowser._tabFilters.get(aOtherTab);
-      let tabListener = otherTabBrowser._tabListeners.get(aOtherTab);
+      let filter = otherTabBrowser._getTabProgressFilter(aOtherTab);
+      let tabListener = otherTabBrowser._getTabProgressListener(aOtherTab);
       otherBrowser.webProgress.removeProgressListener(filter);
       filter.removeProgressListener(tabListener);
 
@@ -6578,7 +6590,7 @@
         false,
         false
       );
-      otherTabBrowser._tabListeners.set(aOtherTab, tabListener);
+      otherTabBrowser._setTabProgressListener(aOtherTab, tabListener);
 
       const notifyAll = Ci.nsIWebProgress.NOTIFY_ALL;
       filter.addProgressListener(tabListener, notifyAll);
@@ -6590,8 +6602,8 @@
       this._insertBrowser(aOurTab);
 
       // Unhook our progress listener
-      const filter = this._tabFilters.get(aOurTab);
-      let tabListener = this._tabListeners.get(aOurTab);
+      const filter = this.#tabFilters.get(aOurTab);
+      let tabListener = this.#tabListeners.get(aOurTab);
       let ourBrowser = this.getBrowserForTab(aOurTab);
       ourBrowser.webProgress.removeProgressListener(filter);
       filter.removeProgressListener(tabListener);
@@ -6645,7 +6657,7 @@
         false,
         aStateFlags
       );
-      this._tabListeners.set(aOurTab, tabListener);
+      this.#tabListeners.set(aOurTab, tabListener);
 
       const notifyAll = Ci.nsIWebProgress.NOTIFY_ALL;
       filter.addProgressListener(tabListener, notifyAll);
@@ -6702,21 +6714,21 @@
         );
       }
 
-      this._progressListeners.push(aListener);
+      this.#progressListeners.push(aListener);
     }
 
     removeProgressListener(aListener) {
-      this._progressListeners = this._progressListeners.filter(
+      this.#progressListeners = this.#progressListeners.filter(
         l => l != aListener
       );
     }
 
     addTabsProgressListener(aListener) {
-      this._tabsProgressListeners.push(aListener);
+      this.#tabsProgressListeners.push(aListener);
     }
 
     removeTabsProgressListener(aListener) {
-      this._tabsProgressListeners = this._tabsProgressListeners.filter(
+      this.#tabsProgressListeners = this.#tabsProgressListeners.filter(
         l => l != aListener
       );
     }
@@ -7431,7 +7443,7 @@
       // Clear tabs cache after moving nodes because the order of tabs may have
       // changed.
       this.tabContainer._invalidateCachedTabs();
-      this._lastRelatedTabMap = new WeakMap();
+      this.#lastRelatedTabMap = new WeakMap();
       this._updateTabsAfterInsert();
 
       if (wasFocused) {
@@ -7703,8 +7715,8 @@
       aTab.setAttribute("aria-selected", "true");
       this._multiSelectedTabsSet.add(aTab);
       this._startMultiSelectChange();
-      if (!this._multiSelectChangeRemovals.delete(aTab)) {
-        this._multiSelectChangeAdditions.add(aTab);
+      if (!this.#multiSelectChangeRemovals.delete(aTab)) {
+        this.#multiSelectChangeAdditions.add(aTab);
       }
     }
 
@@ -7752,16 +7764,16 @@
       aTab.removeAttribute("aria-selected");
       this._multiSelectedTabsSet.delete(aTab);
       this._startMultiSelectChange();
-      if (!this._multiSelectChangeAdditions.delete(aTab)) {
-        this._multiSelectChangeRemovals.add(aTab);
+      if (!this.#multiSelectChangeAdditions.delete(aTab)) {
+        this.#multiSelectChangeRemovals.add(aTab);
       }
     }
 
     clearMultiSelectedTabs() {
-      if (this._clearMultiSelectionLocked) {
-        if (this._clearMultiSelectionLockedOnce) {
-          this._clearMultiSelectionLockedOnce = false;
-          this._clearMultiSelectionLocked = false;
+      if (this.#clearMultiSelectionLocked) {
+        if (this.#clearMultiSelectionLockedOnce) {
+          this.#clearMultiSelectionLockedOnce = false;
+          this.#clearMultiSelectionLocked = false;
         }
         return;
       }
@@ -7773,7 +7785,7 @@
       for (let tab of this.selectedTabs) {
         this.removeFromMultiSelectedTabs(tab);
       }
-      this._lastMultiSelectedTabRef = null;
+      this.#lastMultiSelectedTabRef = null;
     }
 
     selectAllTabs() {
@@ -7792,13 +7804,13 @@
     }
 
     lockClearMultiSelectionOnce() {
-      this._clearMultiSelectionLockedOnce = true;
-      this._clearMultiSelectionLocked = true;
+      this.#clearMultiSelectionLockedOnce = true;
+      this.#clearMultiSelectionLocked = true;
     }
 
     unlockClearMultiSelection() {
-      this._clearMultiSelectionLockedOnce = false;
-      this._clearMultiSelectionLocked = false;
+      this.#clearMultiSelectionLockedOnce = false;
+      this.#clearMultiSelectionLocked = false;
     }
 
     /**
@@ -7834,9 +7846,9 @@
     }
 
     _switchToNextMultiSelectedTab() {
-      this._clearMultiSelectionLocked = true;
+      this.#clearMultiSelectionLocked = true;
 
-      // Guarantee that _clearMultiSelectionLocked lock gets released.
+      // Guarantee that #clearMultiSelectionLocked lock gets released.
       try {
         let lastMultiSelectedTab = this.lastMultiSelectedTab;
         if (!lastMultiSelectedTab.selected) {
@@ -7851,7 +7863,7 @@
         console.error(e);
       }
 
-      this._clearMultiSelectionLocked = false;
+      this.#clearMultiSelectionLocked = false;
     }
 
     set selectedTabs(tabs) {
@@ -7902,8 +7914,8 @@
     }
 
     get lastMultiSelectedTab() {
-      let tab = this._lastMultiSelectedTabRef
-        ? this._lastMultiSelectedTabRef.get()
+      let tab = this.#lastMultiSelectedTabRef
+        ? this.#lastMultiSelectedTabRef.get()
         : null;
       if (tab && tab.isConnected && this._multiSelectedTabsSet.has(tab)) {
         return tab;
@@ -7914,7 +7926,7 @@
     }
 
     set lastMultiSelectedTab(aTab) {
-      this._lastMultiSelectedTabRef = Cu.getWeakReference(aTab);
+      this.#lastMultiSelectedTabRef = Cu.getWeakReference(aTab);
     }
 
     _mayTabBeMultiselected(aTab) {
@@ -7922,8 +7934,8 @@
     }
 
     _startMultiSelectChange() {
-      if (!this._multiSelectChangeStarted) {
-        this._multiSelectChangeStarted = true;
+      if (!this.#multiSelectChangeStarted) {
+        this.#multiSelectChangeStarted = true;
         Promise.resolve().then(() => this._endMultiSelectChange());
       }
     }
@@ -7931,14 +7943,14 @@
     _endMultiSelectChange() {
       let noticeable = false;
       let { selectedTab } = this;
-      if (this._multiSelectChangeAdditions.size) {
+      if (this.#multiSelectChangeAdditions.size) {
         if (!selectedTab.multiselected) {
           this.addToMultiSelectedTabs(selectedTab);
         }
         noticeable = true;
       }
-      if (this._multiSelectChangeRemovals.size) {
-        if (this._multiSelectChangeRemovals.has(selectedTab)) {
+      if (this.#multiSelectChangeRemovals.size) {
+        if (this.#multiSelectChangeRemovals.has(selectedTab)) {
           this._switchToNextMultiSelectedTab();
         }
         this._avoidSingleSelectedTab();
@@ -7946,14 +7958,14 @@
       }
       if (noticeable) {
         this._updateMultiselectedTabCloseButtonTooltip(
-          this._multiSelectChangeRemovals
+          this.#multiSelectChangeRemovals
         );
       }
-      this._multiSelectChangeStarted = false;
-      if (noticeable || this._multiSelectChangeSelected) {
-        this._multiSelectChangeSelected = false;
-        this._multiSelectChangeAdditions.clear();
-        this._multiSelectChangeRemovals.clear();
+      this.#multiSelectChangeStarted = false;
+      if (noticeable || this.#multiSelectChangeSelected) {
+        this.#multiSelectChangeSelected = false;
+        this.#multiSelectChangeAdditions.clear();
+        this.#multiSelectChangeRemovals.clear();
         this.dispatchEvent(
           new CustomEvent("TabMultiSelect", { bubbles: true })
         );
@@ -8600,18 +8612,18 @@
           delete browser.registeredOpenURI;
         }
 
-        let filter = this._tabFilters.get(tab);
+        let filter = this.#tabFilters.get(tab);
         if (filter) {
           browser.webProgress.removeProgressListener(filter);
 
-          let listener = this._tabListeners.get(tab);
+          let listener = this.#tabListeners.get(tab);
           if (listener) {
             filter.removeProgressListener(listener);
             listener.destroy();
           }
 
-          this._tabFilters.delete(tab);
-          this._tabListeners.delete(tab);
+          this.#tabFilters.delete(tab);
+          this.#tabListeners.delete(tab);
         }
       }
 
@@ -8994,8 +9006,8 @@
         tab.dispatchEvent(evt);
 
         // Unhook our progress listener.
-        let filter = this._tabFilters.get(tab);
-        let oldListener = this._tabListeners.get(tab);
+        let filter = this.#tabFilters.get(tab);
+        let oldListener = this.#tabListeners.get(tab);
         browser.webProgress.removeProgressListener(filter);
         filter.removeProgressListener(oldListener);
         let stateFlags = oldListener._stateFlags;
@@ -9031,7 +9043,7 @@
             stateFlags,
             requestCount
           );
-          this._tabListeners.set(tab, listener);
+          this.#tabListeners.set(tab, listener);
           filter.addProgressListener(listener, Ci.nsIWebProgress.NOTIFY_ALL);
 
           // Restore the progress listener.
@@ -9167,7 +9179,7 @@
     }
 
     clearRelatedTabs() {
-      this._lastRelatedTabMap = new WeakMap();
+      this.#lastRelatedTabMap = new WeakMap();
     }
   };
 
