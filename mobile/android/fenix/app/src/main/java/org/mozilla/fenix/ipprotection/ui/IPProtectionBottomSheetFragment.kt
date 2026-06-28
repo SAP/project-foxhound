@@ -113,6 +113,11 @@ class IPProtectionBottomSheetFragment : BottomSheetDialogFragment() {
                             ),
                         )
                     },
+                    onNotNowClicked = {
+                        ipProtectionPromptStore.dispatch(
+                            IPProtectionPromptAction.OnNotNowClicked(args.surface),
+                        )
+                    },
                 )
             }
         }

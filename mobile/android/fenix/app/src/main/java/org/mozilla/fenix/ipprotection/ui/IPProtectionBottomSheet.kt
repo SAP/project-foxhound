@@ -69,6 +69,7 @@ private val sheetMaxWidth = 450.dp
  * an article about VPN on Firefox.
  * @param onGetStartedClicked The callback to invoke when user clicks on "Get started" to
  * start the VPN authentication or authorization process.
+ * @param onNotNowClicked The callback to invoke when user clicks on "Not now" to dismiss the prompt.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -79,6 +80,7 @@ fun IPProtectionBottomSheet(
     onDismissRequest: () -> Unit,
     onLearnMoreClicked: () -> Unit,
     onGetStartedClicked: () -> Unit,
+    onNotNowClicked: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -94,6 +96,7 @@ fun IPProtectionBottomSheet(
         onDismissRequest = onDismissRequest,
         onLearnMoreClicked = onLearnMoreClicked,
         onGetStartedClicked = onGetStartedClicked,
+        onNotNowClicked = onNotNowClicked,
     )
 }
 
@@ -107,6 +110,7 @@ private fun BottomSheet(
     onDismissRequest: () -> Unit = {},
     onLearnMoreClicked: () -> Unit = {},
     onGetStartedClicked: () -> Unit = {},
+    onNotNowClicked: () -> Unit = {},
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
@@ -121,6 +125,7 @@ private fun BottomSheet(
             onDismiss = onDismiss,
             onLearnMoreClicked = onLearnMoreClicked,
             onGetStartedClicked = onGetStartedClicked,
+            onNotNowClicked = onNotNowClicked,
         )
     }
 }
@@ -134,6 +139,7 @@ private fun BottomSheetContent(
     onDismiss: () -> Unit,
     onLearnMoreClicked: () -> Unit,
     onGetStartedClicked: () -> Unit,
+    onNotNowClicked: () -> Unit,
 ) {
     val coroutineScope = rememberCoroutineScope()
     val scrollState = rememberScrollState()
@@ -184,6 +190,7 @@ private fun BottomSheetContent(
 
         IPProtectionButtons(
             onNotNowClicked = {
+                onNotNowClicked()
                 coroutineScope.launch {
                     sheetState.hide()
                 }.invokeOnCompletion {
@@ -332,6 +339,7 @@ private fun IPProtectionBottomSheetPreview(
             onDismissRequest = {},
             onGetStartedClicked = {},
             onLearnMoreClicked = {},
+            onNotNowClicked = {},
         )
     }
 }
