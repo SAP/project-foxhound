@@ -75,6 +75,16 @@
   <string name="mozac_summarize_settings_shake_to_summarize">Özetlemek için salla</string>
   <!-- Description for the shake to summarize toggle in settings -->
   <string name="mozac_summarize_settings_shake_to_summarize_description">Bir sayfayı özetlemek için cihazınızı sağa sola sallayın.</string>
+  <!-- Label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity">Sallama duyarlılığı</string>
+  <!-- Description for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_description">Özetlemeyi başlatmak için ne kadar kuvvetli sallamanız gerektiğini ayarlayın.</string>
+  <!-- Low option label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_low">Düşük</string>
+  <!-- Medium option label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_medium">Orta</string>
+  <!-- High option label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_high">Yüksek</string>
   <!-- Message for summary by model, %1$s is the name of the model that is being displayed -->
   <string name="mozac_feature_summarize_summary_model">Özeti oluşturan: %1$s</string>
   <!-- Disclaimer message -->

@@ -75,6 +75,16 @@
   <string name="mozac_summarize_settings_shake_to_summarize">Ysgwyd i grynhoi</string>
   <!-- Description for the shake to summarize toggle in settings -->
   <string name="mozac_summarize_settings_shake_to_summarize_description">Ysgydwch eich dyfais o ochr yn ochr i grynhoi tudalen.</string>
+  <!-- Label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity">Sensitifrwydd ysgwyd</string>
+  <!-- Description for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_description">Addasu pa mor galed y mae angen i chi ysgwyd i gychwyn crynhoi.</string>
+  <!-- Low option label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_low">Isel</string>
+  <!-- Medium option label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_medium">Canolig</string>
+  <!-- High option label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_high">Uchel</string>
   <!-- Message for summary by model, %1$s is the name of the model that is being displayed -->
   <string name="mozac_feature_summarize_summary_model">Crynodeb gan %1$s</string>
   <!-- Disclaimer message -->

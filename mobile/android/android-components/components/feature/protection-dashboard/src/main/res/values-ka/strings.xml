@@ -41,7 +41,7 @@
   -->
   <string name="mozac_protections_dashboard_empty_title">%1$s ზღუდავს მეთვალყურეებს გვერდების მონახულებისას.</string>
   <!-- Subtitle shown when no trackers have been blocked yet -->
-  <string name="mozac_protections_dashboard_empty_subtitle">იხილავთ აქ.</string>
+  <string name="mozac_protections_dashboard_empty_subtitle">აქვე გამოჩნდება.</string>
   <plurals name="mozac_protections_dashboard_total_blocked_since_2">
     <!--
       Footer line shown in the dashboard summarizing total trackers blocked

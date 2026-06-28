@@ -398,6 +398,10 @@
   <string name="mozac_feature_addons_status_see_details">വിശദാംശങ്ങൾ കാണിക്കുക</string>
   <!-- Status message below an add-on in the add-ons manager when this add-on has been blocklisted. %1$s is the add-on name. -->
   <string name="mozac_feature_addons_status_blocklisted_1">മോസില്ലയുടെ നയങ്ങൾ ലംഘിച്ചതിനാൽ ഈ വിപുലീകരണം തടയുകയും പ്രവർത്തനരഹിതമാക്കുകയും ചെയ്തു.</string>
+  <!-- Status message below an add-on in the add-ons manager when this add-on has been soft-blocked. -->
+  <string name="mozac_feature_addons_status_softblocked_2">ഈ വിപുലീകരണം വിലക്കപ്പെട്ടതും പ്രവൎത്തനരഹിതവും ആണു്. താങ്ങൾക്കിതിനെ പ്രവൎത്തനക്ഷമമാക്കാൻ പറ്റും എന്നാൽ ഇതു് അപകടകരമായേക്കാം.</string>
+  <!-- Status message below an add-on in the add-ons manager when this add-on has been soft-blocked but the user re-enabled it. -->
+  <string name="mozac_feature_addons_status_softblocked_re_enabled_2">ഈ വിപുലീകരണം വിലക്കപ്പെട്ടിരിക്കുന്നു. ഇതുപയോഗിക്കുന്നതു് അപകടകരമാവാം.</string>
   <!-- Status message below an add-on in the add-ons manager when this add-on hasn't been signed correctly. %1$s is the add-on name. -->
   <string name="mozac_feature_addons_status_unsigned">%1$s സുരക്ഷിതമാണെന്നു് ഉറപ്പിക്കാൻ കഴിഞ്ഞില്ല അതുകൊണ്ടു് അതിനെ പ്രവൎത്തനരഹിതമാക്കിയിരിക്കുന്നു.</string>
   <!-- Status message below an add-on in the add-ons manager when this add-on isn't compatible with the application version. %1$s is the add-on name, %2$s is the app name and %3$s is the app version. -->

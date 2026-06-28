@@ -37,6 +37,14 @@
   <string name="mozac_summarize_settings_learn_more">Падрабязней</string>
   <!-- Section header for gesture settings -->
   <string name="mozac_summarize_settings_gestures">Жэсты</string>
+  <!-- Label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity">Адчувальнасць да устрэсвання</string>
+  <!-- Low option label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_low">Нізкая</string>
+  <!-- Medium option label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_medium">Сярэдняя</string>
+  <!-- High option label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_high">Высокая</string>
   <!-- Disclaimer message -->
   <string name="mozac_feature_summarize_disclaimer_message">Штучны інтэлект можа рабіць памылкі</string>
   <!-- Button text for the Error dismiss button on Shake to Summarize -->

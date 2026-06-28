@@ -292,52 +292,6 @@
     Content description (not visible, for screen readers etc.): Close button for the home onboarding dialog
   -->
   <string name="onboarding_home_content_description_close_button">වසන්න</string>
-  <!--
-    Juno first user onboarding flow experiment, strings are marked unused as they are only referenced by Nimbus experiments.
-
-    Description for learning more about our privacy notice.
-  -->
-  <string name="juno_onboarding_privacy_notice_text" tools:ignore="BrandUsage">ෆයර්ෆොක්ස් රහස්‍යතා දැන්වීම</string>
-  <!-- Title for set firefox as default browser screen used by Nimbus experiments. -->
-  <string name="juno_onboarding_default_browser_title_nimbus_2">ඔබට ආරක්‍ෂාව සලසන්නෙමු</string>
-  <!-- Description for set firefox as default browser screen used by Nimbus experiments. -->
-  <string name="juno_onboarding_default_browser_description_nimbus_3">අපගේ ලාභ නොලබන පිටුබලයක් සහිත අතිරික්සුව අන්තර්ජාලය පුරා ඔබව රහසින් ලුහුබඳින සමාගම් ස්වයංක්‍රීයව නවත්වයි.</string>
-  <!-- Text for the button to set firefox as default browser on the device -->
-  <string name="juno_onboarding_default_browser_positive_button" tools:ignore="UnusedResources">පෙරනිමි අතිරික්සුව කරන්න</string>
-  <!-- Text for the button dismiss the screen and move on with the flow -->
-  <string name="juno_onboarding_default_browser_negative_button" tools:ignore="UnusedResources">දැන් නොවේ</string>
-  <!-- Title for sign in to sync screen. -->
-  <string name="juno_onboarding_sign_in_title_2">ඔබ උපාංග අතර පනින විට සංකේතිතව සිටින්න</string>
-  <!--
-    Description for sign in to sync screen. Nimbus experiments do not support string placeholders.
-    Note: The word "Firefox" should NOT be translated
-  -->
-  <string name="juno_onboarding_sign_in_description_3" tools:ignore="BrandUsage">සමමුහූර්ත විට ෆයර්ෆොක්ස් ඔබගේ මුරපද, පොත්යොමු සහ තවත් දෑ සංකේතනය කරයි.</string>
-  <!-- Text for the button to sign in to sync on the device -->
-  <string name="juno_onboarding_sign_in_positive_button" tools:ignore="UnusedResources">පිවිසෙන්න</string>
-  <!-- Text for the button dismiss the screen and move on with the flow -->
-  <string name="juno_onboarding_sign_in_negative_button" tools:ignore="UnusedResources">දැන් නොවේ</string>
-  <!--
-    Title for enable notification permission screen used by Nimbus experiments. Nimbus experiments do not support string placeholders.
-    Note: The word "Firefox" should NOT be translated
-  -->
-  <string name="juno_onboarding_enable_notifications_title_nimbus_2" tools:ignore="BrandUsage">ෆයර්ෆොක්ස් සමඟ ආරක්‍ෂිතව සිටීමට දැනුම්දීම් උපකාරී වේ</string>
-  <!--
-    Description for enable notification permission screen used by Nimbus experiments. Nimbus experiments do not support string placeholders.
-    Note: The word "Firefox" should NOT be translated
-  -->
-  <string name="juno_onboarding_enable_notifications_description_nimbus_2" tools:ignore="BrandUsage">ඔබගේ උපාංග අතර ආරක්‍ෂිතව පටිති යවන්න සහ වෙනත් ෆයර්ෆොක්ස් රහස්‍යතා විශේෂාංග සොයා ගන්න.</string>
-  <!-- Text for the button to request notification permission on the device -->
-  <string name="juno_onboarding_enable_notifications_positive_button" tools:ignore="UnusedResources">දැනුම්දීම් සක්‍රිය කරන්න</string>
-  <!-- Text for the button dismiss the screen and move on with the flow -->
-  <string name="juno_onboarding_enable_notifications_negative_button" tools:ignore="UnusedResources">දැන් නොවේ</string>
-  <!--
-    Description for add search widget screen used by Nimbus experiments. Nimbus experiments do not support string placeholders.
-    Note: The word "Firefox" should NOT be translated
-  -->
-  <string name="juno_onboarding_add_search_widget_description" tools:ignore="BrandUsage,UnusedResources">ඔබගේ මුල් තිරයේ ෆයර්ෆොක්ස් ඇත්නම්, හරස්-අඩවි ලුහුබැඳීම් අවහිර කරන පෞද්ගලිකත්‍වයට මුල්තැන දෙන අතිරික්සුවට පහසුවෙන් ප්‍රවේශ වීමට හැකිය.</string>
-  <!-- Text for the button to dismiss the screen and move on with the flow -->
-  <string name="juno_onboarding_add_search_widget_negative_button" tools:ignore="UnusedResources">දැන් නොවේ</string>
   <!-- Title for the crash reporting option in the privacy preferences dialog shown during onboarding. -->
   <string name="onboarding_preferences_dialog_crash_reporting_title">බිඳවැටුම් වාර්තා ස්වයංක්‍රීයව යවන්න</string>
   <!-- Learn more link for the crash reporting option in the privacy preferences dialog shown during onboarding. -->
@@ -355,20 +309,6 @@
 
   <!-- ==== End of Project "Nova" onboarding strings ==== -->
 
-  <!-- Onboarding label for 'Save and continue' button, used by Nimbus experiments. -->
-  <string name="onboarding_save_and_continue_button">සුරකින්න සහ ඉදිරියට</string>
-  <!-- Onboarding toolbar selection card label for 'top' option, used by Nimbus experiments. -->
-  <string name="onboarding_customize_toolbar_top_option">මුදුන</string>
-  <!-- Onboarding toolbar selection card label for 'bottom' option, used by Nimbus experiments. -->
-  <string name="onboarding_customize_toolbar_bottom_option">පතුළ</string>
-  <!-- Action label for toolbar options that can be selected. Talkback will append this to say "Double tap to select". -->
-  <string name="onboarding_customize_toolbar_a11y_action_label_select">තෝරන්න</string>
-  <!-- Onboarding header for the theme selection card, used by Nimbus experiments. -->
-  <string name="onboarding_customize_theme_title" tools:ignore="UnusedResources">තේමාවක් තෝරන්න</string>
-  <!-- Onboarding theme selection card label for 'dark' option, used by Nimbus experiments. -->
-  <string name="onboarding_customize_theme_dark_option">අඳුරු</string>
-  <!-- Onboarding theme selection card label for 'light' option, used by Nimbus experiments. -->
-  <string name="onboarding_customize_theme_light_option">දීප්ත</string>
   <!--
     Search Widget
 

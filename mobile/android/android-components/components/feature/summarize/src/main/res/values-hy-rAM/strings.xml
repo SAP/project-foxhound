@@ -75,6 +75,16 @@
   <string name="mozac_summarize_settings_shake_to_summarize">Թափահարեք՝ ամփոփելու համար</string>
   <!-- Description for the shake to summarize toggle in settings -->
   <string name="mozac_summarize_settings_shake_to_summarize_description">Էջը ամփոփելու համար թափահարեք սարքը կողքից կողքի։</string>
+  <!-- Label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity">Շարժման զգայունություն</string>
+  <!-- Description for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_description">Կարգավորեք թափահարման ուժգնությունը՝ ամփոփումը ակտիվացնելու համար։</string>
+  <!-- Low option label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_low">Ցածր</string>
+  <!-- Medium option label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_medium">Միջին</string>
+  <!-- High option label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_high">Բարձր</string>
   <!-- Message for summary by model, %1$s is the name of the model that is being displayed -->
   <string name="mozac_feature_summarize_summary_model">Ամփոփում՝ %1$s-ի կողմից</string>
   <!-- Disclaimer message -->

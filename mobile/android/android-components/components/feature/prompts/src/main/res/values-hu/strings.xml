@@ -172,6 +172,8 @@
   <string name="mozac_feature_prompts_collapse_address_content_description_2">Mentett címek összecsukása</string>
   <!-- Text for the manage addresses button. -->
   <string name="mozac_feature_prompts_manage_address">Címek kezelése</string>
+  <!-- Text for the title of a save address dialog. -->
+  <string name="mozac_feature_prompts_save_address_prompt_title">Menti a címet?</string>
   <!--
     Federated Credential Management prompts
 

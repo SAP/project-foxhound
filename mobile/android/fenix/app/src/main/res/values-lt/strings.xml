@@ -37,10 +37,35 @@
   <string name="tab_tray_select_collection">Pasirinkite rinkinį</string>
   <!-- Content description for close button while in multiselect mode in tab tray -->
   <string name="tab_tray_close_multiselect_content_description">Išeiti iš daugelio pasirinkimų veiksenos</string>
+  <!-- The header text displayed on the synced tabs page when the user is not logged into an account. -->
+  <string name="tab_manager_empty_synced_tabs_page_header">Pagriebkite korteles iš bet kurio įrenginio</string>
+  <!-- The supplementary text displayed on the synced tabs page when the user is not logged into an account. -->
+  <string name="tab_manager_empty_synced_tabs_page_description">Prisijunkite, norėdami valdyti sinchronizuotas korteles iš visų savo įrenginių.</string>
+  <!--
+    Home - Bookmarks
+
+    Title for the home screen section with bookmarks.
+  -->
+  <string name="home_bookmarks_title">Adresynas</string>
+  <!-- Content description for the button which navigates the user to show all of their bookmarks. -->
+  <string name="home_bookmarks_show_all_content_description">Rodyti visą adresyną</string>
+  <!-- Text for the menu button to remove a recently saved bookmark from the user's home screen -->
+  <string name="home_bookmarks_menu_item_remove">Pašalinti</string>
   <!-- About content. %1$s is the name of the app (for example "Firefox"). -->
   <string name="about_content">„%1$s“ kūrėjai yra „Mozilla“.</string>
   <!-- Private Browsing -->
   <string name="private_browsing_common_myths">Dažni mitai apie privatųjį naršymą</string>
+  <!--
+    Description of private browsing mode displayed to users on the homepage when they enable private mode.
+    %1$s is the name of the app (for example "Firefox").
+  -->
+  <string name="felt_privacy_info_card_subtitle_3">„%1$s“ pašalina jūsų slapukus, istoriją bei svetainių duomenis, kuomet uždarote privačiąsias korteles.</string>
+  <!--
+    Clickable portion of the explanation for private browsing that links the user to our
+    about privacy page.
+    This string is used in felt_privacy_info_card_subtitle as the text for the link.
+  -->
+  <string name="felt_privacy_info_card_subtitle_link_text">Kas gali matyti mano veiklą?</string>
   <!--
     Open in App "contextual feature recommendation" (CFR)
 
@@ -53,6 +78,12 @@
   <string name="open_in_app_cfr_negative_button_text">Paslėpti</string>
   <!-- Private browsing erase action "contextual feature recommendation" (CFR) -->
 
+  <!--
+    Address bar swipe "contextual feature recommendation" (CFR)
+
+    Text for the message displayed in the contextual feature recommendation popup promoting swipe of address bar.
+  -->
+  <string name="address_bar_swipe_cfr_message_2">Norėdami perjungti korteles, braukite įrankių juostą kairėn arba dešinėn.</string>
   <!-- Text for the info dialog when camera permissions have been denied but user tries to access a camera feature. -->
   <string name="camera_permissions_needed_message">Reikia kameros prieigos. Eikite į „Android“ nustatymus, bakstelėkite „leidimus“, tada bakstelėkite „leisti“.</string>
   <!-- Text for the positive action button to go to Android Settings to grant permissions. -->
@@ -88,6 +119,8 @@
   <string name="home_screen_shortcut_open_new_tab_2">Nauja kortelė</string>
   <!-- Shortcut action to open new private tab -->
   <string name="home_screen_shortcut_open_new_private_tab_2">Nauja privačioji kortelė</string>
+  <!-- Shortcut action to open Passwords screen -->
+  <string name="home_screen_shortcut_passwords">Slaptažodžiai</string>
   <!--
     Recent Tabs
 
@@ -135,6 +168,15 @@
   <string name="browser_menu_refresh">Atsiųsti iš naujo</string>
   <!-- Content description (not visible, for screen readers etc.): Stop loading current website -->
   <string name="browser_menu_stop">Stabdyti</string>
+  <!-- Browser menu group that contains additional settings in collapsed state -->
+  <string name="browser_menu_more_settings">Daugiau</string>
+  <!--
+    Content description (not visible, for screen readers etc.): Label for plus icon used to add extension.
+    %1$s is the name of the extension (for example: ClearURLs).
+  -->
+  <string name="browser_menu_extension_plus_icon_content_description_2">Pridėti „%1$s“</string>
+  <!-- Browser menu description that is shown when one or more extensions are disabled due to extension errors -->
+  <string name="browser_menu_extensions_disabled_description">Laikinai išjungta</string>
   <!-- Browser menu button that opens account settings -->
   <string name="browser_menu_account_settings">Paskyros informacija</string>
   <!-- Browser menu button that opens the settings menu -->
@@ -145,6 +187,10 @@
   <string name="browser_menu_desktop_site">Komp. svetainė</string>
   <!-- Browser menu toggle that adds a shortcut to the site on the device home screen. -->
   <string name="browser_menu_add_to_homescreen">Įtraukti į pradžios ekraną</string>
+  <!-- Browser menu toggle that adds a PWA of the site on the device home screen. -->
+  <string name="browser_menu_add_app_to_homescreen">Įtraukti į pradžios ekraną</string>
+  <!-- Text for notifying users that Xiaomi devices require additional permissions to add to home screen -->
+  <string name="browser_menu_add_to_homescreen_xiaomi">„Xiaomi“ įrenginiams gali prireikti papildomų leidimų, kad būtų galima pridėti nuorodas į pradinį ekraną. Patikrinkite savo nustatymus.</string>
   <!-- Content description (not visible, for screen readers etc.) for the Resync tabs button -->
   <string name="resync_button_content_description">Sinchronizuoti iš naujo</string>
   <!-- Browser menu button that opens the find in page menu -->
@@ -153,6 +199,8 @@
   <string name="browser_menu_save_to_collection_2">Įtraukti į rinkinį</string>
   <!-- Browser menu button that open a share menu to share the current site -->
   <string name="browser_menu_share">Dalintis</string>
+  <!-- Browser menu button that goes to the homepage screen -->
+  <string name="browser_menu_homepage">Pradinis puslapis</string>
   <!--
     Browser menu button shown in custom tabs that opens the current tab in Fenix
     %1$s is the name of the app (for example "Firefox").
@@ -169,6 +217,46 @@
   <string name="browser_menu_read_close">Išjungti skaitymo rodinį</string>
   <!-- Browser menu button to open the current page in an external app -->
   <string name="browser_menu_open_app_link">Atverti programoje</string>
+  <!-- Browser menu button to show reader view appearance controls e.g. the used font type and size -->
+  <string name="browser_menu_customize_reader_view_2">Tinkinti skaitymo rodinį</string>
+  <!-- Browser menu label to sign in to sync on the device using Mozilla accounts -->
+  <string name="browser_menu_sign_in">Prisijungti</string>
+  <!-- Browser menu caption label for the "Sign in" browser menu item described in `browser_menu_sign_in` -->
+  <string name="browser_menu_sign_in_caption_3">Sinchronizuokite slaptažodžius, adresyną bei kt.</string>
+  <!-- Browser menu label to sign back in to sync on the device when the user's account needs to be reauthenticated -->
+  <string name="browser_menu_sign_back_in_to_sync">Prisijunkite dar kartą sinchronizavimui</string>
+  <!-- Browser menu caption label for the "Sign back in to sync" browser menu item described in `browser_menu_sign_back_in_to_sync` when there is an error in syncing -->
+  <string name="browser_menu_syncing_paused_caption">Sinchronizavimas pristabdytas</string>
+  <!-- Browser menu caption label for an authenticated user -->
+  <string name="browser_menu_signed_in_caption">Valdykite savo atsargines kopijas bei tai, ką sinchronizuojate</string>
+  <!-- Browser menu label that creates a private tab -->
+  <string name="browser_menu_new_private_tab">Nauja privačioji kortelė</string>
+  <!-- Browser menu label that navigates to the Password screen -->
+  <string name="browser_menu_passwords">Slaptažodžiai</string>
+  <!-- Content description (not visible, for screen readers etc.) for the handle used to drag the main menu at the bottom of the screen. -->
+  <string name="browser_close_main_menu_handlebar_content_description">Užverti meniu</string>
+  <!-- Content description (not visible, for screen readers etc.) for main menu navigation header. -->
+  <string name="browser_main_menu_content_description_navigation_header">Navigacija</string>
+  <!-- Browser menu label that bookmarks the currently visited page -->
+  <string name="browser_menu_bookmark_this_page_2">Įtraukti į adresyną</string>
+  <!-- Browser menu label that navigates to the edit bookmark screen for the current bookmarked page -->
+  <string name="browser_menu_edit_bookmark">Redaguoti adresyno įrašą</string>
+  <!-- Browser menu label that the saves the currently visited page as a PDF -->
+  <string name="browser_menu_save_as_pdf_2">Įrašyti PDF formatu</string>
+  <!-- Browser menu badge text for summarization feature -->
+  <string name="browser_menu_summarize_page_badge">Nauja</string>
+  <!-- Browser menu label for navigating to the Web Compat Reporter feature, which provides users the ability to send bug reports for broken sites. -->
+  <string name="browser_menu_webcompat_reporter_2">Pranešti apie neveikiančią svetainę</string>
+  <!-- Browser menu label that is displayed when the current page has been translated by the translation feature. -->
+  <string name="browser_menu_translated">Išversta</string>
+  <!--
+    Translation Toolbar
+
+    Translation toolbar label that is displayed when the current page has been translated by the translation feature.
+    %1$s is the name of the language that is displayed in the original page. (For example: English)
+    %2$s is the name of the language which the page was translated to. (For example: French)
+  -->
+  <string name="translation_toolbar_translated_from_and_to" tools:ignore="UnusedResources">Išversta iš %1$s į %2$s</string>
   <!--
     Locale Settings Fragment
 
@@ -199,8 +287,23 @@
   <string name="search_engine_suggestions_description">Ieškokite tiesiai iš adreso lauko</string>
   <!-- Menu option in the search selector menu to open the search settings -->
   <string name="search_settings_menu_item">Paieškos nustatymai</string>
+  <string name="onboarding_preferences_dialog_usage_data_learn_more_2">Sužinoti daugiau</string>
+  <!-- Positive button label for the privacy preferences dialog shown during onboarding. -->
+  <string name="onboarding_preferences_dialog_positive_button">Atlikta</string>
   <!-- ==== Project "Nova" onboarding strings ==== -->
 
+  <!-- "Continue" onboarding button. -->
+  <string name="nova_onboarding_continue_button">Tęsti</string>
+  <!-- "Continue browsing" onboarding button. -->
+  <string name="nova_onboarding_continue_browsing_button" tools:ignore="UnusedResources">Tęsti naršymą</string>
+  <!-- "Not now" onboarding button. -->
+  <string name="nova_onboarding_negative_button">Ne dabar</string>
+  <!-- "Skip" onboarding button. -->
+  <string name="nova_onboarding_skip_button" tools:ignore="UnusedResources">Praleisti</string>
+  <!-- Terms of use (ToU) onboarding title. -->
+  <string name="nova_onboarding_tou_title" tools:ignore="UnusedResources">Pasiruoškite laisvei</string>
+  <!-- Terms of use (ToU) onboarding subtitle. -->
+  <string name="nova_onboarding_tou_subtitle">Sparti, saugi ir jūsų neišduos. Naršymas tapo geresnis.</string>
   <!-- ==== End of Project "Nova" onboarding strings ==== -->
 
   <!-- Text preview for smaller sized widgets -->

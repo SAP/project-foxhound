@@ -75,6 +75,16 @@
   <string name="mozac_summarize_settings_shake_to_summarize">سىلكىسە خۇلاسىلەيدۇ</string>
   <!-- Description for the shake to summarize toggle in settings -->
   <string name="mozac_summarize_settings_shake_to_summarize_description">ئۈسكۈنىڭىزنى بىر تەرەپتىن يەنە بىر تەرەپكە سىلكىسىڭىز بەت مەزمۇنىنى خۇلاسەلەيدۇ.</string>
+  <!-- Label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity">سىلكىش سەزگۈرلۈكى</string>
+  <!-- Description for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_description">خۇلاسىلاش ئۈچۈن قانچىلىك كۈچلۈك سىلكىش كېرەكلىكى تەڭشىلىدۇ.</string>
+  <!-- Low option label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_low">ئاجىز</string>
+  <!-- Medium option label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_medium">ئوتتۇراھال</string>
+  <!-- High option label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_high">كۈچلۈك</string>
   <!-- Message for summary by model, %1$s is the name of the model that is being displayed -->
   <string name="mozac_feature_summarize_summary_model">%1$s خۇلاسىلىگەن</string>
   <!-- Disclaimer message -->

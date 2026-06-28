@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this file,
+  You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources>
+  <plurals name="mozac_protections_dashboard_trackers_blocked_this_week">
+    <!--
+      Label shown below the tracker count in the dashboard. The count is displayed separately
+      above this string and is used to select the correct plural form. Do not include the number in
+      the translation.
+    -->
+    <item quantity="other">Traçadors blocats aquesta setmana</item>
+  </plurals>
+  <!-- Title shown in the protection dashboard header next to the shield icon -->
+  <string name="mozac_protections_dashboard_trackers_blocked_this_week_title">Traçadors blocats aquesta setmana</string>
+  <plurals name="mozac_protections_dashboard_total_blocked_since_2">
+    <!--
+      Footer line shown in the dashboard summarizing total trackers blocked
+      since a specific date. %1$d is the trackers count number (e.g. 123).
+      %2$s is the formatted date (e.g. "February 23, 2026").
+    -->
+    <item quantity="other">%1$d traçadors blocats dempuèi lo %2$s</item>
+  </plurals>
+</resources>

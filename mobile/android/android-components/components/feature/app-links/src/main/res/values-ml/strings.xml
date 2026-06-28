@@ -11,6 +11,8 @@
   <string name="mozac_feature_applinks_open_in">ഇതിൽ തുറക്കുക…</string>
   <!-- The title of the prompt that warns users their normal browsing session is trying to open another app -->
   <string name="mozac_feature_applinks_normal_confirm_dialog_title">വേറെ പ്രയോഗയന്ത്രാംശമിൽ തുറക്കുക</string>
+  <!-- The title of the prompt that warns users their normal browsing session is trying to open another app -->
+  <string name="mozac_feature_applinks_normal_confirm_dialog_title_2">മറ്റൊരു പ്രയോഗത്തിൽ കണ്ണി തുറക്കണോ?</string>
   <!--
     The title of the prompt with app suffix.
     %s is a placeholder that will be replaced by an app name

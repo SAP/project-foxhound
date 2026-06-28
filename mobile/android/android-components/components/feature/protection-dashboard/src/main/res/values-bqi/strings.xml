@@ -20,8 +20,8 @@
   </plurals>
   <plurals name="mozac_protections_dashboard_data_saved">
     <!-- Label showing data saved in megabytes. %1$d is the number of MB saved -->
-    <item quantity="one">MB %1$d زفت وابیڌه</item>
-    <item quantity="other">MB %1$d زفت وابیڌه</item>
+    <item quantity="one">%1$d مگابایت زفت وابیڌه</item>
+    <item quantity="other">%1$d مگابایت زفت وابیڌه</item>
   </plurals>
   <!-- Section header for tracker category breakdown -->
   <string name="protections_dashboard_where_they_came_from">ز کویه ٱووڌنه</string>
@@ -42,4 +42,13 @@
   <string name="mozac_protections_dashboard_empty_title">%1$s مجال گشتن ایسا رڌجۊرا ن مسدۊد اکونه.</string>
   <!-- Subtitle shown when no trackers have been blocked yet -->
   <string name="mozac_protections_dashboard_empty_subtitle">ایسا هونووݩ ن ایچونا انیرین.</string>
+  <plurals name="mozac_protections_dashboard_total_blocked_since_2">
+    <!--
+      Footer line shown in the dashboard summarizing total trackers blocked
+      since a specific date. %1$d is the trackers count number (e.g. 123).
+      %2$s is the formatted date (e.g. "February 23, 2026").
+    -->
+    <item quantity="one">%1$d رڌجۊر مسدۊد وابیڌه ز %2$s</item>
+    <item quantity="other">%1$d رڌجۊر مسدۊد وابیڌه ز %2$s</item>
+  </plurals>
 </resources>

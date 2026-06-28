@@ -43,6 +43,12 @@
   <string name="mozac_summarize_settings_learn_more">കൂടുതലറിയുക</string>
   <!-- Section header for gesture settings -->
   <string name="mozac_summarize_settings_gestures">ആംഗ്യങ്ങൾ</string>
+  <!-- Low option label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_low">താഴ്ന്നനില</string>
+  <!-- Medium option label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_medium">നടുനില</string>
+  <!-- High option label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_high">ഉയൎന്നനില</string>
   <!-- Title for the page summary AI controllable feature -->
   <string name="mozac_ai_controls_page_summary_title">താൾ ചുരുക്കം</string>
   <!-- Button text for the Error dismiss button on Shake to Summarize -->

@@ -65,4 +65,6 @@
   <string name="mozac_feature_prompts_nov">Samh</string>
   <!-- December month of the year (short description), used on the month chooser dialog. -->
   <string name="mozac_feature_prompts_dec">Nol</string>
+  <!-- Text for the title of a save address dialog. -->
+  <string name="mozac_feature_prompts_save_address_prompt_title">An seoladh a shábháil?</string>
 </resources>

@@ -77,6 +77,8 @@
   <string name="mozac_summarize_settings_shake_to_summarize_description">Emongu’e ne mba’e’oka emombyky hag̃ua kuatiarogue.</string>
   <!-- Label for the shake sensitivity slider in settings -->
   <string name="mozac_summarize_settings_shake_sensitivity">Oñandu ñemongu’e</string>
+  <!-- Description for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_description">Emoĩporã mba’éichapa emomýita mba’e’oka emyandy hag̃ua ñemombyky.</string>
   <!-- Low option label for the shake sensitivity slider in settings -->
   <string name="mozac_summarize_settings_shake_sensitivity_low">Karape</string>
   <!-- Medium option label for the shake sensitivity slider in settings -->

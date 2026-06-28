@@ -75,6 +75,16 @@
   <string name="mozac_summarize_settings_shake_to_summarize">Ανακίνηση για σύνοψη</string>
   <!-- Description for the shake to summarize toggle in settings -->
   <string name="mozac_summarize_settings_shake_to_summarize_description">Ανακινήστε τη συσκευή σας πέρα δώθε για να συνοψίσετε μια σελίδα.</string>
+  <!-- Label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity">Ευαισθησία ανακίνησης</string>
+  <!-- Description for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_description">Προσαρμόστε την απαραίτητη ένταση ανακίνησης για να ενεργοποιηθεί η σύνοψη.</string>
+  <!-- Low option label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_low">Χαμηλή</string>
+  <!-- Medium option label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_medium">Μεσαία</string>
+  <!-- High option label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_high">Υψηλή</string>
   <!-- Message for summary by model, %1$s is the name of the model that is being displayed -->
   <string name="mozac_feature_summarize_summary_model">Σύνοψη από %1$s</string>
   <!-- Disclaimer message -->

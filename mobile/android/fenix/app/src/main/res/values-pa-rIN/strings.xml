@@ -454,62 +454,6 @@
     Content description (not visible, for screen readers etc.): Close button for the home onboarding dialog
   -->
   <string name="onboarding_home_content_description_close_button">ਬੰਦ ਕਰੋ</string>
-  <!--
-    Juno first user onboarding flow experiment, strings are marked unused as they are only referenced by Nimbus experiments.
-
-    Description for learning more about our privacy notice.
-  -->
-  <string name="juno_onboarding_privacy_notice_text" tools:ignore="BrandUsage">Firefox ਪਰਦੇਦਾਰੀ ਸੂਚਨਾ</string>
-  <!-- Title for set firefox as default browser screen used by Nimbus experiments. -->
-  <string name="juno_onboarding_default_browser_title_nimbus_2">ਅਸੀਂ ਤੁਹਾਨੂੰ ਸੁਰੱਖਿਅਤ ਰੱਖਣਾ ਚਾਹੁੰਦੇ ਹਾਂ</string>
-  <!-- Description for set firefox as default browser screen used by Nimbus experiments. -->
-  <string name="juno_onboarding_default_browser_description_nimbus_3">ਕੰਪਨੀਆਂ ਨੂੰ ਚੋਰੀ ਚੋਰੀ ਵੈੱਬ ਉੱਤੇ ਤੁਹਾਡਾ ਪਿੱਛਾ ਕਰਨ ਤੋਂ ਸਾਡਾ ਗ਼ੈਰ-ਫਾਇਦਾ ਸਮਰੱਥ ਬਰਾਊਜ਼ਰ ਆਪਣੇ-ਆਪ ਹੀ ਰੋਕਦਾ ਹੈ।</string>
-  <!-- Text for the button to set firefox as default browser on the device -->
-  <string name="juno_onboarding_default_browser_positive_button" tools:ignore="UnusedResources">ਮੂਲ ਬਰਾਊਜ਼ਰ ਬਣਾਓ</string>
-  <!-- Text for the button dismiss the screen and move on with the flow -->
-  <string name="juno_onboarding_default_browser_negative_button" tools:ignore="UnusedResources">ਹੁਣੇ ਨਹੀਂ</string>
-  <!-- Title for sign in to sync screen. -->
-  <string name="juno_onboarding_sign_in_title_2">ਜਦੋਂ ਤੁਸੀਂ ਡਿਵਾਈਸਾਂ ਵਿਚਾਲੇ ਤਬਾਦਲਾ ਕਰੋ ਤਾਂ ਇੰਕ੍ਰਿਪਟ ਰਹੋ</string>
-  <!--
-    Description for sign in to sync screen. Nimbus experiments do not support string placeholders.
-    Note: The word "Firefox" should NOT be translated
-  -->
-  <string name="juno_onboarding_sign_in_description_3" tools:ignore="BrandUsage">Firefox ਤੁਹਾਡੇ ਪਾਸਵਰਡਾਂ, ਬੁੱਕਮਾਰਕਾਂ ਅਤੇ ਹੋਰਾਂ ਨੂੰ ਤੁਹਾਡੇ ਵਲੋਂ ਸਿੰਕ ਕਰਨ ਦੌਰਾਨ ਇੰਕ੍ਰਿਪਟ ਕਰਦਾ ਹੈ।</string>
-  <!-- Text for the button to sign in to sync on the device -->
-  <string name="juno_onboarding_sign_in_positive_button" tools:ignore="UnusedResources">ਸਾਈਨ ਇਨ</string>
-  <!-- Text for the button dismiss the screen and move on with the flow -->
-  <string name="juno_onboarding_sign_in_negative_button" tools:ignore="UnusedResources">ਹੁਣੇ ਨਹੀਂ</string>
-  <!--
-    Title for enable notification permission screen used by Nimbus experiments. Nimbus experiments do not support string placeholders.
-    Note: The word "Firefox" should NOT be translated
-  -->
-  <string name="juno_onboarding_enable_notifications_title_nimbus_2" tools:ignore="BrandUsage">ਨੋਟੀਫ਼ਿਕੇਸ਼ਨ Firefox ਨਾਲ ਤੁਹਾਨੂੰ ਸੁਰੱਖਿਅਤ ਰਹਿਣ ਲਈ ਮਦਦ ਕਰਦੇ ਹਨ</string>
-  <!--
-    Description for enable notification permission screen used by Nimbus experiments. Nimbus experiments do not support string placeholders.
-    Note: The word "Firefox" should NOT be translated
-  -->
-  <string name="juno_onboarding_enable_notifications_description_nimbus_2" tools:ignore="BrandUsage">ਟੈਬਾਂ ਨੂੰ ਸੁਰੱਖਿਅਤ ਰੂਪ ਵਿੱਚ ਆਪਣੇ ਡਿਵਾਈਸਾਂ ਉੱਤੇ ਭੇਜੋ ਅਤੇ Firefox ਵਿੱਚ ਹੋਰ ਪਰਦੇਦਾਰੀ ਫ਼ੀਚਰ ਬਾਰੇ ਜਾਣੋ।</string>
-  <!-- Text for the button to request notification permission on the device -->
-  <string name="juno_onboarding_enable_notifications_positive_button" tools:ignore="UnusedResources">ਸੂਚਨਾਵਾਂ ਚਾਲੂ ਕਰੋ</string>
-  <!-- Text for the button dismiss the screen and move on with the flow -->
-  <string name="juno_onboarding_enable_notifications_negative_button" tools:ignore="UnusedResources">ਹੁਣੇ ਨਹੀਂ</string>
-  <!--
-    Title for add search widget screen used by Nimbus experiments. Nimbus experiments do not support string placeholders.
-    Note: The word "Firefox" should NOT be translated
-  -->
-  <string name="juno_onboarding_add_search_widget_title" tools:ignore="BrandUsage,UnusedResources">Firefox ਖੋਜ ਵਿਜੈਟ ਅਜ਼ਮਾਓ</string>
-  <!--
-    Description for add search widget screen used by Nimbus experiments. Nimbus experiments do not support string placeholders.
-    Note: The word "Firefox" should NOT be translated
-  -->
-  <string name="juno_onboarding_add_search_widget_description" tools:ignore="BrandUsage,UnusedResources">ਤੁਹਾਡੀ ਮੁੱਖ ਸਕਰੀਨ ਉੱਤੇ Firefox ਨਾਲ ਤੁਸੀਂ ਪਰਾਈਵੇਸੀ ਅਧਾਰਿਤ ਬਰਾਊਜ਼ਰ ਨੂੰ ਸੌਖੀ ਤਰ੍ਹਾਂ ਵਰਤ ਸਕਦੇ ਹੋ, ਜੋ ਕਿ ਅੰਤਰ-ਸਾਈਟ ਟਰੈਕਰਾਂ ਉੱਤੇ ਪਾਬੰਦੀ ਲਾਉਂਦਾ ਹੈ।</string>
-  <!--
-    Text for the button to add search widget on the device used by Nimbus experiments. Nimbus experiments do not support string placeholders.
-    Note: The word "Firefox" should NOT be translated
-  -->
-  <string name="juno_onboarding_add_search_widget_positive_button" tools:ignore="BrandUsage,UnusedResources">Firefox ਵਿਜੈਟ ਜੋੜੋ</string>
-  <!-- Text for the button to dismiss the screen and move on with the flow -->
-  <string name="juno_onboarding_add_search_widget_negative_button" tools:ignore="UnusedResources">ਹੁਣੇ ਨਹੀਂ</string>
   <!-- Title for the privacy preferences dialog shown during onboarding. Note: The word "Firefox" should NOT be translated. -->
   <string name="onboarding_preferences_dialog_title" tools:ignore="BrandUsage">Firefox ਨੂੰ ਬੇਹਤਰ ਬਣਾਉਣ ਲਈ ਸਾਡੀ ਮਦਦ ਕਰੋ</string>
   <!-- Title for the crash reporting option in the privacy preferences dialog shown during onboarding. -->
@@ -536,10 +480,6 @@
   <string name="onboarding_preferences_dialog_positive_button">ਮੁਕੰਮਲ</string>
   <!-- Terms of service onboarding title card label. 'Firefox' intentionally hardcoded here -->
   <string name="onboarding_welcome_to_firefox" tools:ignore="BrandUsage">Firefox ਵਲੋਂ ਜੀ ਆਇਆਂ ਨੂੰ</string>
-  <!-- Terms of service sub header label. -->
-  <string name="onboarding_terms_of_service_sub_header_2">ਤੇਜ਼ ਅਤੇ ਸੁਰੱਖਿਅਤ ਵੈੱਬ ਬਰਾਊਜ਼ਿੰਗ</string>
-  <!-- Terms of service onboarding page continue button label. -->
-  <string name="onboarding_term_of_service_agree_and_continue_button_label_2">ਜਾਰੀ ਰੱਖੋ</string>
   <!-- Line one of the terms of service onboarding page. %1$s is replaced by an active link, using onboarding_term_of_service_line_one_link_text_2 as text (“Firefox Terms of Use”). -->
   <string name="onboarding_term_of_service_line_one_2">ਜਾਰੀ ਰੱਖ ਕੇ ਤੁਸੀਂ %1$s ਨਾਲ ਸਹਿਮਤ ਹੁੰਦੇ ਹੋ।</string>
   <!-- Used as text for the link in onboarding_term_of_service_line_one_2. -->
@@ -607,16 +547,6 @@
   <string name="onboarding_redesign_sync_positive_button" tools:ignore="UnusedResources">ਸਿੰਕ ਕਰਨਾ ਸ਼ੁਰੂ ਕਰੋ</string>
   <!-- Sync onboarding redesign negative button text. -->
   <string name="onboarding_redesign_sync_negative_button" tools:ignore="UnusedResources">ਹੁਣੇ ਨਹੀਂ</string>
-  <!-- Marketing onboarding page title. 'Firefox' is intentionally hardcoded. -->
-  <string name="onboarding_marketing_title" tools:ignore="BrandUsage,UnusedResources">Firefox ਨੂੰ ਅੱਗੇ ਵਧਣ ਲਈ ਸਾਡੀ ਮਦਦ ਕਰੋ</string>
-  <!-- Marketing onboarding page body. 'Firefox' is intentionally hardcoded. -->
-  <string name="onboarding_marketing_body" tools:ignore="BrandUsage,UnusedResources">ਜਦੋਂ ਤੁਸੀਂ Firefox ਨੂੰ ਲੱਭਣ ਅਤੇ ਇਸ ਨੂੰ ਵਰਤਣ ਬਾਰੇ ਜਾਣਕਾਰੀ ਨੂੰ ਸਾਂਝਾ ਕਰਦੇ ਹੋ ਤਾਂ ਤੁਸੀਂ ਸਾਡੇ ਬਰਾਊਜ਼ਰ ਨੂੰ ਹੋਰ ਲੋਕਾਂ ਤੱਕ ਪਹੁੰਚਾਉਣ ਲਈ ਸਾਡੀ ਮਦਦ ਕਰਦੇ ਹੋ।</string>
-  <!-- Marketing onboarding page opt-out checkbox. Unchecking the box does not increase data collection. Our data practices remain the same. 'Mozilla' is intentionally hardcoded. -->
-  <string name="onboarding_marketing_opt_out_checkbox">Mozilla ਦੇ ਮਾਰਕੀਟਿੰਗ ਤਕਨਾਲੋਜੀ ਹਿੱਸੇਦਾਰਾਂ ਨਾਲ ਡਾਟਾ ਸਾਂਝਾ ਕਰੋ। ਇਹ ਡਾਟਾ ਕਦੇ ਵੀ ਵੇਚਿਆ ਨਹੀਂ ਜਾਂਦਾ ਹੈ ਜਾਂ ਤੁਹਾਨੂੰ ਇਸ਼ਤਿਹਾਰ ਦਿਖਾਉਣ ਲਈ ਨਹੀਂ ਵਰਤਿਆ ਜਾਂਦਾ ਹੈ।</string>
-  <!-- Marketing onboarding page clickable link text to "learn more" on how data is used. -->
-  <string name="onboarding_marketing_learn_more" tools:ignore="UnusedResources">ਅਸੀਂ ਤੁਹਾਡੇ ਡਾਟੇ ਨੂੰ ਕਿਵੇਂ ਵਰਤਦੇ ਹਾਂ</string>
-  <!-- Marketing onboarding page button label. Button to confirm choice and start browsing. -->
-  <string name="onboarding_marketing_positive_button" tools:ignore="UnusedResources">ਤਸਦੀਕ ਕਰੋ ਅਤੇ ਬਰਾਊਜ਼ ਕਰਨਾ ਸ਼ੁਰੂ ਕਰੋ</string>
   <!-- Marketing onboarding page title variant. “One last thing” refers to the final step or action in the onboarding process that we’re asking users to take before they can start using the browser. -->
   <string name="onboarding_marketing_title_1" tools:ignore="UnusedResources">ਇੱਕ ਆਖਰੀ ਗੱਲ</string>
   <!-- Marketing onboarding page body variant. 'Firefox' is intentionally hardcoded. -->
@@ -769,41 +699,6 @@
   <string name="nova_onboarding_app_icon_prompt_body" tools:ignore="UnusedResources">ਆਪਣੀ ਮੁੱਖ ਸਕਰੀਨ ਨੂੰ ਆਪਣਾ ਬਣਾਓ।</string>
   <!-- ==== End of Project "Nova" onboarding strings ==== -->
 
-  <!-- Onboarding header for the toolbar selection card, used by Nimbus experiments. -->
-  <string name="onboarding_customize_toolbar_title" tools:ignore="UnusedResources">ਟੂਲਬਾਰ ਦੀ ਥਾਂ ਚੁਣੋ</string>
-  <!-- Onboarding sub header for toolbar selection card, used by Nimbus experiments. -->
-  <string name="onboarding_customize_toolbar_description" tools:ignore="UnusedResources">ਖੋਜਾਂ ਨੂੰ ਪਹੁੰਚ ਵਿੱਚ ਰੱਖੋ</string>
-  <!-- Onboarding label for 'Save and continue' button, used by Nimbus experiments. -->
-  <string name="onboarding_save_and_continue_button">ਸੰਭਾਲੋ ਅਤੇ ਜਾਰੀ ਰੱਖੋ</string>
-  <!-- Onboarding toolbar selection card label for 'top' option, used by Nimbus experiments. -->
-  <string name="onboarding_customize_toolbar_top_option">ਉੱਤੇ</string>
-  <!-- Onboarding toolbar selection card label for 'bottom' option, used by Nimbus experiments. -->
-  <string name="onboarding_customize_toolbar_bottom_option">ਹੇਠਾਂ</string>
-  <!-- Onboarding toolbar selection card content description for the main image. -->
-  <string name="onboarding_customize_toolbar_main_image_content_description">ਟੂਲਬਾਰ ਚੋਣ ਝਲਕ ਦਾ ਵੱਡਾ ਹੈੱਡਰ ਚਿੱਤਰ ਬਣਾਏ ਗਏ ਟੂਲਬਾਰ ਚਿੱਤਰ ਵਿੱਚ ਦਿਖਾਇਆ ਜਾ ਰਿਹਾ ਹੈ।</string>
-  <!-- Onboarding toolbar selection card content description for the toolbar placement image. -->
-  <string name="onboarding_customize_toolbar_placement_bottom_content_description">ਹੇਠਾਂ ਟੂਲਬਾਰ ਦਾ ਚਿੱਤਰ</string>
-  <string name="onboarding_customize_toolbar_placement_top_content_description">ਉੱਤੇ ਟੂਲਬਾਰ ਦਾ ਚਿੱਤਰ</string>
-  <!-- Action label for toolbar options that can be selected. Talkback will append this to say "Double tap to select". -->
-  <string name="onboarding_customize_toolbar_a11y_action_label_select">ਚੁਣੋ</string>
-  <!-- Onboarding header for the theme selection card, used by Nimbus experiments. -->
-  <string name="onboarding_customize_theme_title" tools:ignore="UnusedResources">ਥੀਮ ਨੂੰ ਚੁਣੋ</string>
-  <!-- Onboarding sub header for theme selection card, used by Nimbus experiments. -->
-  <string name="onboarding_customize_theme_description" tools:ignore="UnusedResources">ਵੈੱਬ ਨੂੰ ਸਭ ਤੋਂ ਵਧੀਆ ਰੌਸ਼ਨੀ ਵਿੱਚ ਵੇਖੋ।</string>
-  <!-- Onboarding label for 'Save and start browsing' button, used by Nimbus experiments. -->
-  <string name="onboarding_save_and_start_button">ਸੰਭਾਲੋ ਅਤੇ ਬਰਾਊਜ਼ ਕਰਨਾ ਸ਼ੁਰੂ ਕਰੋ</string>
-  <!-- Onboarding theme selection card label for 'dark' option, used by Nimbus experiments. -->
-  <string name="onboarding_customize_theme_dark_option">ਗੂੜ੍ਹਾ</string>
-  <!-- Onboarding theme selection card label for 'light' option, used by Nimbus experiments. -->
-  <string name="onboarding_customize_theme_light_option">ਹਲਕਾ</string>
-  <!-- Onboarding theme selection card label for 'System auto' option, used by Nimbus experiments. -->
-  <string name="onboarding_customize_theme_system_option">ਸਿਸਟਮ ਆਡੀਓ</string>
-  <!-- Onboarding theme selection card content description for the main image. -->
-  <string name="onboarding_customize_theme_main_image_content_description">ਥੀਮ ਚੋਣ ਝਲਕ ਦਾ ਵੱਡਾ ਹੈੱਡਰ ਚਿੱਤਰ ਬਣਾਈ ਗਈ ਸ਼ਕਲ ਵਿੱਚ ਕਲਾਕਾਰ ਅਤੇ ਬਿਲਡਰ ਟੂਲ ਦਿਖਾਏ ਜਾ ਰਹੇ ਹਨ।</string>
-  <!-- Onboarding theme selection card content description for the theme selection image. %1$s is placeholder for either 'system', 'light' or 'dark'. -->
-  <string name="onboarding_customize_theme_content_description">%1$s ਥੀਮ ਦਾ ਚਿੱਤਰ</string>
-  <!-- Action label for options that can be selected. Talkback will append this to say "Double tap to select". -->
-  <string name="onboarding_customize_theme_a11y_action_label_select">ਚੁਣੋ</string>
   <!--
     Widget Picker
 
@@ -972,7 +867,7 @@
   <!-- Preference for gestures based actions -->
   <string name="preferences_gestures">ਇਸ਼ਾਰੇ</string>
   <!-- Preference for settings related to visual options -->
-  <string name="preferences_customize">ਚੁਣਿੰਦਾ ਕਰੋ</string>
+  <string name="preferences_customize">ਚੁਣਿੰਦਾ ਬਣਾਓ</string>
   <!-- Preference description shown in the banner prompting the user to sign in for sync features -->
   <string name="preferences_sign_in_description">ਟੈਬਾਂ, ਬੁੱਕਮਾਰਕ, ਪਾਸਵਰਡਾਂ ਅਤੇ ਹੋਰਾਂ ਚੀਜ਼ਾਂ ਨੂੰ ਸਿੰਕ ਕਰੋ।</string>
   <!-- Preference shown instead of account display name while account profile information isn't available yet. -->
@@ -1576,7 +1471,7 @@
   <!-- Summary for homepage preference indicating always opening the last-open tab when re-opening the app -->
   <string name="opening_screen_last_tab_summary">ਪਿਛਲੀ ਟੈਬ ਉੱਤੇ ਖੋਲ੍ਹੋ</string>
   <!-- Summary for homepage preference indicating opening the homepage when re-opening the app after four hours of inactivity -->
-  <string name="opening_screen_after_four_hours_of_inactivity_summary">ਚਾਰ ਘੰਟਿਆਂ ਬਾਅਦੇ ਮੁੱਖ-ਸਫ਼਼ੇ ਉੱਤੇ ਖੋਲ੍ਹੋ</string>
+  <string name="opening_screen_after_four_hours_of_inactivity_summary">ਚਾਰ ਘੰਟਿਆਂ ਬਾਅਦ ਮੁੱਖ-ਸਫ਼਼ੇ ਉੱਤੇ ਖੋਲ੍ਹੋ</string>
   <!--
     Inactive tabs
 

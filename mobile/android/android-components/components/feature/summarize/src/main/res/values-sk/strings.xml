@@ -75,6 +75,16 @@
   <string name="mozac_summarize_settings_shake_to_summarize">Zatrasením vytvoriť súhrn</string>
   <!-- Description for the shake to summarize toggle in settings -->
   <string name="mozac_summarize_settings_shake_to_summarize_description">Potraste zariadením zo strany na stranu, aby ste vytvorili súhrn stránky.</string>
+  <!-- Label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity">Citlivosť na trasenie</string>
+  <!-- Description for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_description">Upravte, ako silno je potrebné potriasť, aby sa spustil proces vytvorenia súhrnu.</string>
+  <!-- Low option label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_low">Nízka</string>
+  <!-- Medium option label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_medium">Stredná</string>
+  <!-- High option label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_high">Vysoká</string>
   <!-- Message for summary by model, %1$s is the name of the model that is being displayed -->
   <string name="mozac_feature_summarize_summary_model">Súhrn stránky od %1$s</string>
   <!-- Disclaimer message -->

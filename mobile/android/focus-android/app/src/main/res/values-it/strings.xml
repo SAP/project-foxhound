@@ -463,7 +463,7 @@
 
     %1$s is the app name and build variant (for example "Firefox Focus", "Firefox Klar Nightly").
   -->
-  <string name="onboarding_first_screen_title">Benvenuto in %1$s</string>
+  <string name="onboarding_first_screen_title">Ti diamo il benvenuto in %1$s</string>
   <!-- New Onboarding flow first screen subtitle the one that appears under title -->
   <string name="onboarding_first_screen_subtitle">Veloce. Riservato. Nessuna distrazione.</string>
   <!--

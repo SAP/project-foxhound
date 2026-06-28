@@ -172,6 +172,8 @@
   <string name="mozac_feature_prompts_collapse_address_content_description_2">Сақталған адрестерді бүктеу</string>
   <!-- Text for the manage addresses button. -->
   <string name="mozac_feature_prompts_manage_address">Адрестерді басқару</string>
+  <!-- Text for the title of a save address dialog. -->
+  <string name="mozac_feature_prompts_save_address_prompt_title">Адресті сақтау керек пе?</string>
   <!--
     Federated Credential Management prompts
 
