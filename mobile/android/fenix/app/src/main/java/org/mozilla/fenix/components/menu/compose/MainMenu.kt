@@ -329,11 +329,13 @@ fun MainMenu(
                 onClick = onMozillaAccountButtonClick,
             )
 
-            MenuItem(
-                label = stringResource(id = R.string.browser_menu_change_wallpaper),
-                beforeIconPainter = painterResource(id = iconsR.drawable.mozac_ic_wallpaper_24),
-                onClick = onWallpaperButtonClick,
-            )
+            if (accessPoint == MenuAccessPoint.Home) {
+                MenuItem(
+                    label = stringResource(id = R.string.browser_menu_change_wallpaper),
+                    beforeIconPainter = painterResource(id = iconsR.drawable.mozac_ic_wallpaper_24),
+                    onClick = onWallpaperButtonClick,
+                )
+            }
 
             MenuItem(
                 label = stringResource(id = R.string.browser_menu_settings),
