@@ -10,10 +10,10 @@ task-defaults:
         using: toolchain-script
         script: build-compiler-rt.sh
 
-wasm32-wasi-compiler-rt-17:
-    description: "wasm32-wasi Compiler-rt for Clang 17 toolchain build"
+wasm32-wasi-compiler-rt-19:
+    description: "wasm32-wasi Compiler-rt for Clang 19 toolchain build"
     treeherder:
-        symbol: TL(wasi-crt-17)
+        symbol: TL(wasi-crt-19)
     worker-type: b-linux-docker-xlarge-amd
     run:
         script: build-compiler-rt-wasi.sh
@@ -24,10 +24,10 @@ wasm32-wasi-compiler-rt-17:
         toolchain-artifact: public/build/compiler-rt-wasm32-wasi.tar.zst
     fetches:
         fetch:
-            - clang-17
+            - clang-19
             - wasi-sdk
         toolchain:
-            - linux64-clang-17-raw
+            - linux64-clang-19-raw
 
 android-aarch64-compiler-rt-21:
     description: "android aarch64 Compiler-rt for Clang 21 toolchain build"

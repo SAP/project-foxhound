@@ -1491,9 +1491,9 @@ def compiler(
         # This version can be no higher than the version used in
         # src/bootstrap/src/core/build_steps/llvm.rs's check_llvm_version in the source
         # code of the minimum supported Rust version.
-        if info.type in ("clang", "clang-cl") and info.version < "17.0":
+        if info.type in ("clang", "clang-cl") and info.version < "19.0":
             raise FatalCheckError(
-                "Only %s 17.0 or newer is supported (found version %s)."
+                "Only %s 19.0 or newer is supported (found version %s)."
                 % (("clang/llvm" if info.type == "clang" else "clang-cl"), info.version)
             )
 
