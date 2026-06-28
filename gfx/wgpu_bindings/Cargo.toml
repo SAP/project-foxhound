@@ -51,7 +51,6 @@ rev = "a2c9a1c6a1e5fe4f58a6db74648cf37635abc6cc"
 package = "wgpu-hal"
 git = "https://github.com/gfx-rs/wgpu"
 rev = "a2c9a1c6a1e5fe4f58a6db74648cf37635abc6cc"
-features = ["device_lost_panic", "internal_error_panic"]
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62", default-features = false, features = [
