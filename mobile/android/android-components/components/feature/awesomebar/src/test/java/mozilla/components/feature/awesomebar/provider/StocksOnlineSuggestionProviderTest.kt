@@ -52,26 +52,42 @@ class StocksOnlineSuggestionProviderTest {
     }
 
     @Test
-    fun `returns empty list when text does not contain stock and does not call data source`() = runTest {
-        val results = provider.onInputChanged("VOO")
-        assertTrue(results.isEmpty())
-        assertTrue(fakeDataSource.calls.isEmpty())
-    }
-
-    @Test
-    fun `fetches and returns suggestions when text contains stock`() = runTest {
-        val deferred = async { provider.onInputChanged("VOO stock") }
+    fun `fetches and returns suggestions for any non-blank text`() = runTest {
+        val deferred = async { provider.onInputChanged("VOO") }
 
         advanceTimeBy(ARTIFICIAL_DELAY)
 
         val results = deferred.await()
         assertTrue(results.isNotEmpty())
 
-        assertEquals(listOf("VOO stock"), fakeDataSource.calls)
+        assertEquals(listOf("VOO"), fakeDataSource.calls)
 
         val suggestion = results.single()
         assertEquals("VOO", suggestion.ticker)
         assertEquals(provider, suggestion.provider)
+    }
+
+    @Test
+    fun `fetches and returns suggestions when text is a cashtag`() = runTest {
+        val localDataSource = FakeCombinedOnlineSuggestionDataSource(
+            stockResults = listOf(sampleStockItem(query = "\$AMZN", ticker = "AMZN")),
+        )
+        val cashtagProvider = StocksOnlineSuggestionProvider(
+            searchUseCase = mock(),
+            dataSource = localDataSource,
+            suggestionsHeader = null,
+            maxNumberOfSuggestions = DEFAULT_STOCK_SUGGESTION_LIMIT,
+        )
+
+        val deferred = async { cashtagProvider.onInputChanged("\$AMZN") }
+
+        advanceTimeBy(ARTIFICIAL_DELAY)
+
+        val results = deferred.await()
+        assertTrue(results.isNotEmpty())
+
+        assertEquals(listOf("\$AMZN"), localDataSource.calls)
+        assertEquals("AMZN", results.single().ticker)
     }
 
     @Test

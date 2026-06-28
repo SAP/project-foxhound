@@ -44,7 +44,7 @@ class StocksOnlineSuggestionProvider(
     private val numericRegex = Regex("""-?\d+(\.\d+)?""")
 
     override suspend fun onInputChanged(text: String): List<AwesomeBar.StockSuggestion> {
-        if (!text.contains("stock", ignoreCase = true)) return emptyList()
+        if (text.isBlank()) return emptyList()
 
         val items = dataSource.fetchStocks(text)
 
