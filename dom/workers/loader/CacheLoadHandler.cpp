@@ -286,6 +286,14 @@ void CacheLoadHandler::Fail(nsresult aRv) {
     loadContext->mLoadResult = aRv;
     mRequestHandle->MaybeExecuteFinishedScripts();
   } else {
+    if (loadContext->mChannel) {
+      nsresult rv = loadContext->mChannel->Cancel(aRv);
+      if (NS_SUCCEEDED(rv)) {
+        return;
+      }
+
+      NS_WARNING("Failed to cancel channel!");
+    }
     mRequestHandle->LoadingFinished(aRv);
   }
 }
