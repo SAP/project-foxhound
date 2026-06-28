@@ -69,6 +69,19 @@ interface DownloadFileUtils {
     fun findDownloadFileUri(fileName: String?, directoryPath: String): Uri?
 
     /**
+     * Finds a shareable content URI for a downloaded file.
+     *
+     * This method ensures the returned URI can be shared with other applications,
+     * converting file URIs to content URIs via FileProvider
+     * and Storage Access Framework URIs to document URIs if necessary.
+     *
+     * @param fileName The name of the file to find.
+     * @param directoryPath The directory where the file is located.
+     * @return A shareable [Uri] of the file, or `null` if it cannot be found.
+     */
+    fun findShareableDownloadFileUri(fileName: String?, directoryPath: String): Uri?
+
+    /**
      * Determines a safe and reliable MIME type for a file.
      *
      * @param fileName The name of the file, used to infer the MIME type from its extension.

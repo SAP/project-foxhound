@@ -56,7 +56,7 @@ class DownloadUIShareMiddleware(
     }
 
     private fun shareFile(directoryPath: String, fileName: String?, contentType: String?) {
-        val downloadFileUri = downloadFileUtils.findDownloadFileUri(
+        val downloadFileUri = downloadFileUtils.findShareableDownloadFileUri(
             fileName = fileName,
             directoryPath = directoryPath,
         )

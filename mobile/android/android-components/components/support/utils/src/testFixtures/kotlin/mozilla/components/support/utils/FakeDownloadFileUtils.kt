@@ -29,6 +29,12 @@ class FakeDownloadFileUtils(
     ) -> Uri? = { fileName, _ ->
         fileName?.toUri()
     },
+    private val findShareableDownloadFileUri: (
+        fileName: String?,
+        directoryPath: String,
+    ) -> Uri? = { fileName, _ ->
+        fileName?.toUri()
+    },
     private val fileExists: (
         directoryPath: String,
         fileName: String?,
@@ -101,6 +107,13 @@ class FakeDownloadFileUtils(
         directoryPath: String,
     ): Uri? {
         return findDownloadFileUri.invoke(fileName, directoryPath)
+    }
+
+    override fun findShareableDownloadFileUri(
+        fileName: String?,
+        directoryPath: String,
+    ): Uri? {
+       return findShareableDownloadFileUri.invoke(fileName, directoryPath)
     }
 
     override fun getSafeContentType(

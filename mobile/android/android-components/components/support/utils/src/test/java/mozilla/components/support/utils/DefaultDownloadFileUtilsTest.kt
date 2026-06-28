@@ -15,15 +15,12 @@ import android.webkit.MimeTypeMap
 import androidx.core.content.FileProvider
 import androidx.core.net.toUri
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import junit.framework.TestCase.assertTrue
 import mozilla.components.support.test.any
 import mozilla.components.support.test.eq
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
 import org.junit.Rule
-import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.mockito.Mockito.doReturn
@@ -34,6 +31,10 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.Implementation
 import org.robolectric.annotation.Implements
 import java.io.File
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 
 @RunWith(AndroidJUnit4::class)
 @Config(shadows = [ShadowFileProvider::class])
@@ -584,6 +585,46 @@ class DefaultDownloadFileUtilsTest {
         val fileUtils = spy(DefaultDownloadFileUtils(testContext) { "/default/path" })
 
         val result = fileUtils.findDownloadFileUri(null, "/any/path")
+
+        assertNull(result)
+    }
+
+    @Test
+    fun `Given a file scheme URI When findShareableDownloadFileUri is called Then it converts to a shareable content URI`() {
+        val downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        val tempFile = File(downloadDir, "test-shareable.pdf")
+        tempFile.writeText("content")
+
+        val fileUtils = DefaultDownloadFileUtils(testContext)
+        val result = fileUtils.findShareableDownloadFileUri(tempFile.name, tempFile.parent ?: "")
+
+        assertNotNull(result)
+        assertEquals(ContentResolver.SCHEME_CONTENT, result.scheme)
+        assertTrue(result.toString().contains("authority"))
+        assertTrue(result.toString().contains(tempFile.name))
+
+        tempFile.delete()
+    }
+
+    @Test
+    fun `Given a content scheme URI When findShareableDownloadFileUri is called Then it returns the content URI`() {
+        val fileName = "test.pdf"
+        val directoryPath = "content://downloads/my_downloads"
+        val contentUri = Uri.parse("$directoryPath/123")
+
+        val fileUtils = spy(DefaultDownloadFileUtils(testContext))
+        doReturn(contentUri).`when`(fileUtils).findDownloadFileUri(fileName, directoryPath)
+
+        val result = fileUtils.findShareableDownloadFileUri(fileName, directoryPath)
+
+        assertEquals(contentUri, result)
+    }
+
+    @Test
+    fun `Given fileName is null When findShareableDownloadFileUri is called Then it returns null`() {
+        val fileUtils = DefaultDownloadFileUtils(testContext) { "/default/path" }
+
+        val result = fileUtils.findShareableDownloadFileUri(null, "/any/path")
 
         assertNull(result)
     }
