@@ -3,20 +3,24 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 export var ManifestIcons = {
-  async browserFetchIcon(aBrowser, manifest, iconSize) {
+  async browserFetchIcon(aBrowser, manifest, iconSize, purposes = ["any"]) {
     const msgKey = "DOM:WebManifest:fetchIcon";
 
     const actor =
       aBrowser.browsingContext.currentWindowGlobal.getActor("ManifestMessages");
-    const reply = await actor.sendQuery(msgKey, { manifest, iconSize });
+    const reply = await actor.sendQuery(msgKey, {
+      manifest,
+      iconSize,
+      purposes,
+    });
     if (!reply.success) {
       throw reply.result;
     }
     return reply.result;
   },
 
-  async contentFetchIcon(aWindow, manifest, iconSize) {
-    return getIcon(aWindow, toIconArray(manifest.icons), iconSize);
+  async contentFetchIcon(aWindow, manifest, iconSize, purposes) {
+    return getIcon(aWindow, toIconArray(manifest.icons, purposes), iconSize);
   },
 };
 
@@ -30,10 +34,17 @@ function parseIconSize(size) {
   return parseInt(size, 10);
 }
 
-// Create an array of icons sorted by their size
-function toIconArray(icons) {
+// Create an array of icons sorted by their size and limited to the given
+// purposes.
+function toIconArray(icons, purposes) {
+  const purposesSet = new Set(purposes);
   const iconBySize = [];
   icons.forEach(icon => {
+    // icon.purpose is an array of purpose names
+    if (new Set(icon.purpose).isDisjointFrom(purposesSet)) {
+      return;
+    }
+
     const sizes = icon.sizes ?? [""];
     sizes.forEach(size => {
       iconBySize.push({ src: icon.src, size: parseIconSize(size) });

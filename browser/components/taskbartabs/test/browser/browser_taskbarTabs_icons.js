@@ -234,6 +234,47 @@ add_task(async function test_manifestIcon_differentOrigin() {
   });
 });
 
+add_task(async function test_manifestIcon_unwantedPurposesDisqualifies() {
+  // We _don't_ want to pick the one from the manifest in this case, since we
+  // want 'purpose: "any"' only.
+  await checkManifestIcon(gBadFaviconImg, gBadFaviconImg, {
+    icons: [
+      {
+        src: kGoodFaviconHttpUri.spec,
+        purpose: "monochrome maskable",
+      },
+    ],
+  });
+});
+
+add_task(async function test_manifestIcon_unwantedPurposesFallback() {
+  // Even though the 256x256 is enticing, we want to go with the 1x1 since its
+  // purpose matches.
+  await checkManifestIcon(gGoodFaviconImg, gGoodFaviconImg, {
+    icons: [
+      {
+        src: kBadFaviconHttpUri.spec,
+        purpose: "monochrome maskable",
+      },
+      {
+        src: kGoodFaviconHttpUri.spec,
+        purpose: "any any any",
+      },
+    ],
+  });
+});
+
+add_task(async function test_manifestIcon_extraPurposes() {
+  await checkManifestIcon(gGoodFaviconImg, gGoodFaviconImg, {
+    icons: [
+      {
+        src: kGoodFaviconHttpUri.spec,
+        purpose: "any maskable",
+      },
+    ],
+  });
+});
+
 add_task(async function test_findOrCreateTaskbarTab_noIcon() {
   let sandbox = sinon.createSandbox();
   let fakeImg = {};

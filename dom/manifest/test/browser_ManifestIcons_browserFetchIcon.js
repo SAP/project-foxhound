@@ -92,3 +92,77 @@ add_task(async function test_missingSizesKey() {
     is(color[2], 255, "Fetched blue icon for the largest size");
   });
 });
+
+add_task(async function test_iconPurposes() {
+  const manifestMock = JSON.stringify({
+    icons: [
+      {
+        // purpose is implied "any"
+        src: "red-50.png?Content-type=image/png",
+        sizes: "50x50",
+      },
+      {
+        purpose: "monochrome",
+        src: "blue-150.png?Content-type=image/png",
+        sizes: "150x150",
+      },
+    ],
+  });
+  const tabOptions = { gBrowser, url: makeTestURL(manifestMock) };
+  await BrowserTestUtils.withNewTab(tabOptions, async function (browser) {
+    const manifest = await ManifestObtainer.browserObtainManifest(browser);
+    let icon = await ManifestIcons.browserFetchIcon(browser, manifest, 1, [
+      "any",
+    ]);
+    let color = await SpecialPowers.spawn(browser, [icon], getIconColor);
+    is(color[0], 255, "Fetched red icon for purpose 'any'");
+
+    icon = await ManifestIcons.browserFetchIcon(browser, manifest, 51, ["any"]);
+    color = await SpecialPowers.spawn(browser, [icon], getIconColor);
+    is(color[0], 255, "Fetched red icon for purpose 'any' even if larger");
+
+    icon = await ManifestIcons.browserFetchIcon(browser, manifest, 1, [
+      "monochrome",
+    ]);
+    color = await SpecialPowers.spawn(browser, [icon], getIconColor);
+    is(color[2], 255, "Fetched blue icon for 'monochrome'");
+  });
+});
+
+add_task(async function test_multiplePurposes() {
+  const manifestMock = JSON.stringify({
+    icons: [
+      {
+        purpose: "monochrome maskable",
+        src: "red-50.png?Content-type=image/png",
+        sizes: "50x50",
+      },
+      {
+        purpose: "any",
+        src: "blue-150.png?Content-type=image/png",
+        sizes: "150x150",
+      },
+    ],
+  });
+  const tabOptions = { gBrowser, url: makeTestURL(manifestMock) };
+  await BrowserTestUtils.withNewTab(tabOptions, async function (browser) {
+    const manifest = await ManifestObtainer.browserObtainManifest(browser);
+    let icon = await ManifestIcons.browserFetchIcon(browser, manifest, "any", [
+      "monochrome",
+    ]);
+    let color = await SpecialPowers.spawn(browser, [icon], getIconColor);
+    is(color[0], 255, "Fetched red icon for purpose 'monochrome'");
+
+    icon = await ManifestIcons.browserFetchIcon(browser, manifest, "any", [
+      "maskable",
+    ]);
+    color = await SpecialPowers.spawn(browser, [icon], getIconColor);
+    is(color[0], 255, "Fetched red icon for purpose 'maskable'");
+
+    icon = await ManifestIcons.browserFetchIcon(browser, manifest, "any", [
+      "any",
+    ]);
+    color = await SpecialPowers.spawn(browser, [icon], getIconColor);
+    is(color[2], 255, "Fetched blue icon for 'any'");
+  });
+});

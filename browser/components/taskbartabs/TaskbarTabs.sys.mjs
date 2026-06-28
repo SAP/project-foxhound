@@ -284,7 +284,8 @@ async function fetchIconForTaskbarTab(aTaskbarTab, aDetails) {
         let uri = await lazy.ManifestIcons.browserFetchIcon(
           aDetails.browser,
           aDetails.manifest,
-          256
+          256,
+          ["any"]
         );
         return Services.io.newURI(uri);
       }
@@ -363,6 +364,12 @@ function findBestManifestIcon(aManifest) {
   //   [{size: WIDTH1, src: "..."}, {size: WIDTH2, src: "..."}]
   let collectedIcons =
     aManifest.icons?.flatMap(icon => {
+      // Discard any that have non-"any" purpose. (Mainly for symmetry within
+      // the tests, this case shouldn't really happen.)
+      if (!icon.purpose.includes("any")) {
+        return [];
+      }
+
       let sizes = icon.sizes ?? [""];
       return sizes.map(size => ({
         src: icon.src,
