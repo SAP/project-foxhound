@@ -4,6 +4,7 @@
 
 package org.mozilla.gecko.gfx;
 
+import android.os.Binder;
 import android.os.IBinder;
 import android.os.RemoteException;
 import android.util.Log;
@@ -17,6 +18,7 @@ import org.mozilla.gecko.process.GeckoServiceChildProcess;
   private static final String LOGTAG = "SurfaceAllocator";
 
   private static ISurfaceAllocator sAllocator;
+  private static final IBinder sClient = new Binder();
 
   // Keep a reference to all allocated Surfaces, so that we can release them if we lose the
   // connection to the allocator service.
@@ -30,9 +32,9 @@ import org.mozilla.gecko.process.GeckoServiceChildProcess;
 
     try {
       if (GeckoAppShell.isParentProcess()) {
-        sAllocator = GeckoProcessManager.getInstance().getSurfaceAllocator();
+        sAllocator = GeckoProcessManager.getInstance().getSurfaceAllocator(sClient);
       } else {
-        sAllocator = GeckoServiceChildProcess.getSurfaceAllocator();
+        sAllocator = GeckoServiceChildProcess.getSurfaceAllocator(sClient);
       }
 
       if (sAllocator == null) {

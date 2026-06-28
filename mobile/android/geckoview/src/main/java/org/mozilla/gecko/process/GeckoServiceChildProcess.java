@@ -168,7 +168,7 @@ public class GeckoServiceChildProcess extends Service {
     }
 
     @Override
-    public ISurfaceAllocator getSurfaceAllocator(final int allocatorId) {
+    public ISurfaceAllocator getSurfaceAllocator(final int allocatorId, final IBinder client) {
       Log.e(LOGTAG, "Invalid call to IChildProcess.getSurfaceAllocator for non-GPU process");
       throw new AssertionError(
           "Invalid call to IChildProcess.getSurfaceAllocator for non-GPU process.");
@@ -210,7 +210,7 @@ public class GeckoServiceChildProcess extends Service {
    * Returns the surface allocator interface that should be used by this process to allocate
    * Surfaces, for consumption in either the GPU process or parent process.
    */
-  public static ISurfaceAllocator getSurfaceAllocator() throws RemoteException {
-    return sProcessManager.getSurfaceAllocator();
+  public static ISurfaceAllocator getSurfaceAllocator(final IBinder client) throws RemoteException {
+    return sProcessManager.getSurfaceAllocator(client);
   }
 }

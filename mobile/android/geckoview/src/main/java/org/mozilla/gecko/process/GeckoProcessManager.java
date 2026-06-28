@@ -70,11 +70,12 @@ public final class GeckoProcessManager extends IProcessManager.Stub {
   }
 
   /**
-   * Returns the surface allocator interface to be used by child processes to allocate Surfaces. The
-   * service bound to the returned interface may live in either the GPU process or parent process.
+   * Returns the surface allocator interface to be used by the client process to allocate Surfaces.
+   * The service bound to the returned interface may live in either the GPU process or parent
+   * process.
    */
   @Override // IProcessManager
-  public ISurfaceAllocator getSurfaceAllocator() {
+  public ISurfaceAllocator getSurfaceAllocator(final IBinder client) {
     final boolean gpuEnabled = GeckoAppShell.isGpuProcessEnabled();
 
     try {
@@ -87,19 +88,19 @@ public final class GeckoProcessManager extends IProcessManager.Stub {
               final GpuProcessConnection conn =
                   (GpuProcessConnection) INSTANCE.mConnections.getExistingConnection(selector);
               if (conn != null) {
-                allocator.complete(conn.getSurfaceAllocator());
+                allocator.complete(conn.getSurfaceAllocator(client));
               } else {
                 // If we cannot find a GPU process, it has probably been killed and not yet
                 // restarted. Return null here, and allow the caller to try again later.
-                // We definitely do *not* want to return the parent process allocator instead, as
+                // We definitely do *not* want to return a parent process allocator instead, as
                 // that will result in surfaces being allocated in the parent process, which
                 // therefore won't be usable when the GPU process is eventually launched.
                 allocator.complete(null);
               }
             });
       } else {
-        // The GPU process is disabled, so return the parent process allocator instance.
-        allocator.complete(RemoteSurfaceAllocator.getInstance(0));
+        // The GPU process is disabled, so return a parent process allocator instance.
+        allocator.complete(RemoteSurfaceAllocator.create(0, client));
       }
       return allocator.poll(100);
     } catch (final Throwable e) {
@@ -337,7 +338,6 @@ public final class GeckoProcessManager extends IProcessManager.Stub {
 
   private static final class GpuProcessConnection extends NonContentConnection {
     private CompositorSurfaceManager mCompositorSurfaceManager;
-    private ISurfaceAllocator mSurfaceAllocator;
 
     // Unique ID used to identify each GPU process instance. Will always be non-zero,
     // and unlike the process' pid cannot be the same value for successive instances.
@@ -367,14 +367,14 @@ public final class GeckoProcessManager extends IProcessManager.Stub {
       return mCompositorSurfaceManager;
     }
 
-    public ISurfaceAllocator getSurfaceAllocator() {
-      if (mSurfaceAllocator == null && getChild() != null) {
+    public ISurfaceAllocator getSurfaceAllocator(final IBinder client) {
+      if (getChild() != null) {
         try {
-          mSurfaceAllocator = getChild().getSurfaceAllocator(mUniqueGpuProcessId);
+          return getChild().getSurfaceAllocator(mUniqueGpuProcessId, client);
         } catch (final RemoteException ignored) {
         }
       }
-      return mSurfaceAllocator;
+      return null;
     }
   }
 
