@@ -4701,9 +4701,16 @@ ${
     insertLocation.insertAdjacentElement("afterend", separator);
 
     contextMenu.addEventListener("popupshowing", () => {
-      let browser = this.window.gBrowser?.selectedBrowser;
+      let gBrowser = this.window.gBrowser;
+      let browser = gBrowser?.selectedBrowser;
       if (browser) {
-        lazy.SharingUtils.ensureShareMenu(browser, null, separator);
+        lazy.SharingUtils.ensureShareMenu(
+          browser,
+          gBrowser.selectedTabs.length > 1
+            ? gBrowser.selectedTabs.map(t => t.linkedBrowser)
+            : null,
+          separator
+        );
       }
     });
   }

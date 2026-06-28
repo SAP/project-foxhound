@@ -6,16 +6,13 @@
 const TEST_URL = "https://example.com/test";
 
 async function openShareMenuAndGetQRItem(window, { expectQRCode = true } = {}) {
-  info("Accessing File > Share menu directly");
+  info("Opening the File menu to populate the Share submenu");
 
   let fileMenuPopup = window.document.getElementById("menu_FilePopup");
   Assert.ok(fileMenuPopup, "File menu popup should exist");
 
-  let testBrowser = window.gBrowser.selectedBrowser;
-  window.SharingUtils.ensureShareMenu(
-    testBrowser,
-    null,
-    fileMenuPopup.querySelector("#menu_savePage")
+  fileMenuPopup.dispatchEvent(
+    new MouseEvent("popupshowing", { bubbles: true })
   );
 
   let shareMenuItem = fileMenuPopup.querySelector(".share-tab-url-item");
@@ -247,6 +244,78 @@ add_task(async function test_qrcode_dialog_shows_error_on_generation_failure() {
     info("Error state test completed");
   });
 });
+
+add_task(async function test_qrcode_disabled_for_multiselect_tabs() {
+  let tab1 = await BrowserTestUtils.openNewForegroundTab(gBrowser, TEST_URL);
+  let tab2 = await BrowserTestUtils.openNewForegroundTab(gBrowser, TEST_URL);
+
+  gBrowser.addToMultiSelectedTabs(tab1);
+  gBrowser.addToMultiSelectedTabs(tab2);
+
+  try {
+    Assert.equal(
+      gBrowser.selectedTabs.length,
+      2,
+      "Two tabs should be selected"
+    );
+
+    let { qrCodeItem } = await openShareMenuAndGetQRItem(window);
+    Assert.ok(
+      qrCodeItem.disabled,
+      "QR Code menu item should be disabled when multiple tabs are selected"
+    );
+  } finally {
+    gBrowser.clearMultiSelectedTabs();
+    BrowserTestUtils.removeTab(tab1);
+    BrowserTestUtils.removeTab(tab2);
+  }
+});
+
+add_task(
+  // The address bar Share context menu item is only built on macOS.
+  { skip_if: () => AppConstants.platform != "macosx" },
+  async function test_qrcode_disabled_for_multiselect_tabs_urlbar() {
+    let tab1 = await BrowserTestUtils.openNewForegroundTab(gBrowser, TEST_URL);
+    let tab2 = await BrowserTestUtils.openNewForegroundTab(gBrowser, TEST_URL);
+
+    gBrowser.addToMultiSelectedTabs(tab1);
+    gBrowser.addToMultiSelectedTabs(tab2);
+
+    try {
+      Assert.equal(
+        gBrowser.selectedTabs.length,
+        2,
+        "Two tabs should be selected"
+      );
+
+      let contextMenu = gURLBar.querySelector("moz-input-box").menupopup;
+      contextMenu.dispatchEvent(
+        new MouseEvent("popupshowing", { bubbles: true })
+      );
+
+      let shareItem = contextMenu.querySelector(".share-tab-url-item");
+      Assert.ok(
+        shareItem,
+        "Share menu item should exist in urlbar context menu"
+      );
+
+      shareItem.menupopup.dispatchEvent(
+        new MouseEvent("popupshowing", { bubbles: true })
+      );
+
+      let qrCodeItem = shareItem.menupopup.querySelector(".share-qrcode-item");
+      Assert.ok(qrCodeItem, "QR Code menu item should exist in Share submenu");
+      Assert.ok(
+        qrCodeItem.disabled,
+        "QR Code menu item should be disabled when multiple tabs are selected"
+      );
+    } finally {
+      gBrowser.clearMultiSelectedTabs();
+      BrowserTestUtils.removeTab(tab1);
+      BrowserTestUtils.removeTab(tab2);
+    }
+  }
+);
 
 add_task(async function test_qrcode_hidden_when_pref_disabled() {
   await SpecialPowers.pushPrefEnv({

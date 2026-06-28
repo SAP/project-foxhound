@@ -1863,7 +1863,9 @@ let gFileMenu = {
       this.updateTabCloseCountState();
       SharingUtils.ensureShareMenu(
         gBrowser.selectedBrowser,
-        null,
+        gBrowser.selectedTabs.length > 1
+          ? gBrowser.selectedTabs.map(t => t.linkedBrowser)
+          : null,
         document.getElementById("menu_savePage")
       );
     }
