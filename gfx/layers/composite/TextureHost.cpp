@@ -522,10 +522,10 @@ void BufferTextureHost::CreateRenderTexture(
   } else {
     texture = MakeRefPtr<wr::RenderBufferTextureHost>(GetBuffer(),
                                                       GetBufferDescriptor());
+  }
 
-    if (auto* shmemTextureHost = AsShmemTextureHost()) {
-      shmemTextureHost->OnRenderTextureCreated(texture);
-    }
+  if (auto* shmemTextureHost = AsShmemTextureHost()) {
+    shmemTextureHost->OnRenderTextureCreated(texture);
   }
 
   wr::RenderThread::Get()->RegisterExternalImage(aExternalImageId,
