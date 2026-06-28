@@ -4,6 +4,7 @@
 
 #include "Utility.h"
 
+#include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/TypedArray.h"
 #include "mozilla/dom/WebGPUBinding.h"
 #include "mozilla/webgpu/WebGPUTypes.h"
@@ -680,5 +681,18 @@ mozilla::Maybe<mozilla::Buffer<uint32_t>> GetDynamicOffsetsFromArray(
 
   return dynamicOffsets;
 }
+
+namespace ffi {
+
+// Validate that the texture format `aFormat` is a valid value for the WebIDL
+// `GPUTextureFormat` type (i.e., that it is not a wgpu extension).
+extern "C" bool wgpu_texture_format_is_valid_for_webidl(
+    const nsCString* aFormat) {
+  Maybe<dom::GPUTextureFormat> format =
+      mozilla::dom::StringToEnum<dom::GPUTextureFormat>(*aFormat);
+  return format.isSome();
+}
+
+}  // namespace ffi
 
 }  // namespace mozilla::webgpu

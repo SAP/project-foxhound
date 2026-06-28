@@ -540,16 +540,10 @@ pub extern "C" fn wgpu_client_request_device(
         label,
         required_features,
         required_limits: desc.required_limits.clone(),
-        memory_hints: wgt::MemoryHints::MemoryUsage,
-        // The content process is untrusted, so this value is ignored
-        // by the GPU process. The GPU process overwrites this with
-        // the result of consulting the `WGPU_TRACE` environment
-        // variable itself in `wgpu_server_adapter_request_device`.
-        trace: wgt::Trace::Off,
-        // The content process is untrusted, so this value is ignored
-        // by the GPU process. The GPU process overwrites this with
-        // `ExperimentalFeatures::disabled()`.
-        experimental_features: wgt::ExperimentalFeatures::disabled(),
+        // The content process is untrusted, so values set here in fields of the device descriptor
+        // not intended to be set by content are ignored, and are overridden in
+        // `server::request_device`.
+        ..wgt::DeviceDescriptor::default()
     };
     let message = Message::RequestDevice {
         adapter_id,

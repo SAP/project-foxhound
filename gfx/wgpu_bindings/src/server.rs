@@ -383,40 +383,186 @@ fn create_next_numbered_dir(dir: &std::path::Path) -> std::io::Result<std::path:
     }
 }
 
+fn sanitize_limits(limits: &mut wgt::Limits) {
+    // Copy the value of a WebGPU-defined limit without modifying it.
+    macro_rules! transfer_limit {
+        ($limit:tt) => {
+            let $limit = limits.$limit;
+        };
+    }
+    // Ignore or `debug_assert` the requested value of a limit related to `wgpu` extensions,
+    // then use the default value. (In most cases the default value of `wgpu`-defined limits
+    // is zero, but `max_non_sampler_bindings` is a special case.)
+    macro_rules! sanitize_limit {
+        ($limit:tt) => {
+            debug_assert_eq!(limits.$limit, wgt::Limits::default().$limit);
+            let $limit = wgt::Limits::default().$limit;
+        };
+    }
+
+    transfer_limit!(max_texture_dimension_1d);
+    transfer_limit!(max_texture_dimension_2d);
+    transfer_limit!(max_texture_dimension_3d);
+    transfer_limit!(max_texture_array_layers);
+    transfer_limit!(max_bind_groups);
+    transfer_limit!(max_bind_groups_plus_vertex_buffers);
+    transfer_limit!(max_bindings_per_bind_group);
+    transfer_limit!(max_dynamic_uniform_buffers_per_pipeline_layout);
+    transfer_limit!(max_dynamic_storage_buffers_per_pipeline_layout);
+    transfer_limit!(max_sampled_textures_per_shader_stage);
+    transfer_limit!(max_samplers_per_shader_stage);
+    transfer_limit!(max_storage_buffers_per_shader_stage);
+    transfer_limit!(max_storage_textures_per_shader_stage);
+    transfer_limit!(max_uniform_buffers_per_shader_stage);
+    transfer_limit!(max_uniform_buffer_binding_size);
+    transfer_limit!(max_storage_buffer_binding_size);
+    transfer_limit!(max_vertex_buffers);
+    transfer_limit!(max_buffer_size);
+    transfer_limit!(max_vertex_attributes);
+    transfer_limit!(max_vertex_buffer_array_stride);
+    transfer_limit!(max_inter_stage_shader_variables);
+    transfer_limit!(min_uniform_buffer_offset_alignment);
+    transfer_limit!(min_storage_buffer_offset_alignment);
+    transfer_limit!(max_color_attachments);
+    transfer_limit!(max_color_attachment_bytes_per_sample);
+    transfer_limit!(max_compute_workgroup_storage_size);
+    transfer_limit!(max_compute_invocations_per_workgroup);
+    transfer_limit!(max_compute_workgroup_size_x);
+    transfer_limit!(max_compute_workgroup_size_y);
+    transfer_limit!(max_compute_workgroup_size_z);
+    transfer_limit!(max_compute_workgroups_per_dimension);
+    transfer_limit!(max_immediate_size);
+
+    sanitize_limit!(max_binding_array_acceleration_structure_elements_per_shader_stage);
+    sanitize_limit!(max_binding_array_sampler_elements_per_shader_stage);
+    sanitize_limit!(max_binding_array_elements_per_shader_stage);
+    sanitize_limit!(max_non_sampler_bindings);
+    sanitize_limit!(max_task_workgroup_total_count);
+    sanitize_limit!(max_task_workgroups_per_dimension);
+    sanitize_limit!(max_mesh_workgroup_total_count);
+    sanitize_limit!(max_mesh_workgroups_per_dimension);
+    sanitize_limit!(max_task_invocations_per_workgroup);
+    sanitize_limit!(max_task_invocations_per_dimension);
+    sanitize_limit!(max_mesh_invocations_per_workgroup);
+    sanitize_limit!(max_mesh_invocations_per_dimension);
+    sanitize_limit!(max_task_payload_size);
+    sanitize_limit!(max_mesh_output_vertices);
+    sanitize_limit!(max_mesh_output_primitives);
+    sanitize_limit!(max_mesh_output_layers);
+    sanitize_limit!(max_mesh_multiview_view_count);
+    sanitize_limit!(max_blas_primitive_count);
+    sanitize_limit!(max_blas_geometry_count);
+    sanitize_limit!(max_tlas_instance_count);
+    sanitize_limit!(max_acceleration_structures_per_shader_stage);
+    sanitize_limit!(max_multiview_view_count);
+
+    // This exhaustive struct literal ensures new limits are considered in this function. Set them
+    // above with `transfer_limit!` if they're standard WebGPU limits, or with `sanitize_limit!` if
+    // they're `wgpu` extensions.
+    let sanitized_limits = wgt::Limits {
+        max_texture_dimension_1d,
+        max_texture_dimension_2d,
+        max_texture_dimension_3d,
+        max_texture_array_layers,
+        max_bind_groups,
+        max_bind_groups_plus_vertex_buffers,
+        max_bindings_per_bind_group,
+        max_dynamic_uniform_buffers_per_pipeline_layout,
+        max_dynamic_storage_buffers_per_pipeline_layout,
+        max_sampled_textures_per_shader_stage,
+        max_samplers_per_shader_stage,
+        max_storage_buffers_per_shader_stage,
+        max_storage_textures_per_shader_stage,
+        max_uniform_buffers_per_shader_stage,
+        max_binding_array_acceleration_structure_elements_per_shader_stage,
+        max_binding_array_sampler_elements_per_shader_stage,
+        max_binding_array_elements_per_shader_stage,
+        max_uniform_buffer_binding_size,
+        max_storage_buffer_binding_size,
+        max_vertex_buffers,
+        max_buffer_size,
+        max_vertex_attributes,
+        max_vertex_buffer_array_stride,
+        max_inter_stage_shader_variables,
+        min_uniform_buffer_offset_alignment,
+        min_storage_buffer_offset_alignment,
+        max_color_attachments,
+        max_color_attachment_bytes_per_sample,
+        max_compute_workgroup_storage_size,
+        max_compute_invocations_per_workgroup,
+        max_compute_workgroup_size_x,
+        max_compute_workgroup_size_y,
+        max_compute_workgroup_size_z,
+        max_compute_workgroups_per_dimension,
+        max_immediate_size,
+        max_non_sampler_bindings,
+        max_task_workgroup_total_count,
+        max_task_workgroups_per_dimension,
+        max_mesh_workgroup_total_count,
+        max_mesh_workgroups_per_dimension,
+        max_task_invocations_per_workgroup,
+        max_task_invocations_per_dimension,
+        max_mesh_invocations_per_workgroup,
+        max_mesh_invocations_per_dimension,
+        max_task_payload_size,
+        max_mesh_output_vertices,
+        max_mesh_output_primitives,
+        max_mesh_output_layers,
+        max_mesh_multiview_view_count,
+        max_blas_primitive_count,
+        max_blas_geometry_count,
+        max_tlas_instance_count,
+        max_acceleration_structures_per_shader_stage,
+        max_multiview_view_count,
+    };
+
+    *limits = sanitized_limits;
+}
+
 unsafe fn adapter_request_device(
     global: &Global,
     self_id: id::AdapterId,
-    mut desc: wgc::device::DeviceDescriptor,
+    desc: wgc::device::DeviceDescriptor,
     new_device_id: id::DeviceId,
     new_queue_id: id::QueueId,
 ) -> Option<String> {
-    if let wgt::Trace::Directory(ref path) = desc.trace {
-        log::warn!(
-            concat!(
-                "`DeviceDescriptor` from child process ",
-                "should not request wgpu trace path, ",
-                "but it did request `{}`"
-            ),
-            path.display()
-        );
-    }
-    desc.trace = wgt::Trace::Off;
+    let mut sanitized_desc = {
+        let wgc::device::DeviceDescriptor {
+            label,
+            mut required_features,
+            mut required_limits,
+            experimental_features,
+            memory_hints,
+            trace,
+        } = desc;
+
+        assert_eq!(required_features.features_wgpu, wgt::FeaturesWGPU::empty());
+        // TODO: compare to DeviceDescriptor::default() once wgpu offers `Eq`
+        // for the necessary types.
+        assert!(!experimental_features.is_enabled());
+        assert!(matches!(memory_hints, wgt::MemoryHints::Performance));
+        assert!(matches!(trace, wgt::Trace::Off));
+
+        // Note that there is logic below that adds back some native features that
+        // are used internally to implement external textures.
+        required_features.features_wgpu = wgt::FeaturesWGPU::empty();
+        sanitize_limits(&mut required_limits);
+
+        wgc::device::DeviceDescriptor {
+            label,
+            required_features,
+            required_limits,
+            experimental_features: wgt::ExperimentalFeatures::disabled(),
+            memory_hints: wgt::MemoryHints::MemoryUsage,
+            trace: wgt::Trace::Off, // may be overridden below
+        }
+    };
+
     if let Some(env_dir) = std::env::var_os("WGPU_TRACE") {
         match create_next_numbered_dir(&std::path::PathBuf::from(env_dir)) {
-            Ok(path) => desc.trace = wgt::Trace::Directory(path),
+            Ok(path) => sanitized_desc.trace = wgt::Trace::Directory(path),
             Err(err) => log::warn!("Failed to create directory for wgpu recording: {err:?}"),
         }
-    }
-
-    if desc.experimental_features.is_enabled() {
-        log::warn!(
-            concat!(
-                "`DeviceDescriptor` from child process ",
-                "should not enable experimental features, ",
-                "but it did request {:?}"
-            ),
-            desc.experimental_features
-        );
     }
 
     if wgpu_parent_is_external_texture_enabled() {
@@ -431,14 +577,10 @@ unsafe fn adapter_request_device(
             wgt::Features::TEXTURE_FORMAT_16BIT_NORM,
         ] {
             if global.adapter_features(self_id).contains(feature) {
-                desc.required_features.insert(feature);
+                sanitized_desc.required_features.insert(feature);
             }
         }
     }
-
-    // TODO: in https://github.com/gfx-rs/wgpu/pull/3626/files#diff-033343814319f5a6bd781494692ea626f06f6c3acc0753a12c867b53a646c34eR97
-    // which introduced the queue id parameter, the queue id is also the device id. I don't know how applicable this is to
-    // other situations (this one in particular).
 
     #[cfg(target_os = "linux")]
     {
@@ -460,14 +602,16 @@ unsafe fn adapter_request_device(
             (Some(_), false) => {}
             (Some(hal_adapter), true) => {
                 let mut enabled_extensions =
-                    hal_adapter.required_device_extensions(desc.required_features);
+                    hal_adapter.required_device_extensions(sanitized_desc.required_features);
                 enabled_extensions.push(khr::external_memory_fd::NAME);
                 enabled_extensions.push(ash::ext::external_memory_dma_buf::NAME);
                 enabled_extensions.push(ash::ext::image_drm_format_modifier::NAME);
                 enabled_extensions.push(khr::external_semaphore_fd::NAME);
 
-                let mut enabled_phd_features = hal_adapter
-                    .physical_device_features(&enabled_extensions, desc.required_features);
+                let mut enabled_phd_features = hal_adapter.physical_device_features(
+                    &enabled_extensions,
+                    sanitized_desc.required_features,
+                );
 
                 let raw_instance = hal_adapter.shared_instance().raw_instance();
                 let raw_physical_device = hal_adapter.raw_physical_device();
@@ -523,9 +667,9 @@ unsafe fn adapter_request_device(
                     raw_device,
                     None,
                     &enabled_extensions,
-                    desc.required_features,
-                    &desc.required_limits,
-                    &desc.memory_hints,
+                    sanitized_desc.required_features,
+                    &sanitized_desc.required_limits,
+                    &sanitized_desc.memory_hints,
                     family_info.queue_family_index,
                     0,
                 ) {
@@ -541,7 +685,7 @@ unsafe fn adapter_request_device(
                 let res = global.create_device_from_hal(
                     self_id,
                     hal_device.into(),
-                    &desc,
+                    &sanitized_desc,
                     Some(new_device_id),
                     Some(new_queue_id),
                 );
@@ -553,8 +697,12 @@ unsafe fn adapter_request_device(
         }
     }
 
-    let res =
-        global.adapter_request_device(self_id, &desc, Some(new_device_id), Some(new_queue_id));
+    let res = global.adapter_request_device(
+        self_id,
+        &sanitized_desc,
+        Some(new_device_id),
+        Some(new_queue_id),
+    );
     if let Err(err) = res {
         return Some(format!("{err}"));
     } else {
@@ -1556,6 +1704,7 @@ extern "C" {
         message: &nsCString,
     );
     fn wgpu_parent_send_server_message(parent: WebGPUParentPtr, message: &mut ByteBuf);
+    fn wgpu_texture_format_is_valid_for_webidl(format: *const nsCString) -> bool;
 }
 
 #[cfg(target_os = "linux")]
@@ -1982,6 +2131,15 @@ impl Global {
             }
             #[allow(unused_variables)]
             DeviceAction::CreateTexture(id, desc, swap_chain_id) => {
+                unsafe {
+                    assert!(wgpu_texture_format_is_valid_for_webidl(&nsCString::from(
+                        serde_json::to_value(&desc.format)
+                            .unwrap()
+                            .as_str()
+                            .unwrap(),
+                    ),));
+                }
+
                 let max = MAX_TEXTURE_EXTENT;
                 if desc.size.width > max
                     || desc.size.height > max
@@ -2311,7 +2469,8 @@ impl Global {
                 }
             }
             DeviceAction::CreateRenderBundle(id, encoder, desc) => {
-                let (_, error) = self.render_bundle_encoder_finish(Box::new(encoder), &desc, Some(id));
+                let (_, error) =
+                    self.render_bundle_encoder_finish(Box::new(encoder), &desc, Some(id));
                 if let Some(err) = error {
                     error_buf.init(err, device_id);
                 }
@@ -3172,9 +3331,7 @@ pub unsafe extern "C" fn wgpu_vksemaphore_destroy(
     unsafe {
         if let Some(hal_queue) = global.queue_as_hal::<wgc::api::Vulkan>(handle.queue_id) {
             if !hal_queue.remove_signal_semaphore(handle.semaphore) {
-                let _ = hal_queue
-                    .raw_device()
-                    .queue_wait_idle(hal_queue.as_raw());
+                let _ = hal_queue.raw_device().queue_wait_idle(hal_queue.as_raw());
             }
         }
 
