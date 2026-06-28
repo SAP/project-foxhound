@@ -177,7 +177,6 @@ using mozilla::dom::PerformanceTimingData from "mozilla/dom/PerformanceTiming.h"
 using mozilla::dom::MaybeFeaturePolicyInfo from "mozilla/dom/FeaturePolicy.h";
 using mozilla::dom::Wireframe from "mozilla/dom/DocumentBinding.h";
 using mozilla::PerfStats::MetricMask from "mozilla/PerfStats.h";
-[RefCounted] using class nsIX509Cert from "nsIX509Cert.h";
 using nsIDNSService::ResolverMode from "nsIDNSService.h";
 using mozilla::dom::UserActivation::Modifiers from "mozilla/dom/UserActivation.h";
 using mozilla::dom::PrivateAttributionImpressionType from "mozilla/dom/PrivateAttributionIPCUtils.h";
@@ -1636,14 +1635,6 @@ parent:
     async AddMemoryReport(MemoryReport aReport);
 
     async BHRThreadHang(HangDetails aHangDetails);
-
-    /*
-     * Adds a certificate exception for the given hostname and port.
-     */
-    async AddCertException(nullable nsIX509Cert aCert, nsCString aHostName,
-                           int32_t aPort, OriginAttributes aOriginAttributes,
-                           bool aIsTemporary)
-          returns (nsresult success);
 
     /*
      * Determines whether storage access can be granted automatically by the

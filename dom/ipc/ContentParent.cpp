@@ -200,7 +200,6 @@
 #include "nsIBidiKeyboard.h"
 #include "nsIBrowserDOMWindow.h"
 #include "nsICaptivePortalService.h"
-#include "nsICertOverrideService.h"
 #include "nsIClipboard.h"
 #include "nsIContentAnalysis.h"
 #include "nsIContentSecurityPolicy.h"
@@ -230,7 +229,6 @@
 #include "nsIURL.h"
 #include "nsIUserIdleService.h"
 #include "nsIWebBrowserChrome.h"
-#include "nsIX509Cert.h"
 #include "nsIXULRuntime.h"
 #include "nsPIDNSService.h"
 #if defined(MOZ_WIDGET_GTK) || defined(XP_WIN)
@@ -6632,22 +6630,6 @@ mozilla::ipc::IPCResult ContentParent::RecvBHRThreadHang(
         new nsHangDetails(HangDetails(aHangDetails), PersistedToDisk::No);
     obs->NotifyObservers(hangDetails, "bhr-thread-hang", nullptr);
   }
-  return IPC_OK();
-}
-
-mozilla::ipc::IPCResult ContentParent::RecvAddCertException(
-    nsIX509Cert* aCert, const nsACString& aHostName, int32_t aPort,
-    const OriginAttributes& aOriginAttributes, bool aIsTemporary,
-    AddCertExceptionResolver&& aResolver) {
-  nsCOMPtr<nsICertOverrideService> overrideService =
-      do_GetService(NS_CERTOVERRIDE_CONTRACTID);
-  if (!overrideService) {
-    aResolver(NS_ERROR_FAILURE);
-    return IPC_OK();
-  }
-  nsresult rv = overrideService->RememberValidityOverride(
-      aHostName, aPort, aOriginAttributes, aCert, aIsTemporary);
-  aResolver(rv);
   return IPC_OK();
 }
 

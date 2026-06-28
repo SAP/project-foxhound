@@ -64,7 +64,6 @@ class nsITimer;
 class ParentIdleListener;
 class nsIOriginsListLoadCallback;
 class nsIWidget;
-class nsIX509Cert;
 
 namespace CrashReporter {
 class CrashReporterInitArgs;
@@ -1215,11 +1214,6 @@ class ContentParent final : public PContentParent,
       const IPCStream& aIPCStream);
 
   mozilla::ipc::IPCResult RecvBHRThreadHang(const HangDetails& aHangDetails);
-
-  mozilla::ipc::IPCResult RecvAddCertException(
-      nsIX509Cert* aCert, const nsACString& aHostName, int32_t aPort,
-      const OriginAttributes& aOriginAttributes, bool aIsTemporary,
-      AddCertExceptionResolver&& aResolver);
 
   mozilla::ipc::IPCResult RecvAutomaticStorageAccessPermissionCanBeGranted(
       nsIPrincipal* aPrincipal,

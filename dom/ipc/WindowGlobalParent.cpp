@@ -69,6 +69,7 @@
 #include "nsFrameLoader.h"
 #include "nsFrameLoaderOwner.h"
 #include "nsIBrowser.h"
+#include "nsICertOverrideService.h"
 #include "nsICookieManager.h"
 #include "nsICookieService.h"
 #include "nsIEffectiveTLDService.h"
@@ -81,6 +82,7 @@
 #include "nsITimer.h"
 #include "nsIURIMutator.h"
 #include "nsIWebProgressListener.h"
+#include "nsIX509Cert.h"
 #include "nsIXPConnect.h"
 #include "nsIXULRuntime.h"
 #include "nsImportModule.h"
@@ -1592,6 +1594,50 @@ mozilla::ipc::IPCResult WindowGlobalParent::RecvSetSiteIntegrityProtected(
 
   (void)service->SetProtected(aSourceURI, originAttributes, aMaxAge);
 
+  return IPC_OK();
+}
+
+nsresult WindowGlobalParent::DoAddCertException(bool aTemporary) {
+  nsCOMPtr<nsIChannel> failedChannel(GetFailedChannel());
+  NS_ENSURE_TRUE(failedChannel, NS_ERROR_NOT_AVAILABLE);
+
+  nsCOMPtr<nsIURI> failedChannelURI;
+  nsresult rv =
+      NS_GetFinalChannelURI(failedChannel, getter_AddRefs(failedChannelURI));
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  nsCOMPtr<nsIURI> innerURI(NS_GetInnermostURI(failedChannelURI));
+  NS_ENSURE_TRUE(innerURI, NS_ERROR_DOM_INVALID_STATE_ERR);
+
+  nsAutoCString host;
+  rv = innerURI->GetAsciiHost(host);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  int32_t port;
+  rv = innerURI->GetPort(&port);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  nsCOMPtr<nsITransportSecurityInfo> failedSecurityInfo;
+  rv = failedChannel->GetSecurityInfo(getter_AddRefs(failedSecurityInfo));
+  NS_ENSURE_SUCCESS(rv, rv);
+  NS_ENSURE_TRUE(failedSecurityInfo, NS_ERROR_NOT_AVAILABLE);
+
+  nsCOMPtr<nsIX509Cert> cert;
+  rv = failedSecurityInfo->GetServerCert(getter_AddRefs(cert));
+  NS_ENSURE_SUCCESS(rv, rv);
+  NS_ENSURE_TRUE(cert, NS_ERROR_NOT_AVAILABLE);
+
+  nsCOMPtr<nsICertOverrideService> overrideService(
+      do_GetService(NS_CERTOVERRIDE_CONTRACTID));
+  NS_ENSURE_TRUE(overrideService, NS_ERROR_FAILURE);
+
+  return overrideService->RememberValidityOverride(
+      host, port, mDocumentPrincipal->OriginAttributesRef(), cert, aTemporary);
+}
+
+IPCResult WindowGlobalParent::RecvAddCertException(
+    bool aTemporary, AddCertExceptionResolver&& aResolver) {
+  aResolver(DoAddCertException(aTemporary));
   return IPC_OK();
 }
 

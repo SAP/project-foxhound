@@ -1522,91 +1522,22 @@ already_AddRefed<mozilla::dom::Promise> Document::AddCertException(
     return nullptr;
   }
 
-  nsresult rv = NS_OK;
-  if (NS_WARN_IF(!mFailedChannel)) {
-    promise->MaybeReject(NS_ERROR_DOM_INVALID_STATE_ERR);
-    return promise.forget();
+  WindowGlobalChild* wgc = GetWindowGlobalChild();
+  if (!wgc) {
+    return nullptr;
   }
+  wgc->SendAddCertException(aIsTemporary)
+      ->Then(GetCurrentSerialEventTarget(), __func__,
+             [promise](const mozilla::MozPromise<
+                       nsresult, mozilla::ipc::ResponseRejectReason,
+                       true>::ResolveOrRejectValue& aValue) {
+               if (aValue.IsResolve() && NS_SUCCEEDED(aValue.ResolveValue())) {
+                 promise->MaybeResolveWithUndefined();
+               } else {
+                 promise->MaybeReject(NS_ERROR_FAILURE);
+               }
+             });
 
-  nsCOMPtr<nsIURI> failedChannelURI;
-  NS_GetFinalChannelURI(mFailedChannel, getter_AddRefs(failedChannelURI));
-  if (!failedChannelURI) {
-    promise->MaybeReject(NS_ERROR_DOM_INVALID_STATE_ERR);
-    return promise.forget();
-  }
-
-  nsCOMPtr<nsIURI> innerURI = NS_GetInnermostURI(failedChannelURI);
-  if (!innerURI) {
-    promise->MaybeReject(NS_ERROR_DOM_INVALID_STATE_ERR);
-    return promise.forget();
-  }
-
-  nsAutoCString host;
-  innerURI->GetAsciiHost(host);
-  int32_t port;
-  innerURI->GetPort(&port);
-
-  nsCOMPtr<nsITransportSecurityInfo> tsi;
-  rv = mFailedChannel->GetSecurityInfo(getter_AddRefs(tsi));
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    promise->MaybeReject(rv);
-    return promise.forget();
-  }
-  if (NS_WARN_IF(!tsi)) {
-    promise->MaybeReject(NS_ERROR_DOM_INVALID_STATE_ERR);
-    return promise.forget();
-  }
-
-  nsCOMPtr<nsIX509Cert> cert;
-  rv = tsi->GetServerCert(getter_AddRefs(cert));
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    promise->MaybeReject(rv);
-    return promise.forget();
-  }
-  if (NS_WARN_IF(!cert)) {
-    promise->MaybeReject(NS_ERROR_DOM_INVALID_STATE_ERR);
-    return promise.forget();
-  }
-
-  if (XRE_IsContentProcess()) {
-    ContentChild* cc = ContentChild::GetSingleton();
-    MOZ_ASSERT(cc);
-    OriginAttributes const& attrs = NodePrincipal()->OriginAttributesRef();
-    cc->SendAddCertException(cert, host, port, attrs, aIsTemporary)
-        ->Then(GetCurrentSerialEventTarget(), __func__,
-               [promise](const mozilla::MozPromise<
-                         nsresult, mozilla::ipc::ResponseRejectReason,
-                         true>::ResolveOrRejectValue& aValue) {
-                 if (aValue.IsResolve()) {
-                   promise->MaybeResolve(aValue.ResolveValue());
-                 } else {
-                   promise->MaybeRejectWithUndefined();
-                 }
-               });
-    return promise.forget();
-  }
-
-  if (XRE_IsParentProcess()) {
-    nsCOMPtr<nsICertOverrideService> overrideService =
-        do_GetService(NS_CERTOVERRIDE_CONTRACTID);
-    if (!overrideService) {
-      promise->MaybeReject(NS_ERROR_FAILURE);
-      return promise.forget();
-    }
-
-    OriginAttributes const& attrs = NodePrincipal()->OriginAttributesRef();
-    rv = overrideService->RememberValidityOverride(host, port, attrs, cert,
-                                                   aIsTemporary);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      promise->MaybeReject(rv);
-      return promise.forget();
-    }
-
-    promise->MaybeResolveWithUndefined();
-    return promise.forget();
-  }
-
-  promise->MaybeReject(NS_ERROR_FAILURE);
   return promise.forget();
 }
 

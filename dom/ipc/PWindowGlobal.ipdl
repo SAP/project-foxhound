@@ -218,6 +218,8 @@ parent:
 
   async Destroy();
 
+  async AddCertException(bool aTemporary) returns(nsresult success);
+
   async ReloadWithHttpsOnlyException();
 
   async GetStorageAccessPermission(bool aIncludeIdentityCredential) returns(uint32_t permission_action);

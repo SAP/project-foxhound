@@ -357,6 +357,10 @@ class WindowGlobalParent final : public WindowContext,
   mozilla::ipc::IPCResult RecvSetSiteIntegrityProtected(
       NotNull<nsIURI*> aSourceURI, uint64_t aMaxAge);
 
+  nsresult DoAddCertException(bool aTemporary);
+  mozilla::ipc::IPCResult RecvAddCertException(
+      bool aTemporary, AddCertExceptionResolver&& aResolver);
+
   mozilla::ipc::IPCResult RecvReloadWithHttpsOnlyException();
 
   mozilla::ipc::IPCResult RecvGetStorageAccessPermission(
