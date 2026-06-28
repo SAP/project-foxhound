@@ -1096,9 +1096,17 @@ export var ReportBrokenSite = new (class ReportBrokenSite {
 
   async #openWebCompatTab(tabbrowser) {
     const { document } = tabbrowser.selectedBrowser.documentGlobal;
-    const { description, reason, url, currentTabWebcompatDetailsPromise } =
-      ViewState.get(document);
+    const {
+      description,
+      reason,
+      screenshotToggle,
+      url,
+      currentTabWebcompatDetailsPromise,
+    } = ViewState.get(document);
     const webcompatInfo = await currentTabWebcompatDetailsPromise;
+    if (!screenshotToggle.pressed) {
+      webcompatInfo.tabInfo.screenshot.value = undefined;
+    }
 
     const endpointUrl =
       Services.prefs.getStringPref(

@@ -48,6 +48,7 @@ add_task(async function testSendMoreInfoPref() {
 add_task(async function testSendingMoreInfo() {
   ensureReportBrokenSitePreffedOn();
   enableSendMoreInfo();
+  enableScreenshots();
 
   await withNewTab(REPORTABLE_PAGE_URL, async (win, tab) => {
     await testSendMoreInfo(tab, AppMenu(win));
@@ -61,8 +62,10 @@ add_task(async function testSendingMoreInfo() {
 
     // also load a video to ensure system codec
     // information is loaded and properly sent
+    // and test that screenshots aren't included
+    // if the opt-out is toggled.
     await withNewTab(VIDEO_URL, async (win2, tab2) => {
-      await testSendMoreInfo(tab2, HelpMenu(win2));
+      await testSendMoreInfo(tab2, HelpMenu(win2), { screenshotOptOut: true });
     });
   });
 });
