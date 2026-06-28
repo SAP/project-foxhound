@@ -464,17 +464,22 @@ bool DrawTargetWebgl::Init(const IntSize& size, const SurfaceFormat format,
     return false;
   }
 
-  auto handle = mozilla::ipc::shared_memory::Create(shmemSize);
+  // The handle must be frozen to prevent resizing or writing to the buffer
+  // backing our local Skia DrawTarget.
+  auto handle = mozilla::ipc::shared_memory::CreateFreezable(shmemSize);
   if (NS_WARN_IF(!handle)) {
     return false;
   }
-  auto mapping = handle.Map();
+  auto mapping = std::move(handle).Map();
   if (NS_WARN_IF(!mapping)) {
     return false;
   }
 
-  mShmemHandle = std::move(handle).ToReadOnly();
-  mShmem = std::move(mapping);
+  std::tie(mShmemHandle, mShmem) =
+      std::move(mapping).FreezeWithMutableMapping();
+  if (NS_WARN_IF(!mShmemHandle) || NS_WARN_IF(!mShmem)) {
+    return false;
+  }
 
   mSkia = new DrawTargetSkia;
   auto stride = layers::ImageDataSerializer::ComputeRGBStride(

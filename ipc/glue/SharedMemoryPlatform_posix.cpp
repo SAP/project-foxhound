@@ -79,7 +79,7 @@ static int memfd_create(const char* aName, unsigned int aFlags) {
 // and if HaveMemfd should check whether this works.)
 
 static int DupReadOnly(int aFd) {
-  MOZ_DIAGNOSTIC_ASSERT(XRE_IsParentProcess());
+  MOZ_DIAGNOSTIC_ASSERT(XRE_IsParentProcess() || XRE_IsGPUProcess());
   std::string path = StringPrintf("/proc/self/fd/%d", aFd);
   // procfs opens probably won't EINTR, but checking for it can't hurt
   return HANDLE_EINTR(open(path.c_str(), O_RDONLY | O_CLOEXEC));
@@ -156,7 +156,7 @@ static Maybe<unsigned> HaveMemfd() {
     // isn't allowed (or meaningful) for memory created by another
     // process.
 
-    if (XRE_IsParentProcess()) {
+    if (XRE_IsParentProcess() || XRE_IsGPUProcess()) {
       mozilla::UniqueFileHandle rofd(DupReadOnly(fd.get()));
       if (!rofd) {
         MOZ_LOG_FMT(gSharedMemoryLog, LogLevel::Warning,
@@ -200,7 +200,7 @@ static Maybe<PlatformHandle> CreateImpl(size_t aSize,
   MOZ_ASSERT(aSize > 0);
 
   MOZ_DIAGNOSTIC_ASSERT(
-      !aFreezable || XRE_IsParentProcess(),
+      !aFreezable || XRE_IsParentProcess() || XRE_IsGPUProcess(),
       "Child processes may not create freezable shared memory");
 
   mozilla::UniqueFileHandle fd;
