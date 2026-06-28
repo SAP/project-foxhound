@@ -91,6 +91,8 @@ skip-if = [
 
 ["test_parseStreetAddress.js"]
 
+["test_paymentsListItems.js"]
+
 ["test_phoneNumber.js"]
 
 ["test_profileAutocompleteResult.js"]

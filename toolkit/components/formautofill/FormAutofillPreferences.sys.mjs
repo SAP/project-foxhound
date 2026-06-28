@@ -121,7 +121,12 @@ export class FormAutofillPreferences {
       ];
     } else {
       items = records
-        .sort(record => record.timeCreated)
+        .sort((a, b) =>
+          (a.timeLastUsed || a.timeLastModified) <
+          (b.timeLastUsed || b.timeLastModified)
+            ? 1
+            : -1
+        )
         .map(record => {
           const config = {
             id: "payment-item",
@@ -130,7 +135,10 @@ export class FormAutofillPreferences {
             iconSrc: "chrome://browser/skin/payment-methods-16.svg",
             l10nArgs: {
               cardNumber: record["cc-number"].replace(/^(\*+)(\d+)$/, "$1 $2"),
-              expDate: record["cc-exp"].replace(/^(\d{4})-(\d{2})$/, "$2/$1"),
+              expDate: (record["cc-exp"] ?? "").replace(
+                /^(\d{4})-(\d{2})$/,
+                "$2/$1"
+              ),
             },
             options: [
               {
