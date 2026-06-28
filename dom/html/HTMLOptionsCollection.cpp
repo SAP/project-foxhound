@@ -79,16 +79,19 @@ JSObject* HTMLOptionsCollection::WrapObject(JSContext* aCx,
 }
 
 void HTMLOptionsCollection::SetLength(uint32_t aLength, ErrorResult& aError) {
-  Select()->SetLength(aLength, aError);
+  RefPtr<HTMLSelectElement> select = Select();
+  select->SetLength(aLength, aError);
 }
 
 void HTMLOptionsCollection::IndexedSetter(uint32_t aIndex,
                                           HTMLOptionElement* aOption,
                                           ErrorResult& aError) {
+  RefPtr<HTMLSelectElement> select = Select();
+
   // if the new option is null, just remove this option.  Note that it's safe
   // to pass a too-large aIndex in here.
   if (!aOption) {
-    Select()->Remove(aIndex);
+    select->Remove(aIndex);
 
     // We're done.
     return;
@@ -107,7 +110,7 @@ void HTMLOptionsCollection::IndexedSetter(uint32_t aIndex,
   NS_ASSERTION(aIndex <= mElements.Length(), "SetLength lied");
 
   if (aIndex == mElements.Length()) {
-    Select()->AppendChild(*aOption, aError);
+    select->AppendChild(*aOption, aError);
     return;
   }
 
@@ -138,9 +141,13 @@ void HTMLOptionsCollection::SetSelectedIndex(int32_t aSelectedIndex) {
 void HTMLOptionsCollection::Add(
     const HTMLOptionElementOrHTMLOptGroupElement& aElement,
     const Nullable<HTMLElementOrLong>& aBefore, ErrorResult& aError) {
-  Select()->Add(aElement, aBefore, aError);
+  RefPtr<HTMLSelectElement> select = Select();
+  select->Add(aElement, aBefore, aError);
 }
 
-void HTMLOptionsCollection::Remove(int32_t aIndex) { Select()->Remove(aIndex); }
+void HTMLOptionsCollection::Remove(int32_t aIndex) {
+  RefPtr<HTMLSelectElement> select = Select();
+  select->Remove(aIndex);
+}
 
 }  // namespace mozilla::dom
