@@ -99,13 +99,13 @@ inline bool ToJSValue(JSContext* aCx, uint64_t aArgument,
   return true;
 }
 
-// accept floating point types
+// Accept floating point types.
 inline bool ToJSValue(JSContext* aCx, float aArgument,
                       JS::MutableHandle<JS::Value> aValue) {
   // Make sure we're called in a compartment
   MOZ_ASSERT(JS::CurrentGlobalOrNull(aCx));
 
-  aValue.setNumber(aArgument);
+  aValue.set(JS_NumberValue(double(aArgument)));
   return true;
 }
 
