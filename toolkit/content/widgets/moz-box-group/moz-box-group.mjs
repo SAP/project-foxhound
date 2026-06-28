@@ -27,7 +27,7 @@ export const GROUP_TYPES = {
  *   when the group is type="reorderable-list".
  * @fires reorder
  *  Fired when items are reordered via drag-and-drop or keyboard shortcuts.
- *  The detail object contains draggedElement, targetElement, position, draggedIndex, and targetIndex.
+ *  The detail object contains draggedElement, targetElement, position, draggedIndex, targetIndex, and insertAt.
  */
 
 export default class MozBoxGroup extends MozLitElement {
@@ -210,7 +210,8 @@ export default class MozBoxGroup extends MozLitElement {
    * @param {Element} event.detail.targetElement - The target element to reorder relative to.
    * @param {number} event.detail.position - Position relative to target (-1 for before, 0 for after).
    * @param {number} event.detail.draggedIndex - The index of the element being reordered.
-   * @param {number} event.detail.targetIndex - The new index of the draggedElement.
+   * @param {number} event.detail.targetIndex - The index of the target element.
+   * @param {number} event.detail.insertAt - The index at which to insert the draggedElement after removing it from its original position.
    */
   handleReorder(event) {
     let { targetIndex } = event.detail;

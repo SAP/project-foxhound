@@ -298,6 +298,44 @@
           "targetElement should be the item after the focused item"
         );
         is(position, 0, "position should be after the targetElement");
+        is(
+          result.insertAt,
+          2,
+          "insertAt should target index 2 when moving down"
+        );
+
+        // Now move an item up with ctrl+shift+ArrowUp.
+        const keydownUpPromise = new Promise(resolve => {
+          listItems[2].addEventListener("keydown", resolve, { once: true });
+        });
+
+        listItems[2].firstChild.focus();
+        synthesizeKey("KEY_ArrowUp", { shiftKey: true, ctrlKey: true });
+
+        const upEvent = await keydownUpPromise;
+        const upResult = mozReorderableList.evaluateKeyDownEvent(upEvent);
+
+        ok(upResult, "keydown event should have been a reorder event");
+        is(
+          upResult.draggedElement,
+          listItems[2],
+          "draggedElement should be the item that is focused"
+        );
+        is(
+          upResult.targetElement,
+          listItems[1],
+          "targetElement should be the item before the focused item"
+        );
+        is(
+          upResult.position,
+          -1,
+          "position should be before the targetElement"
+        );
+        is(
+          upResult.insertAt,
+          1,
+          "insertAt should target index 1 when moving up"
+        );
       });
 
       add_task(async function testSelectorInShadowDOM() {

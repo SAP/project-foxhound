@@ -62,6 +62,31 @@ async function reorderEngine({
   await changed;
 }
 
+async function reorderEngineWithKeyboard({
+  win,
+  boxGroup,
+  draggedEngine,
+  direction,
+}) {
+  let draggedItem = boxGroup.querySelector(
+    `moz-box-item[label="${draggedEngine.name}"]`
+  );
+
+  let updatedPromise = SearchTestUtils.promiseSearchNotification(
+    SearchUtils.MODIFIED_TYPE.CHANGED,
+    SearchUtils.TOPIC_ENGINE_MODIFIED
+  );
+
+  draggedItem.focus();
+  EventUtils.synthesizeKey(
+    direction == "up" ? "KEY_ArrowUp" : "KEY_ArrowDown",
+    { ctrlKey: true, shiftKey: true },
+    win
+  );
+
+  await updatedPromise;
+}
+
 add_task(async function test_reordering_engines_position_before() {
   let { win, tab } = await openSearchPane();
 
@@ -72,11 +97,11 @@ add_task(async function test_reordering_engines_position_before() {
   await boxGroup.updateComplete;
 
   const expectedOrder = [
-    engines[1].name,
-    engines[2].name,
-    engines[0].name,
-    engines[3].name,
-    engines[4].name,
+    engines[1].id,
+    engines[2].id,
+    engines[0].id,
+    engines[3].id,
+    engines[4].id,
   ];
 
   await reorderEngine({
@@ -88,9 +113,9 @@ add_task(async function test_reordering_engines_position_before() {
   });
 
   Assert.deepEqual(
-    (await SearchService.getEngines()).map(e => e.name),
+    (await SearchService.getEngines()).map(e => e.id),
     expectedOrder,
-    `${engines[0].name} should land before ${engines[3].name}`
+    `${engines[0].id} should land before ${engines[3].id}`
   );
 
   await BrowserTestUtils.removeTab(tab);
@@ -106,11 +131,11 @@ add_task(async function test_reordering_engines_position_after_from_end() {
   await boxGroup.updateComplete;
 
   const expectedOrder = [
-    engines[0].name,
-    engines[1].name,
-    engines[4].name,
-    engines[2].name,
-    engines[3].name,
+    engines[0].id,
+    engines[1].id,
+    engines[4].id,
+    engines[2].id,
+    engines[3].id,
   ];
   await reorderEngine({
     win,
@@ -121,10 +146,51 @@ add_task(async function test_reordering_engines_position_after_from_end() {
   });
 
   Assert.deepEqual(
-    (await SearchService.getEngines()).map(e => e.name),
+    (await SearchService.getEngines()).map(e => e.id),
     expectedOrder,
-    `${engines[4].name} should land after ${engines[1].name}`
+    `${engines[4].id} should land after ${engines[1].id}`
   );
 
   await BrowserTestUtils.removeTab(tab);
+});
+
+async function testKeyboardReorder({ draggedIndex, direction }) {
+  let { win, tab } = await openSearchPane();
+
+  let boxGroupControl = await settingControlRenders("engineList", win);
+  let boxGroup = boxGroupControl.controlEl;
+
+  let engines = await SearchService.getEngines();
+  await boxGroup.updateComplete;
+
+  let expectedOrder = engines.map(e => e.id);
+  let [movingEngineId] = expectedOrder.splice(draggedIndex, 1);
+  expectedOrder.splice(
+    draggedIndex + (direction == "up" ? -1 : 1),
+    0,
+    movingEngineId
+  );
+
+  await reorderEngineWithKeyboard({
+    win,
+    boxGroup,
+    draggedEngine: engines[draggedIndex],
+    direction,
+  });
+
+  Assert.deepEqual(
+    (await SearchService.getEngines()).map(e => e.id),
+    expectedOrder,
+    `${engines[draggedIndex].id} should move ${direction} one position`
+  );
+
+  await BrowserTestUtils.removeTab(tab);
+}
+
+add_task(function test_reordering_engines_keyboard_arrow_down() {
+  return testKeyboardReorder({ draggedIndex: 0, direction: "down" });
+});
+
+add_task(function test_reordering_engines_keyboard_arrow_up() {
+  return testKeyboardReorder({ draggedIndex: 4, direction: "up" });
 });

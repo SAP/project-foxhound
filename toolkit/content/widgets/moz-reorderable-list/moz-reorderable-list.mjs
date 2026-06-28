@@ -23,6 +23,11 @@ const REORDER_PROP = "__mozReorderableIndex";
  * - `targetElement`: The element over which the dragged element was dropped.
  * - `position`: The position of the drop relative to the target element. -1
  *   means before, 0 means after.
+ * - `draggedIndex`: The original index of the dragged element.
+ * - `targetIndex`: The index of the target element.
+ * - `insertAt`: The index at which the dragged element should be inserted after
+ *   it has been removed from its original position (i.e. accounting for the
+ *   left-shift caused by splicing it out).
  *
  * Which children are reorderable is determined by the `itemSelector` property.
  *
@@ -325,12 +330,17 @@ export default class MozReorderableList extends MozLitElement {
       return undefined;
     }
 
+    let targetIndex = fromIndex + direction;
     return {
       draggedElement: fromEl,
       targetElement: items[fromIndex + direction],
       position: Math.min(direction, 0),
       draggedIndex: fromIndex,
-      targetIndex: fromIndex + direction,
+      targetIndex,
+      // Keyboard moves are always single-step, whereas drag-n-drop has more
+      // flexibility. With a keyboard move, the drop position equals the target
+      // index, so the post-splice insertion index is simply the target index.
+      insertAt: targetIndex,
     };
   }
 
