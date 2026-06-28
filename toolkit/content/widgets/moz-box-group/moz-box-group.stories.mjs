@@ -37,6 +37,8 @@ moz-box-toggle-action =
   .aria-label = Toggle I'm a box item
 moz-box-more-action =
   .title = More options, I'm a box item
+moz-box-select-action =
+  .aria-label = Choose an action for I'm a box item
 moz-box-item-reorderable-1 =
   .label = I'm box item number 1
 moz-box-item-reorderable-2 =
@@ -89,6 +91,26 @@ function getInnerElements(type, hasStatic) {
   return basicElements();
 }
 
+function selectAction() {
+  return html`<moz-select slot="actions" data-l10n-id="moz-box-select-action">
+    <moz-option
+      value="1"
+      label="Option one"
+      iconsrc="chrome://global/skin/icons/info.svg"
+    ></moz-option>
+    <moz-option
+      value="2"
+      label="Option two"
+      iconsrc="chrome://global/skin/icons/warning.svg"
+    ></moz-option>
+    <moz-option
+      value="3"
+      label="Option three"
+      iconsrc="chrome://global/skin/icons/settings.svg"
+    ></moz-option>
+  </moz-select>`;
+}
+
 function reorderableElements(hasStatic) {
   const createItems = (length, slot, startIndex = 0) =>
     Array.from({ length }).map(
@@ -102,6 +124,7 @@ function reorderableElements(hasStatic) {
             data-l10n-id="moz-box-edit-action"
             slot="actions-start"
           ></moz-button>
+          ${selectAction()}
           <moz-toggle
             slot="actions"
             pressed
@@ -118,6 +141,7 @@ function reorderableElements(hasStatic) {
 
 function basicElements() {
   return html`<moz-box-item data-l10n-id="moz-box-item">
+      ${selectAction()}
       <moz-button
         iconsrc="chrome://global/skin/icons/edit-outline.svg"
         data-l10n-id="moz-box-edit-action"

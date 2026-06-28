@@ -1283,6 +1283,60 @@
           "Focus moves back to first button after left arrow."
         );
       });
+
+      add_task(async function testSlottedPanelListClosesOnScroll() {
+        let template = html`
+          <moz-box-group style="--box-group-max-height: 80px">
+            <moz-box-item label="item 1">
+              <moz-select slot="actions">
+                <moz-option
+                  value="1"
+                  label="One"
+                  iconSrc="chrome://global/skin/icons/info.svg"
+                ></moz-option>
+                <moz-option
+                  value="2"
+                  label="Two"
+                  iconSrc="chrome://global/skin/icons/warning.svg"
+                ></moz-option>
+              </moz-select>
+            </moz-box-item>
+            <moz-box-item label="item 2"></moz-box-item>
+            <moz-box-item label="item 3"></moz-box-item>
+            <moz-box-item label="item 4"></moz-box-item>
+            <moz-box-item label="item 5"></moz-box-item>
+          </moz-box-group>
+        `;
+        let {
+          children: [boxGroup],
+        } = await testHelpers.renderTemplate(template);
+        await boxGroup.updateComplete;
+
+        let select = boxGroup.querySelector("moz-select");
+        await select.updateComplete;
+        ok(select.usePanelList, "moz-select renders a panel-list.");
+
+        let scrollContainer =
+          boxGroup.shadowRoot.querySelector(".scroll-container");
+        ok(
+          scrollContainer.scrollHeight > scrollContainer.clientHeight,
+          "Scroll container overflows so it can scroll."
+        );
+
+        let selectButton = select.shadowRoot.querySelector(".panel-trigger");
+        let shown = BrowserTestUtils.waitForEvent(select.panelList, "shown");
+        synthesizeMouseAtCenter(selectButton, {});
+        await shown;
+        ok(select.panelList.open, "panel-list opened.");
+
+        let hidden = BrowserTestUtils.waitForEvent(select.panelList, "hidden");
+        scrollContainer.scrollTop = 40;
+        await hidden;
+        ok(
+          !select.panelList.open,
+          "panel-list closes when the slotted scroll container is scrolled."
+        );
+      });
     </script>
   </head>
   <body>

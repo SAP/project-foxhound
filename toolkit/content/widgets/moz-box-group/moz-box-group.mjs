@@ -28,6 +28,10 @@ export const GROUP_TYPES = {
  * @fires reorder
  *  Fired when items are reordered via drag-and-drop or keyboard shortcuts.
  *  The detail object contains draggedElement, targetElement, position, draggedIndex, targetIndex, and insertAt.
+ * @fires scroll
+ *  Re-dispatched on the host when a scroll container in the shadow tree
+ *  scrolls, so light DOM listeners can observe scrolls that wouldn't otherwise
+ *  cross the shadow boundary.
  */
 
 export default class MozBoxGroup extends MozLitElement {
@@ -63,8 +67,18 @@ export default class MozBoxGroup extends MozLitElement {
       subtree: true,
       childList: true,
     });
+    // Capture scrolls from any scroll container in component shadow tree.
+    this.renderRoot.addEventListener("scroll", this.#forwardScroll, {
+      capture: true,
+    });
     this.updateItems();
   }
+
+  // Re-dispatch on the host so light DOM listeners (e.g. an anchored
+  // panel-list's hide-on-scroll) see scrolls that can't cross the shadow root.
+  #forwardScroll = () => {
+    this.dispatchEvent(new Event("scroll", { composed: true }));
+  };
 
   /**
    * Whether this group renders its items as a list.
