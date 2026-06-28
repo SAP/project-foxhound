@@ -240,9 +240,9 @@ already_AddRefed<AudioBuffer> AudioBuffer::Create(
     AudioChunk&& aInitialContents) {
   AudioChunk initialContents = aInitialContents;
   ErrorResult rv;
-  RefPtr<AudioBuffer> buffer =
-      new AudioBuffer(aWindow, initialContents.ChannelCount(),
-                      initialContents.mDuration, aSampleRate, rv);
+  RefPtr<AudioBuffer> buffer = new AudioBuffer(
+      aWindow, initialContents.ChannelCount(),
+      AssertedCast<uint32_t>(initialContents.mDuration), aSampleRate, rv);
   if (rv.Failed()) {
     return nullptr;
   }

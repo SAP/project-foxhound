@@ -227,11 +227,11 @@ class MediaQueue : private nsRefPtrDeque<T> {
     }
   }
 
-  uint32_t AudioFramesCount() {
+  CheckedInt<uint32_t> AudioFramesCount() {
     static_assert(std::is_same_v<T, AudioData>,
                   "Only usable with MediaQueue<AudioData>");
     RecursiveMutexAutoLock lock(mRecursiveMutex);
-    uint32_t frames = 0;
+    CheckedInt<uint32_t> frames = 0;
     for (size_t i = 0; i < GetSize(); ++i) {
       T* v = nsRefPtrDeque<T>::ObjectAt(i);
       frames += v->Frames();
