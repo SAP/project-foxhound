@@ -132,7 +132,7 @@ void SerialPort::Shutdown() {
   if (mIsOpen) {
     mIsOpen = false;
     // Don't have to wait for this
-    RefPtr<Promise> ignoredPromise = CloseStreams();
+    RefPtr<Promise> ignoredPromise = CloseStreams(StreamCloseMode::Forced);
   }
 
   if (mOpenPromise) {
@@ -497,7 +497,7 @@ already_AddRefed<Promise> SerialPort::Close(ErrorResult& aRv) {
   // promise to wait for all (steps 5-8). Our pendingClosePromise is
   // effectively resolved once both streams are nulled (step 6), so the
   // combined promise just waits for the cancel and abort to finish.
-  RefPtr<Promise> combinedPromise = CloseStreams();
+  RefPtr<Promise> combinedPromise = CloseStreams(StreamCloseMode::Graceful);
   if (!combinedPromise) {
     combinedPromise = Promise::CreateResolvedWithUndefined(global, aRv);
     if (NS_WARN_IF(aRv.Failed())) {
@@ -560,7 +560,7 @@ already_AddRefed<Promise> SerialPort::Forget(ErrorResult& aRv) {
   if (mIsOpen) {
     mIsOpen = false;
     // Don't have to wait for this
-    RefPtr<Promise> ignoredPromise = CloseStreams();
+    RefPtr<Promise> ignoredPromise = CloseStreams(StreamCloseMode::Graceful);
   }
 
   UpdateWorkerRef();
@@ -611,7 +611,7 @@ void SerialPort::MarkForgotten() {
   if (mIsOpen) {
     mIsOpen = false;
     // Don't have to wait for this
-    RefPtr<Promise> ignoredPromise = CloseStreams();
+    RefPtr<Promise> ignoredPromise = CloseStreams(StreamCloseMode::Graceful);
   }
 
   UpdateWorkerRef();
@@ -724,7 +724,7 @@ void SerialPort::NotifyDisconnected() {
   mIsOpen = false;
   mPhysicallyPresent = false;
   // Don't have to wait for this
-  RefPtr<Promise> ignoredPromise = CloseStreams();
+  RefPtr<Promise> ignoredPromise = CloseStreams(StreamCloseMode::Graceful);
   UpdateWorkerRef();
   NotifySharingStateChanged(false);
 
@@ -905,7 +905,7 @@ void SerialPort::SettleClosePromise(nsresult aResult) {
   }
 }
 
-already_AddRefed<Promise> SerialPort::CloseStreams() {
+already_AddRefed<Promise> SerialPort::CloseStreams(StreamCloseMode aMode) {
   nsIGlobalObject* global = GetRelevantGlobal();
   if (!global) {
     return nullptr;
@@ -917,8 +917,9 @@ already_AddRefed<Promise> SerialPort::CloseStreams() {
 
   MOZ_LOG(gWebSerialLog, LogLevel::Info,
           ("SerialPort[%p]::CloseStreams closing streams "
-           "(readable=%p, writable=%p)",
-           this, mReadable.get(), mWritable.get()));
+           "(readable=%p, writable=%p, mode=%s)",
+           this, mReadable.get(), mWritable.get(),
+           aMode == StreamCloseMode::Forced ? "forced" : "graceful"));
 
   AutoJSAPI jsapi;
   if (!jsapi.Init(global)) {
@@ -927,13 +928,32 @@ already_AddRefed<Promise> SerialPort::CloseStreams() {
 
   JSContext* cx = jsapi.cx();
 
-  // Cancel the readable and abort the writable, collecting their promises.
-  nsTArray<RefPtr<Promise>> streamPromises;
-
   RefPtr<DOMException> exception =
       DOMException::Create(NS_ERROR_DOM_NETWORK_ERR, "Port has been closed"_ns);
   JS::Rooted<JS::Value> errorVal(cx);
   bool hasError = ToJSValue(cx, exception, &errorVal);
+
+  // Error the streams instead of aborting, so we don't dispatchevents
+  // or runauthor-visible algorithms. The OS resources are released by
+  // mChild->Shutdown() in Shutdown().
+  if (aMode == StreamCloseMode::Forced) {
+    if (mReadable && hasError) {
+      IgnoredErrorResult rv;
+      RefPtr readable = mReadable;
+      readable->ErrorNative(cx, errorVal, rv);
+    }
+    if (mWritable && hasError) {
+      IgnoredErrorResult rv;
+      RefPtr writable = mWritable;
+      writable->ErrorNative(cx, errorVal, rv);
+    }
+    mReadable = nullptr;
+    mWritable = nullptr;
+    return nullptr;
+  }
+
+  // Cancel the readable and abort the writable, collecting their promises.
+  nsTArray<RefPtr<Promise>> streamPromises;
 
   if (mReadable && hasError) {
     IgnoredErrorResult rv;

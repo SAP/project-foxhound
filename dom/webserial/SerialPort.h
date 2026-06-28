@@ -109,11 +109,21 @@ class SerialPort final : public DOMEventTargetHelper {
  private:
   ~SerialPort() override;
 
+  enum class StreamCloseMode : uint8_t {
+    // Cancel the readable and abort the writable, running their underlying
+    // source/sink algorithms.
+    Graceful,
+    // Error both streams without running author-observable algorithms or
+    // dispatching events.
+    Forced,
+  };
+
   MOZ_CAN_RUN_SCRIPT ReadableStream* CreateReadableStream();
   MOZ_CAN_RUN_SCRIPT WritableStream* CreateWritableStream();
   void CloseAfterStreamsClosed();
   void SettleClosePromise(nsresult aResult);
-  MOZ_CAN_RUN_SCRIPT already_AddRefed<Promise> CloseStreams();
+  MOZ_CAN_RUN_SCRIPT already_AddRefed<Promise> CloseStreams(
+      StreamCloseMode aMode);
   void NotifySharingStateChanged(bool aConnected);
   void UpdateWorkerRef();
 
