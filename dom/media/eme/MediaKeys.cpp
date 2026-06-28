@@ -345,6 +345,9 @@ void MediaKeys::RejectPromise(PromiseId aId, ErrorResult&& aException,
   promise->MaybeReject(std::move(aException), aReason);
 
   if (mCreatePromiseId == aId) {
+    // Clear the create-promise id once it has settled; 0 is not a valid
+    // promise id.
+    mCreatePromiseId = 0;
     // Note: This will probably destroy the MediaKeys object!
     EME_LOG("MediaKeys[{}]::RejectPromise({}, 0x{:x}) calling Release()",
             fmt::ptr(this), aId, errorCodeAsInt);
@@ -630,6 +633,9 @@ void MediaKeys::OnCDMCreated(PromiseId aId, const uint32_t aPluginId) {
 
   promise->MaybeResolve(keys);
   if (mCreatePromiseId == aId) {
+    // Clear the create-promise id once it has settled; 0 is not a valid
+    // promise id.
+    mCreatePromiseId = 0;
     EME_LOG(
         "MediaKeys[{}]::OnCDMCreated(aId={}, aPluginId={}) calling Release()",
         fmt::ptr(this), aId, aPluginId);
