@@ -45,6 +45,7 @@ add_task(async function testSendButton() {
         url: "https://test.org/test/#fake",
         breakageCategory: "media",
         description: "test description",
+        expectNoTabDetails: true,
       });
 
       // confirm a full send

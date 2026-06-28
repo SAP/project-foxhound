@@ -40,6 +40,7 @@ export class ReportBrokenSiteParent extends JSWindowActorParent {
           glean: "tabInfo.antitracking",
         },
         hasMixedDisplayContentBlocked: {
+          isTabSpecific: true,
           value: antitracking.hasMixedDisplayContentBlocked,
           glean: "tabInfo.antitracking",
         },

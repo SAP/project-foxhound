@@ -280,6 +280,31 @@ function extractBrokenSiteReportFromGleanPing(Glean) {
   return ping;
 }
 
+function removeTabSpecificInfo(tabInfo, setToNull = false) {
+  const { antitracking } = tabInfo;
+  for (const name of [
+    "blockedOrigins",
+    "btpHasPurgedSite",
+    "hasMixedActiveContentBlocked",
+    "hasMixedDisplayContentBlocked",
+    "hasTrackingContentBlocked",
+    "isPrivateBrowsing",
+  ]) {
+    if (setToNull) {
+      antitracking[name] = null;
+    } else {
+      delete antitracking[name];
+    }
+  }
+  for (const name of ["frameworks", "languages", "useragentString"]) {
+    if (setToNull) {
+      tabInfo[name] = null;
+    } else {
+      delete tabInfo[name];
+    }
+  }
+}
+
 async function testSend(tab, menu, expectedOverrides = {}) {
   const url = expectedOverrides.url ?? menu.win.gBrowser.currentURI.spec;
   const description = expectedOverrides.description ?? "";
@@ -343,6 +368,10 @@ async function testSend(tab, menu, expectedOverrides = {}) {
     expected.tabInfo.frameworks = expectedOverrides.frameworks;
   }
 
+  if (expectedOverrides.expectNoTabDetails) {
+    removeTabSpecificInfo(expected.tabInfo, true);
+  }
+
   Services.fog.testResetFOG();
   await GleanPings.brokenSiteReport.testSubmission(
     () => {
@@ -363,14 +392,16 @@ async function testSend(tab, menu, expectedOverrides = {}) {
       } else {
         ok(!tabInfo.antitracking.blockedOrigins, "No blockedOrigins included");
       }
-      ok(tabInfo.useragentString?.length, "Got a final UA string");
+      if (!expectedOverrides.expectNoTabDetails) {
+        ok(tabInfo.useragentString?.length, "Got a final UA string");
+      }
       ok(
         browserInfo.app.defaultUseragentString?.length,
         "Got a default UA string"
       );
-
-      filterFrameworkDetectorFails(ping.tabInfo, expected.tabInfo);
-
+      if (expected?.tabInfo) {
+        filterFrameworkDetectorFails(ping.tabInfo, expected.tabInfo);
+      }
       ok(areObjectsEqual(ping, expected), "ping matches expectations");
     },
     () => rbs.clickSend()

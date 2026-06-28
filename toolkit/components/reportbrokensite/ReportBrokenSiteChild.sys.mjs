@@ -311,17 +311,19 @@ export class ReportBrokenSiteChild extends JSWindowActorChild {
 
       if (tabInfo) {
         const { antitracking, frameworks } = tabInfo;
-        const { consoleLog, screenshot, url } = webcompatInfo.tabInfo;
+        const { consoleLog, screenshot, url } = webcompatInfo.tabInfo ?? {};
 
         // If the user enters a URL unrelated to the current tab,
         // don't bother sending a screenshot or logs/etc
         let sendRecordedPageSpecificDetails = false;
-        const givenUri = URL.parse(reportUrl);
-        const recordedUri = URL.parse(url.value);
-        if (givenUri && recordedUri) {
-          sendRecordedPageSpecificDetails =
-            givenUri.origin == recordedUri.origin &&
-            givenUri.pathname == recordedUri.pathname;
+        if (url) {
+          const givenUri = URL.parse(reportUrl);
+          const recordedUri = URL.parse(url.value);
+          if (givenUri && recordedUri) {
+            sendRecordedPageSpecificDetails =
+              givenUri.origin == recordedUri.origin &&
+              givenUri.pathname == recordedUri.pathname;
+          }
         }
 
         if (sendRecordedPageSpecificDetails) {
