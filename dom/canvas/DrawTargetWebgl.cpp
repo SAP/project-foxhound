@@ -1590,7 +1590,12 @@ void SharedContextWebgl::ResetPathVertexBuffer() {
   mPathVertexOffset = sizeof(kRectVertexData);
 
   size_t newCapacity = mPathVertexBuffer->ByteLength();
-  AddUntrackedTextureMemory(newCapacity);
+  if (newCapacity > 0) {
+    AddUntrackedTextureMemory(newCapacity);
+  } else {
+    mPathVertexCapacity = 0;
+    mPathVertexOffset = 0;
+  }
 
   if (mWGROutputBuffer &&
       (!mPathVertexCapacity || newCapacity != oldCapacity)) {
@@ -6505,7 +6510,10 @@ bool DrawTargetWebgl::UsageProfile::RequiresRefresh() const {
 }
 
 void SharedContextWebgl::CachePrefs() {
-  uint32_t capacity = StaticPrefs::gfx_canvas_accelerated_gpu_path_size() << 20;
+  uint32_t capacity =
+      std::min(StaticPrefs::gfx_canvas_accelerated_gpu_path_size(),
+               uint32_t(INT32_MAX) >> 20)
+      << 20;
   if (capacity != mPathVertexCapacity) {
     mPathVertexCapacity = capacity;
     if (mPathCache) {
