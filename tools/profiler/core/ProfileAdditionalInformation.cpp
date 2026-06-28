@@ -12,9 +12,73 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/JSONStringWriteFuncs.h"
 #include "platform.h"
+#include "mozilla/scache/StartupCacheUtils.h"
 #include "nsDirectoryServiceDefs.h"
 #include "nsIFile.h"
 #include "nsIFileURL.h"
+#include "nsNetUtil.h"
+
+namespace {
+
+// Collapses ".." / "." segments via the URL parser. Unlike nsIFile::Normalize()
+// it does not resolve symlinks, which non-packaged builds use to point
+// chrome/resource sources at the source tree from within the GRE directory.
+already_AddRefed<nsIFile> CollapseRelativePathSegments(nsIFile* aFile) {
+  nsAutoCString spec;
+  nsCOMPtr<nsIURI> uri;
+  nsCOMPtr<nsIFileURL> fileURL;
+  nsCOMPtr<nsIFile> collapsed;
+  if (NS_FAILED(NS_GetURLSpecFromActualFile(aFile, spec)) ||
+      NS_FAILED(NS_NewURI(getter_AddRefs(uri), spec)) ||
+      !(fileURL = do_QueryInterface(uri)) ||
+      NS_FAILED(fileURL->GetFile(getter_AddRefs(collapsed)))) {
+    return nullptr;
+  }
+  return collapsed.forget();
+}
+
+bool IsSourceFileWithinGreDir(nsIURI* aURI) {
+  // We need to compare the actual backing file against the GRE directory. For
+  // nested URIs, NS_GetInnermostURI gives us the innermost backing URI. For
+  // example, jar:file:///path/omni.ja!/foo.js unwraps to file:///path/omni.ja.
+  // Non-nested URIs are returned unchanged, so plain file: URIs already work.
+  // chrome:, resource:, and moz-src: URIs are also non-nested, but they are
+  // aliases for another URI through the chrome registry or a substituting
+  // protocol handler. Resolve them to their concrete file: or jar: target
+  // before unwrapping.
+  nsCOMPtr<nsIURI> uri = aURI;
+  nsCString scheme;
+  if (NS_FAILED(uri->GetScheme(scheme))) {
+    return false;
+  }
+  if (scheme.EqualsLiteral("chrome") || scheme.EqualsLiteral("resource") ||
+      scheme.EqualsLiteral("moz-src")) {
+    nsCOMPtr<nsIURI> resolved;
+    if (NS_FAILED(mozilla::scache::ResolveURI(uri, getter_AddRefs(resolved))) ||
+        !resolved) {
+      return false;
+    }
+    uri = std::move(resolved);
+  }
+
+  nsCOMPtr<nsIURI> innermost = NS_GetInnermostURI(uri);
+  nsCOMPtr<nsIFileURL> fileURL = do_QueryInterface(innermost);
+  nsCOMPtr<nsIFile> scriptFile;
+  if (!fileURL || NS_FAILED(fileURL->GetFile(getter_AddRefs(scriptFile)))) {
+    return false;
+  }
+  nsCOMPtr<nsIFile> cleanFile = CollapseRelativePathSegments(scriptFile);
+  nsCOMPtr<nsIFile> greDir;
+  bool contains = false;
+  if (!cleanFile ||
+      NS_FAILED(NS_GetSpecialDirectory(NS_GRE_DIR, getter_AddRefs(greDir))) ||
+      NS_FAILED(greDir->Contains(cleanFile, &contains))) {
+    return false;
+  }
+  return contains;
+}
+
+}  // namespace
 
 JSString* mozilla::ProfileGenerationAdditionalInformation::
     MaybeCreateJSStringFromSourceData(
@@ -42,28 +106,9 @@ JSString* mozilla::ProfileGenerationAdditionalInformation::
                 NS_NewURI(getter_AddRefs(uri), nsDependentCString(filename)))) {
           return;
         }
-        nsCString scheme;
-        if (NS_FAILED(uri->GetScheme(scheme))) {
+
+        if (!IsSourceFileWithinGreDir(uri)) {
           return;
-        }
-        if (scheme.EqualsLiteral("file")) {
-          nsCOMPtr<nsIFileURL> fileURL = do_QueryInterface(uri);
-          if (!fileURL) {
-            return;
-          }
-          nsCOMPtr<nsIFile> scriptFile;
-          if (NS_FAILED(fileURL->GetFile(getter_AddRefs(scriptFile)))) {
-            return;
-          }
-          nsCOMPtr<nsIFile> greDir;
-          if (NS_FAILED(
-                  NS_GetSpecialDirectory(NS_GRE_DIR, getter_AddRefs(greDir)))) {
-            return;
-          }
-          bool contains = false;
-          if (NS_FAILED(greDir->Contains(scriptFile, &contains)) || !contains) {
-            return;
-          }
         }
 
         ProfilerJSSourceData retrievedData =
