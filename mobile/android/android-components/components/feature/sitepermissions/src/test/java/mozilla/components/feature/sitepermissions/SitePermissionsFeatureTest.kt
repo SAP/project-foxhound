@@ -1732,6 +1732,60 @@ class SitePermissionsFeatureTest {
         }
     }
 
+    @Test
+    fun `stop will hide site permissions prompt if shouldHide returns true`() {
+        val fragment: SitePermissionsDialogFragment = mock()
+        val transaction: FragmentTransaction = mock()
+
+        doReturn(fragment).`when`(mockFragmentManager).findFragmentByTag(PROMPT_FRAGMENT_TAG)
+        doReturn(transaction).`when`(mockFragmentManager).beginTransaction()
+        doReturn(transaction).`when`(transaction).remove(any())
+
+        val feature = spy(
+            SitePermissionsFeature(
+                context = testContext,
+                onNeedToRequestPermissions = mock(),
+                onShouldShowRequestPermissionRationale = { false },
+                store = browserStore,
+                fragmentManager = mockFragmentManager,
+                shouldHide = { true },
+            ),
+        )
+
+        feature.stop()
+
+        verify(feature).hideSitePermissionsPrompt()
+        verify(transaction).remove(fragment)
+        verify(transaction).commitAllowingStateLoss()
+    }
+
+    @Test
+    fun `stop will not hide site permissions prompt if shouldHide returns false`() {
+        val fragment: SitePermissionsDialogFragment = mock()
+        val transaction: FragmentTransaction = mock()
+
+        doReturn(fragment).`when`(mockFragmentManager).findFragmentByTag(PROMPT_FRAGMENT_TAG)
+        doReturn(transaction).`when`(mockFragmentManager).beginTransaction()
+        doReturn(transaction).`when`(transaction).remove(any())
+
+        val feature = spy(
+            SitePermissionsFeature(
+                context = testContext,
+                onNeedToRequestPermissions = mock(),
+                onShouldShowRequestPermissionRationale = { false },
+                store = browserStore,
+                fragmentManager = mockFragmentManager,
+                shouldHide = { false },
+            ),
+        )
+
+        feature.stop()
+
+        verify(feature, never()).hideSitePermissionsPrompt()
+        verify(mockFragmentManager, never()).beginTransaction()
+        verify(transaction, never()).remove(any())
+    }
+
     private fun mockFragmentManager(): FragmentManager {
         val fragmentManager: FragmentManager = mock()
         val transaction: FragmentTransaction = mock()

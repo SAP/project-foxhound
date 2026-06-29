@@ -1248,6 +1248,10 @@ abstract class BaseBrowserFragment :
                 },
                 shouldShowDoNotAskAgainCheckBox = context.components.appStore.state.mode != BrowsingMode.Private,
                 store = store,
+                shouldHide = {
+                    val state = requireComponents.appStore.state
+                    state.isPrivateScreenLocked && state.mode.isPrivate
+                },
             ),
             owner = this,
             view = view,
