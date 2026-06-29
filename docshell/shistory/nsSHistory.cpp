@@ -1620,13 +1620,15 @@ bool nsSHistory::MaybeCheckUnloadingIsCanceled(
   windowGlobalParent->CheckIfUnloadingIsCanceledForTraversable(
       maybeInterceptedLoadState, action,
       [action, loadResults = CopyableTArray(aLoadResults), windowGlobalParent,
-       aResolver = std::move(aResolver), id = traversable->Id(),
-       maybeInterceptedLoadState](
+       aResolver = std::move(aResolver), maybeInterceptedLoadState,
+       traversableId = traversable->Id(),
+       contentParent = RefPtr{traversable->GetContentParent()}](
           nsIDocumentViewer::PermitUnloadResult aResult) mutable {
         if (aResult != nsIDocumentViewer::PermitUnloadResult::eContinue) {
-          loadResults.RemoveElementsBy([id](const auto& result) {
-            return result.mBrowsingContext->Id() == id;
-          });
+          loadResults.RemoveElementsBy(
+              [id = traversableId](const auto& result) {
+                return result.mBrowsingContext->Id() == id;
+              });
 
           aResolver(loadResults, aResult);
           return;
@@ -1634,8 +1636,8 @@ bool nsSHistory::MaybeCheckUnloadingIsCanceled(
 
         // If we didn't intercept the navigation, the load state wasn't used so
         // we can take it out of pending.
-        if (ContentParent* cp = windowGlobalParent->GetContentParent()) {
-          RefPtr clearedPendingState = cp->TakePendingLoadStateForId(
+        if (contentParent) {
+          RefPtr clearedPendingState = contentParent->TakePendingLoadStateForId(
               maybeInterceptedLoadState->GetLoadIdentifier());
           MOZ_DIAGNOSTIC_ASSERT(!clearedPendingState ||
                                 clearedPendingState ==
