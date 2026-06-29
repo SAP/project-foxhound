@@ -80,6 +80,18 @@ class BackgroundParent final {
 
   static uint64_t GetChildID(PBackgroundParent* aBackgroundActor);
 
+  static nsCString GetRemoteType(PBackgroundParent* aBackgroundActor);
+
+  // Whenever receiving a Principal we need to validate that Principal case
+  // by case. The options can customize the behaviour of the checks.
+  // See ContentParent::ValidatePrincipal for an analog.
+  static bool ValidatePrincipal(
+      PBackgroundParent* aBackgroundActor, nsIPrincipal* aPrincipal,
+      const EnumSet<dom::ValidatePrincipalOptions>& aOptions);
+  static bool ValidatePrincipalInfo(
+      PBackgroundParent* aBackgroundActor, const PrincipalInfo& aPrincipalInfo,
+      const EnumSet<dom::ValidatePrincipalOptions>& aOptions);
+
   static void KillHardAsync(PBackgroundParent* aBackgroundActor,
                             const nsACString& aReason);
 

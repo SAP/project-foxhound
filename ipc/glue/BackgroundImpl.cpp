@@ -24,6 +24,7 @@
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/File.h"
+#include "mozilla/dom/ProcessIsolation.h"
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/WorkerRef.h"
 #include "mozilla/ipc/BackgroundStarterChild.h"
@@ -665,6 +666,33 @@ ThreadsafeContentParentHandle* BackgroundParent::GetContentParentHandle(
 // static
 uint64_t BackgroundParent::GetChildID(PBackgroundParent* aBackgroundActor) {
   return ParentImpl::GetChildID(aBackgroundActor);
+}
+
+// static
+nsCString BackgroundParent::GetRemoteType(PBackgroundParent* aBackgroundActor) {
+  ThreadsafeContentParentHandle* handle =
+      GetContentParentHandle(aBackgroundActor);
+  return handle ? handle->GetRemoteType() : NOT_REMOTE_TYPE;
+}
+
+// static
+bool BackgroundParent::ValidatePrincipal(
+    PBackgroundParent* aBackgroundActor, nsIPrincipal* aPrincipal,
+    const EnumSet<ValidatePrincipalOptions>& aOptions) {
+  return ValidatePrincipalCouldPotentiallyBeLoadedBy(
+      aPrincipal, GetRemoteType(aBackgroundActor), aOptions);
+}
+
+// static
+bool BackgroundParent::ValidatePrincipalInfo(
+    PBackgroundParent* aBackgroundActor, const PrincipalInfo& aPrincipal,
+    const EnumSet<ValidatePrincipalOptions>& aOptions) {
+  auto result = PrincipalInfoToPrincipal(aPrincipal);
+  if (NS_WARN_IF(result.isErr())) {
+    return false;
+  }
+
+  return ValidatePrincipal(aBackgroundActor, result.inspect(), aOptions);
 }
 
 // static
