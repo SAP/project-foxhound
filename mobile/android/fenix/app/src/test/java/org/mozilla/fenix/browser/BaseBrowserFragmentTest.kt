@@ -7,6 +7,7 @@ package org.mozilla.fenix.browser
 import android.content.Context
 import android.content.res.Configuration
 import android.view.View
+import android.view.ViewGroup
 import androidx.coordinatorlayout.widget.CoordinatorLayout
 import androidx.core.view.isVisible
 import io.mockk.Called
@@ -46,6 +47,7 @@ class BaseBrowserFragmentTest {
     private lateinit var engineView: EngineView
     private lateinit var settings: Settings
     private lateinit var testContext: Context
+    lateinit var container: ViewGroup
 
     @Before
     fun setup() {
@@ -56,6 +58,7 @@ class BaseBrowserFragmentTest {
             every { isTabStripEnabled } returns false
         }
         testContext = mockk(relaxed = true)
+        container = mockk(relaxed = true)
 
         every {
             testContext.components.core.geckoRuntime.isInteractiveWidgetDefaultResizesVisual
@@ -701,6 +704,87 @@ class BaseBrowserFragmentTest {
         fragment.reinitializeEngineView()
 
         verify { fragment.initializeEngineView(0, 0) }
+    }
+
+    @Test
+    fun `shouldAddBlackScreen returns true when all conditions are met`() {
+        every { testContext.components.settings.privateBrowsingModeLocked } returns true
+        every { testContext.components.appStore.state.mode.isPrivate } returns true
+        every { testContext.components.core.store.state } returns BrowserState(
+            systemPermissionRequestInProgress = true,
+        )
+        fragment.blackScreenOverlay = null
+
+        assertTrue(fragment.shouldAddBlackScreen())
+    }
+
+    @Test
+    fun `shouldAddBlackScreen returns false when private mode lock feature is off`() {
+        every { testContext.components.settings.privateBrowsingModeLocked } returns false
+        every { testContext.components.appStore.state.mode.isPrivate } returns true
+        every { testContext.components.core.store.state } returns BrowserState(
+            systemPermissionRequestInProgress = true,
+        )
+        fragment.blackScreenOverlay = null
+
+        assertFalse(fragment.shouldAddBlackScreen())
+    }
+
+    @Test
+    fun `shouldAddBlackScreen returns false when not in private mode`() {
+        every { testContext.components.settings.privateBrowsingModeLocked } returns true
+        every { testContext.components.appStore.state.mode.isPrivate } returns false
+        every { testContext.components.core.store.state } returns BrowserState(
+            systemPermissionRequestInProgress = true,
+        )
+        fragment.blackScreenOverlay = null
+
+        assertFalse(fragment.shouldAddBlackScreen())
+    }
+
+    @Test
+    fun `shouldAddBlackScreen returns false when permission request is not in progress`() {
+        every { testContext.components.settings.privateBrowsingModeLocked } returns true
+        every { testContext.components.appStore.state.mode.isPrivate } returns true
+        every { testContext.components.core.store.state } returns BrowserState(
+            systemPermissionRequestInProgress = false,
+        )
+        fragment.blackScreenOverlay = null
+
+        assertFalse(fragment.shouldAddBlackScreen())
+    }
+
+    @Test
+    fun `shouldAddBlackScreen returns false when black screen overlay already exists`() {
+        every { testContext.components.settings.privateBrowsingModeLocked } returns true
+        every { testContext.components.appStore.state.mode.isPrivate } returns true
+        every { testContext.components.core.store.state } returns BrowserState(
+            systemPermissionRequestInProgress = true,
+        )
+        fragment.blackScreenOverlay = mockk()
+
+        assertFalse(fragment.shouldAddBlackScreen())
+    }
+
+    @Test
+    fun `addBlackScreen adds black screen overlay and sets it`() {
+        assertNull(fragment.blackScreenOverlay)
+
+        fragment.addBlackScreen(container)
+
+        verify { container.addView(any()) }
+        assertNotNull(fragment.blackScreenOverlay)
+    }
+
+    @Test
+    fun `removeBlackScreen removes black screen overlay and nullifies it`() {
+        fragment.addBlackScreen(container)
+        assertNotNull(fragment.blackScreenOverlay)
+
+        fragment.removeBlackScreen(container)
+
+        verify { container.removeView(any()) }
+        assertNull(fragment.blackScreenOverlay)
     }
 }
 

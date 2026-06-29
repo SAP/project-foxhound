@@ -40,6 +40,7 @@ import java.util.Locale
  * @property desktopMode Whether or not browsing is in desktop mode by default for any newly opened tabs.
  * @property recentlyKilledTabs The list of recently killed tabs (limited to 50).
  * @property translationsInitialized Whether or not the translations flow is initialized
+ * @property systemPermissionRequestInProgress Whether a system permission request is in progress.
  */
 data class BrowserState(
     val tabs: List<TabSessionState> = emptyList(),
@@ -64,4 +65,5 @@ data class BrowserState(
     val desktopMode: Boolean = false,
     val recentlyKilledTabs: LinkedHashSet<String> = LinkedHashSet(),
     val translationsInitialized: Boolean = false,
+    val systemPermissionRequestInProgress: Boolean = false,
 ) : State

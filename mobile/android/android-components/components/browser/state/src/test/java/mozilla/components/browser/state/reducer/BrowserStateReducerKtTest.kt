@@ -4,6 +4,7 @@
 
 package mozilla.components.browser.state.reducer
 
+import mozilla.components.browser.state.action.SystemPermissionRequestAction
 import mozilla.components.browser.state.action.UpdateDistribution
 import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.ContentState
@@ -12,6 +13,8 @@ import mozilla.components.browser.state.state.TabSessionState
 import mozilla.components.support.test.mock
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class BrowserStateReducerKtTest {
     private val initialUrl = "https://mozilla.com"
@@ -249,5 +252,25 @@ class BrowserStateReducerKtTest {
         val reducedState = BrowserStateReducer.reduce(browserState, action)
 
         assertEquals(reducedState.distributionId, "testId")
+    }
+
+    @Test
+    fun `WHEN SystemPermissionStateRequestInProgress is reduced THEN systemPermissionRequestInProgress is true`() {
+        val initialState = BrowserState(systemPermissionRequestInProgress = false)
+        val action = SystemPermissionRequestAction.SystemPermissionStateRequestInProgress
+
+        val reducedState = BrowserStateReducer.reduce(initialState, action)
+
+        assertTrue(reducedState.systemPermissionRequestInProgress)
+    }
+
+    @Test
+    fun `WHEN SystemPermissionStateRequestNotInProgress is reduced THEN systemPermissionRequestInProgress is false`() {
+        val initialState = BrowserState(systemPermissionRequestInProgress = true)
+        val action = SystemPermissionRequestAction.SystemPermissionStateRequestNotInProgress
+
+        val reducedState = BrowserStateReducer.reduce(initialState, action)
+
+        assertFalse(reducedState.systemPermissionRequestInProgress)
     }
 }

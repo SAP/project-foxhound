@@ -2054,3 +2054,18 @@ sealed class DefaultDesktopModeAction : BrowserAction() {
      */
     data class DesktopModeUpdated(val newValue: Boolean) : DefaultDesktopModeAction()
 }
+
+/**
+ * [BrowserAction] implementations related to requesting system-level permissions.
+ */
+sealed class SystemPermissionRequestAction : BrowserAction() {
+    /**
+     * Indicates that a system permission request is currently in progress.
+     */
+    object SystemPermissionStateRequestInProgress : SystemPermissionRequestAction()
+
+    /**
+     * Indicates that there is no system permission request currently in progress.
+     */
+    object SystemPermissionStateRequestNotInProgress : SystemPermissionRequestAction()
+}

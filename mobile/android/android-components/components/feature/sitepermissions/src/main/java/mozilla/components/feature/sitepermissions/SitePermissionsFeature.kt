@@ -37,6 +37,7 @@ import mozilla.components.browser.state.action.ContentAction.UpdatePermissionHig
 import mozilla.components.browser.state.action.ContentAction.UpdatePermissionHighlightsStateAction.MicrophoneChangedAction
 import mozilla.components.browser.state.action.ContentAction.UpdatePermissionHighlightsStateAction.NotificationChangedAction
 import mozilla.components.browser.state.action.ContentAction.UpdatePermissionHighlightsStateAction.PersistentStorageChangedAction
+import mozilla.components.browser.state.action.SystemPermissionRequestAction
 import mozilla.components.browser.state.selector.findTabOrCustomTabOrSelectedTab
 import mozilla.components.browser.state.state.ContentState
 import mozilla.components.browser.state.state.SessionState
@@ -283,11 +284,13 @@ class SitePermissionsFeature(
     @Suppress("NestedBlockDepth")
     override fun onPermissionsResult(permissions: Array<String>, grantResults: IntArray) {
         val currentContentState = getCurrentContentState()
-        val appPermissionRequest = findRequestedAppPermission(permissions)
+        val appPermissionRequest = findRequestedAppPermission(permissions) ?: return
 
-        if (appPermissionRequest == null || currentContentState == null) {
+        if (currentContentState == null) {
+            store.dispatch(SystemPermissionRequestAction.SystemPermissionStateRequestNotInProgress)
             return
         }
+
         if (grantResults.isNotEmpty() && areAllPermissionsGranted(permissions, grantResults)) {
             appPermissionRequest.grant()
         } else {
@@ -303,6 +306,7 @@ class SitePermissionsFeature(
                 }
             }
         }
+        store.dispatch(SystemPermissionRequestAction.SystemPermissionStateRequestNotInProgress)
         consumeAppPermissionRequest(appPermissionRequest)
     }
 
