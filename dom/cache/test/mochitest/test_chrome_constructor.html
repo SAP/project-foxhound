@@ -14,12 +14,11 @@
   SpecialPowers.pushPrefEnv({
     "set": [[ "dom.caches.testing.enabled", true ]],
   }, function() {
-    // attach to a different origin's CacheStorage
-    var url = "https://example.com/";
-    var storage = SpecialPowers.createChromeCache("content", url);
+    // attach to our origin's CacheStorage.
+    var storage = SpecialPowers.createChromeCache("content", window.location.origin);
 
-    // verify we can use the other origin's CacheStorage as normal
-    var req = new Request("https://example.com/index.html");
+    // verify we can our origin's CacheStorage as normal
+    var req = new Request(`${window.location.origin}/index.html`);
     var res = new Response("hello world");
     var cache;
     storage.open("foo").then(function(c) {
