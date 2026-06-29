@@ -94,19 +94,25 @@ pub unsafe extern "C" fn crash_generator_logic_desktop(
         Ok(connector) => connector,
     };
 
-    let ipc_server = unwrap_with_message(
-        IPCServer::new(
-            client_pid,
-            client_handle,
-            listener,
-            connector,
-            breakpad_data,
-            minidump_path,
-        ),
-        "Could not create the IPC server",
+    let ipc_server = IPCServer::new(
+        client_pid,
+        client_handle,
+        listener,
+        connector,
+        breakpad_data,
+        minidump_path,
     );
 
-    main_loop(ipc_server)
+    match ipc_server {
+        Ok(ipc_server) => main_loop(ipc_server),
+        Err(e) => {
+            log::error!("Could not create the IPC server (error: {e:?})");
+            #[cfg(not(target_os = "android"))]
+            panic!("Could not create the IPC server (error: {e:?})");
+            #[allow(unreachable_code)]
+            -1
+        }
+    }
 }
 
 /// Runs the crash generator process logic, this includes the IPC used by

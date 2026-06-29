@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use crash_helper_common::{
     messages::{self, Header, Message, ProcessRendezVous},
     AncillaryData, GeckoChildId, IPCConnector, IPCConnectorKey, IPCEvent, IPCListener, IPCQueue,
@@ -86,10 +86,10 @@ impl IPCServer {
         // be sent by the client using a regular `ProcessRendezVous` message.
         let client_handle = match client_handle {
             Some(handle) => handle,
-            None => {
-                let message = connector.recv_reply::<ProcessRendezVous>()?;
-                message.get_process_handle()
-            }
+            None => connector
+                .recv_reply::<ProcessRendezVous>()
+                .context("Client failed to rendez-vous")?
+                .get_process_handle(),
         };
 
         let crash_generator = Box::new(Mutex::new(CrashGenerator::new(minidump_path.clone())));

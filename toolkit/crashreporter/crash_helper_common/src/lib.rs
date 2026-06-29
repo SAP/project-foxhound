@@ -72,4 +72,9 @@ pub trait BreakpadString {
     unsafe fn from_raw(ptr: *mut BreakpadChar) -> OsString;
 }
 
+// Use a longer timeout for I/O operations on Android as the order in which
+// processes are started is different than on the desktop platforms.
+#[cfg(target_os = "android")]
+pub const IO_TIMEOUT: u16 = 5 * 1000;
+#[cfg(not(target_os = "android"))]
 pub const IO_TIMEOUT: u16 = 2 * 1000;
