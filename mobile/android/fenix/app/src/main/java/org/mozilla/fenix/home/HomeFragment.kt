@@ -1219,7 +1219,7 @@ class HomeFragment : Fragment() {
             feature = IPProtectionWarningBinding(
                 store = requireComponents.ipProtection.store,
                 proxyUnavailable = {
-                    Vpn.errorEncountered.record()
+                    Vpn.proxyUnavailable.record()
                     findNavController().navigate(
                         HomeFragmentDirections.actionGlobalIpProtectionUnavailableDialog(),
                     )

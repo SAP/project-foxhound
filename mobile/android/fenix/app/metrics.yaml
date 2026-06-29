@@ -16303,6 +16303,21 @@ vpn:
     notification_emails:
       - android-probes@mozilla.com
     expires: never
+  proxy_unavailable:
+    type: event
+    description: >
+      Triggered when the VPN is unavailable due to an unrecoverable error,
+      leaving IP protection unable to function. This results in a blocking warning dialog which
+      requires a user action.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2048642
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D308910
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - android-probes@mozilla.com
+    expires: never
   bandwidth_limit_error:
     type: event
     description:
