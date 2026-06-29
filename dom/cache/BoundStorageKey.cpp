@@ -31,6 +31,11 @@ nsresult BoundStorageKey::Init(Namespace aNamespace,
                                nsISerialEventTarget* aTarget) {
   MOZ_DIAGNOSTIC_ASSERT(aTarget);
 
+  if (!BackgroundChild::ValidatePrincipalInfo(aPrincipalInfo, {})) {
+    MOZ_ASSERT_UNREACHABLE("BoundStorageKey failed to validate principal");
+    return NS_ERROR_UNEXPECTED;
+  }
+
   // setup child and parent actors and retarget to aTarget
   auto* actor = new BoundStorageKeyChild(this);
   MOZ_ASSERT(actor);

@@ -734,6 +734,26 @@ void BackgroundChild::InitContentStarter(ContentChild* aContent) {
   ChildImpl::InitContentStarter(aContent);
 }
 
+// static
+bool BackgroundChild::ValidatePrincipal(
+    nsIPrincipal* aPrincipal,
+    const EnumSet<ValidatePrincipalOptions>& aOptions) {
+  return ValidatePrincipalCouldPotentiallyBeLoadedBy(
+      aPrincipal, dom::CurrentRemoteType(), aOptions);
+}
+
+// static
+bool BackgroundChild::ValidatePrincipalInfo(
+    const PrincipalInfo& aPrincipalInfo,
+    const EnumSet<ValidatePrincipalOptions>& aOptions) {
+  auto result = PrincipalInfoToPrincipal(aPrincipalInfo);
+  if (NS_WARN_IF(result.isErr())) {
+    return false;
+  }
+
+  return ValidatePrincipal(result.inspect(), aOptions);
+}
+
 // -----------------------------------------------------------------------------
 // BackgroundChildImpl Public Methods
 // -----------------------------------------------------------------------------

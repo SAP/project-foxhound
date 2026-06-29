@@ -210,6 +210,14 @@ BroadcastChannel::UnpartitionedTestingChannel(const GlobalObject& aGlobal,
     bc->mWorkerRef = workerRef;
   }
 
+  // Throw if this process wouldn't be allowed to access storage.
+  if (!BackgroundChild::ValidatePrincipal(unpartitionedPrincipal, {})) {
+    MOZ_ASSERT_UNREACHABLE(
+        "ValidatePrincipal failure in UnpartitionedTestingChannel");
+    aRv.Throw(NS_ERROR_UNEXPECTED);
+    return nullptr;
+  }
+
   // Register this component to PBackground.
   PBackgroundChild* actorChild = BackgroundChild::GetOrCreateForCurrentThread();
   if (NS_WARN_IF(!actorChild)) {
@@ -330,6 +338,14 @@ already_AddRefed<BroadcastChannel> BroadcastChannel::Constructor(
        (ShouldPartitionStorage(storageAccess) &&
         !StoragePartitioningEnabled(storageAccess, cjs)))) {
     aRv.Throw(NS_ERROR_DOM_SECURITY_ERR);
+    return nullptr;
+  }
+
+  // Throw if this process wouldn't be allowed to access storage.
+  if (!BackgroundChild::ValidatePrincipal(storagePrincipal, {})) {
+    MOZ_ASSERT_UNREACHABLE(
+        "ValidatePrincipal failure in UnpartitionedTestingChannel");
+    aRv.Throw(NS_ERROR_UNEXPECTED);
     return nullptr;
   }
 
