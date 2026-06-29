@@ -598,6 +598,10 @@ abstract class BaseBrowserFragment :
                 engineView = binding.engineView,
                 useCases = context.components.useCases.contextMenuUseCases,
                 tabId = customTabSessionId,
+                shouldHide = {
+                    val state = requireComponents.appStore.state
+                    state.isPrivateScreenLocked && state.mode.isPrivate
+                },
             ),
             owner = this,
             view = view,

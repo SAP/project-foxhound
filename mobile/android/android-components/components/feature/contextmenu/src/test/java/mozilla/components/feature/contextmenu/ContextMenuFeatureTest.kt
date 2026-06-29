@@ -34,6 +34,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.never
+import org.mockito.Mockito.spy
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 import kotlin.test.assertNotNull
@@ -416,6 +417,64 @@ class ContextMenuFeatureTest {
             assertEquals("item", fact.item)
             assertEquals("test-id", fact.metadata?.get("item"))
         }
+    }
+
+    @Test
+    fun `stop will hide context menu if shouldHide returns true`() {
+        val fragment: ContextMenuFragment = mock()
+        val transaction: FragmentTransaction = mock()
+        val fragmentManager: FragmentManager = mock()
+        val (engineView, _) = mockEngineView()
+
+        doReturn(fragment).`when`(fragmentManager).findFragmentByTag(FRAGMENT_TAG)
+        doReturn(transaction).`when`(fragmentManager).beginTransaction()
+        doReturn(transaction).`when`(transaction).remove(any())
+
+        val feature = spy(
+            ContextMenuFeature(
+                fragmentManager,
+                store,
+                emptyList(),
+                engineView,
+                mock(),
+                shouldHide = { true },
+            ),
+        )
+
+        feature.stop()
+
+        verify(feature).hideContextMenu()
+        verify(fragmentManager).beginTransaction()
+        verify(transaction).remove(fragment)
+    }
+
+    @Test
+    fun `stop will not hide context menu if shouldHide returns false`() {
+        val fragment: ContextMenuFragment = mock()
+        val transaction: FragmentTransaction = mock()
+        val fragmentManager: FragmentManager = mock()
+        val (engineView, _) = mockEngineView()
+
+        doReturn(fragment).`when`(fragmentManager).findFragmentByTag(FRAGMENT_TAG)
+        doReturn(transaction).`when`(fragmentManager).beginTransaction()
+        doReturn(transaction).`when`(transaction).remove(any())
+
+        val feature = spy(
+            ContextMenuFeature(
+                fragmentManager,
+                store,
+                emptyList(),
+                engineView,
+                mock(),
+                shouldHide = { false },
+            ),
+        )
+
+        feature.stop()
+
+        verify(feature, never()).hideContextMenu()
+        verify(fragmentManager, never()).beginTransaction()
+        verify(transaction, never()).remove(any())
     }
 
     private fun mockFragmentManager(): FragmentManager {
