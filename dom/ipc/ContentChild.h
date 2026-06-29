@@ -926,6 +926,9 @@ inline nsISupports* ToSupports(mozilla::dom::ContentChild* aContentChild) {
   return static_cast<nsIDOMProcessChild*>(aContentChild);
 }
 
+// Threadsafe getter for the current process's RemoteType.
+nsCString CurrentRemoteType();
+
 }  // namespace dom
 }  // namespace mozilla
 
