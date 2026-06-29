@@ -77,6 +77,7 @@ prefs = ["security.storage.encryption.sqlite.enabled=false"]
 ["test_file_copy_failure.js"]
 
 ["test_globalObjects_ipc.js"]
+prefs = ["dom.indexedDB.testing.allowContentSystem=true"]
 
 ["test_idbSubdirUpgrade.js"]
 # Bug 1996558: migrates a plaintext profile fixture that obfsvfs cannot read; runs with SQLite encryption off.

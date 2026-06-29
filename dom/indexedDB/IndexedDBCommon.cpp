@@ -6,8 +6,18 @@
 
 #include "js/StructuredClone.h"
 #include "mozilla/SnappyUncompressInputStream.h"
+#include "mozilla/StaticPrefs_dom.h"
 
 namespace mozilla::dom::indexedDB {
+
+EnumSet<ValidatePrincipalOptions> PrincipalValidationOptions() {
+  EnumSet<ValidatePrincipalOptions> options;
+  if (StaticPrefs::dom_indexedDB_testing_allowContentSystem() &&
+      xpc::IsInAutomation()) {
+    options += ValidatePrincipalOptions::AllowSystem;
+  }
+  return options;
+}
 
 // aStructuredCloneData is a parameter rather than a return value because one
 // caller preallocates it on the heap not immediately before calling for some

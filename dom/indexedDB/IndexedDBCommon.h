@@ -5,6 +5,7 @@
 #ifndef mozilla_dom_indexeddb_IndexedDBCommon_h
 #define mozilla_dom_indexeddb_IndexedDBCommon_h
 
+#include "mozilla/dom/ProcessIsolation.h"
 #include "mozilla/dom/quota/QuotaCommon.h"
 
 class JSStructuredCloneData;
@@ -13,6 +14,8 @@ class nsIInputStream;
 namespace mozilla::dom::indexedDB {
 
 static constexpr uint32_t kFileCopyBufferSize = 32768;
+
+EnumSet<ValidatePrincipalOptions> PrincipalValidationOptions();
 
 nsresult SnappyUncompressStructuredCloneData(
     nsIInputStream& aInputStream, JSStructuredCloneData& aStructuredCloneData);
