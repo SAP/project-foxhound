@@ -3258,6 +3258,11 @@ nsresult PresShell::GoToAnchor(const nsAString& aAnchorName,
         }
       }
     }
+    // The focusing stuff above could have set the dedicated sequential
+    // focus navigation starting point due to blurring the focused element.
+    // However, we want focus navigation to start from the the selection
+    // (which is now target), so we clear that here.
+    mDocument->SetFocusNavigationStartingPoint(nullptr);
 
     // If the target is an animation element, activate the animation
     if (auto* animationElement = SVGAnimationElement::FromNode(target.get())) {
