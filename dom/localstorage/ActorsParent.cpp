@@ -65,6 +65,7 @@
 #include "mozilla/dom/PBackgroundLSSharedTypes.h"
 #include "mozilla/dom/PBackgroundLSSimpleRequestParent.h"
 #include "mozilla/dom/PBackgroundLSSnapshotParent.h"
+#include "mozilla/dom/ProcessIsolation.h"
 #include "mozilla/dom/SnappyUtils.h"
 #include "mozilla/dom/StorageDBUpdater.h"
 #include "mozilla/dom/StorageUtils.h"
@@ -3124,12 +3125,24 @@ void ForceKillAllDatabases() {
   }
 }
 
-bool VerifyPrincipalInfo(const PrincipalInfo& aPrincipalInfo,
+bool VerifyPrincipalInfo(ThreadsafeContentParentHandle* aContentParentHandle,
+                         const PrincipalInfo& aPrincipalInfo,
                          const PrincipalInfo& aStoragePrincipalInfo,
                          bool aCheckClientPrincipal) {
   AssertIsOnBackgroundThread();
 
   if (NS_WARN_IF(!quota::IsPrincipalInfoValid(aPrincipalInfo))) {
+    return false;
+  }
+
+  auto prinResult = PrincipalInfoToPrincipal(aPrincipalInfo);
+  if (NS_WARN_IF(prinResult.isErr())) {
+    return false;
+  }
+
+  if (aContentParentHandle &&
+      NS_WARN_IF(!ValidatePrincipalCouldPotentiallyBeLoadedBy(
+          prinResult.inspect(), aContentParentHandle->GetRemoteType(), {}))) {
     return false;
   }
 
@@ -6309,7 +6322,8 @@ bool LSRequestBase::VerifyRequestParams() {
           mParams.get_LSRequestPreloadDatastoreParams().commonParams();
 
       if (NS_WARN_IF(!VerifyPrincipalInfo(
-              params.principalInfo(), params.storagePrincipalInfo(), false))) {
+              ContentParentHandle(), params.principalInfo(),
+              params.storagePrincipalInfo(), false))) {
         return false;
       }
 
@@ -6327,16 +6341,16 @@ bool LSRequestBase::VerifyRequestParams() {
 
       const LSRequestCommonParams& commonParams = params.commonParams();
 
-      if (NS_WARN_IF(!VerifyPrincipalInfo(commonParams.principalInfo(),
-                                          commonParams.storagePrincipalInfo(),
-                                          false))) {
+      if (NS_WARN_IF(!VerifyPrincipalInfo(
+              ContentParentHandle(), commonParams.principalInfo(),
+              commonParams.storagePrincipalInfo(), false))) {
         return false;
       }
 
       if (params.clientPrincipalInfo() &&
-          NS_WARN_IF(!VerifyPrincipalInfo(commonParams.principalInfo(),
-                                          params.clientPrincipalInfo().ref(),
-                                          true))) {
+          NS_WARN_IF(!VerifyPrincipalInfo(
+              ContentParentHandle(), commonParams.principalInfo(),
+              params.clientPrincipalInfo().ref(), true))) {
         return false;
       }
 
@@ -6359,14 +6373,15 @@ bool LSRequestBase::VerifyRequestParams() {
           mParams.get_LSRequestPrepareObserverParams();
 
       if (NS_WARN_IF(!VerifyPrincipalInfo(
-              params.principalInfo(), params.storagePrincipalInfo(), false))) {
+              ContentParentHandle(), params.principalInfo(),
+              params.storagePrincipalInfo(), false))) {
         return false;
       }
 
       if (params.clientPrincipalInfo() &&
-          NS_WARN_IF(!VerifyPrincipalInfo(params.principalInfo(),
-                                          params.clientPrincipalInfo().ref(),
-                                          true))) {
+          NS_WARN_IF(!VerifyPrincipalInfo(
+              ContentParentHandle(), params.principalInfo(),
+              params.clientPrincipalInfo().ref(), true))) {
         return false;
       }
 
@@ -8063,8 +8078,9 @@ bool LSSimpleRequestBase::VerifyRequestParams() {
       const LSSimpleRequestPreloadedParams& params =
           mParams.get_LSSimpleRequestPreloadedParams();
 
-      if (NS_WARN_IF(!VerifyPrincipalInfo(
-              params.principalInfo(), params.storagePrincipalInfo(), false))) {
+      if (NS_WARN_IF(
+              !VerifyPrincipalInfo(mContentParentHandle, params.principalInfo(),
+                                   params.storagePrincipalInfo(), false))) {
         return false;
       }
 
@@ -8075,8 +8091,9 @@ bool LSSimpleRequestBase::VerifyRequestParams() {
       const LSSimpleRequestGetStateParams& params =
           mParams.get_LSSimpleRequestGetStateParams();
 
-      if (NS_WARN_IF(!VerifyPrincipalInfo(
-              params.principalInfo(), params.storagePrincipalInfo(), false))) {
+      if (NS_WARN_IF(
+              !VerifyPrincipalInfo(mContentParentHandle, params.principalInfo(),
+                                   params.storagePrincipalInfo(), false))) {
         return false;
       }
 
