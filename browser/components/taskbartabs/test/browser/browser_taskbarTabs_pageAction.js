@@ -9,6 +9,7 @@ const BASE_URL = "https://example.com/";
 // eslint-disable-next-line @microsoft/sdl/no-insecure-url
 const BASE_URL_HTTP = "http://mochi.test:8888/";
 const HIDDEN_URI = "about:about";
+const FILE_URI = "file:///";
 
 ChromeUtils.defineESModuleGetters(this, {
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
@@ -249,6 +250,8 @@ add_task(async function testVariousVisibilityChanges() {
     [BASE_URL, BASE_URL_HTTP, true, true],
     [HIDDEN_URI, BASE_URL, false, true],
     [HIDDEN_URI, BASE_URL_HTTP, false, true],
+    [FILE_URI, BASE_URL, false, true],
+    [BASE_URL, FILE_URI, true, false],
   ];
 
   for (const args of argsList) {
@@ -271,7 +274,7 @@ async function testVisibilityChange(aFrom, aTo, aFirstVisible, aSecondVisible) {
   is(
     element.hidden,
     !aFirstVisible,
-    `Page action is ${aFirstVisible ? "" : "not "}hidden on ${getURIScheme(aFrom)} new tab`
+    `Page action is ${aFirstVisible ? "not " : ""}hidden on ${getURIScheme(aFrom)} new tab`
   );
 
   locationChange = BrowserTestUtils.waitForLocationChange(gBrowser, aTo);
@@ -281,7 +284,7 @@ async function testVisibilityChange(aFrom, aTo, aFirstVisible, aSecondVisible) {
   is(
     element.hidden,
     !aSecondVisible,
-    `Page action is ${aSecondVisible ? "" : "not "}hidden on ${getURIScheme(aTo)} reused tab`
+    `Page action is ${aSecondVisible ? "not " : ""}hidden on ${getURIScheme(aTo)} reused tab`
   );
 
   BrowserTestUtils.removeTab(tab);

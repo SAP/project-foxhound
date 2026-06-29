@@ -123,9 +123,9 @@ function initVisibilityChanges(aWindow, aElement) {
   // Filled in at the end; memoized to avoid performance failures.
   let isTaskbarTabsEnabled = false;
 
-  const shouldHide = aLocation => {
+  const shouldShow = aLocation => {
     if (!isTaskbarTabsEnabled) {
-      return true;
+      return false;
     }
 
     // Forcefully initialize Taskbar Tabs. At some point, this will also affect
@@ -136,22 +136,24 @@ function initVisibilityChanges(aWindow, aElement) {
     // TaskbarTabs already initialized.
     lazy.TaskbarTabs.waitUntilReady();
 
-    return (
-      !(aLocation instanceof Ci.nsIURL) && !aLocation.scheme.startsWith("http")
-    );
+    if (!(aLocation instanceof Ci.nsIURL)) {
+      return false;
+    }
+
+    return ["http", "https"].includes(aLocation.scheme);
   };
 
   aWindow.gBrowser.addProgressListener({
     onLocationChange(aWebProgress, aRequest, aLocation) {
       if (aWebProgress.isTopLevel) {
-        aElement.hidden = shouldHide(aLocation);
+        aElement.hidden = !shouldShow(aLocation);
       }
     },
   });
 
   const observer = () => {
     isTaskbarTabsEnabled = lazy.TaskbarTabsUtils.isEnabled();
-    aElement.hidden = shouldHide(aWindow.gBrowser.currentURI);
+    aElement.hidden = !shouldShow(aWindow.gBrowser.currentURI);
   };
 
   Services.prefs.addObserver("browser.taskbarTabs.enabled", observer);
