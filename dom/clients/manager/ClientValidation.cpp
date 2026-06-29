@@ -5,6 +5,7 @@
 #include "ClientValidation.h"
 
 #include "mozilla/StaticPrefs_security.h"
+#include "mozilla/dom/ProcessIsolation.h"
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
 #include "mozilla/net/MozURL.h"
 
@@ -14,11 +15,22 @@ using mozilla::ipc::ContentPrincipalInfo;
 using mozilla::ipc::PrincipalInfo;
 using mozilla::net::MozURL;
 
-bool ClientIsValidPrincipalInfo(const PrincipalInfo& aPrincipalInfo) {
-  // Ideally we would verify that the source process has permission to
-  // create a window or worker with the given principal, but we don't
-  // currently have any such restriction in place.  Instead, at least
-  // verify the PrincipalInfo is an expected type and has a parsable
+bool ClientIsValidPrincipalInfo(const PrincipalInfo& aPrincipalInfo,
+                                const nsACString& aRemoteType) {
+  auto result = mozilla::ipc::PrincipalInfoToPrincipal(aPrincipalInfo);
+  if (NS_WARN_IF(result.isErr())) {
+    return false;
+  }
+
+  // FIXME: Remove the system allowance once for non-inference processes once we
+  // can load documents with the system principal into content.
+  if (NS_WARN_IF(!ValidatePrincipalCouldPotentiallyBeLoadedBy(
+          result.inspect(), aRemoteType,
+          {ValidatePrincipalOptions::AllowSystem}))) {
+    return false;
+  }
+
+  // Verify the PrincipalInfo is an expected type and has a parsable
   // origin/spec.
   switch (aPrincipalInfo.type()) {
     // Any system and null principal is acceptable.

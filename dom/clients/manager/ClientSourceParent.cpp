@@ -163,7 +163,10 @@ IPCResult ClientSourceParent::Init() {
   // Ensure the principal is reasonable before adding ourself to the service.
   // Since we validate the principal on the child side as well, any failure
   // here is treated as fatal.
-  if (NS_WARN_IF(!ClientIsValidPrincipalInfo(mClientInfo.PrincipalInfo()))) {
+  if (NS_WARN_IF(!ClientIsValidPrincipalInfo(
+          mClientInfo.PrincipalInfo(),
+          mContentParentHandle ? mContentParentHandle->GetRemoteType()
+                               : NOT_REMOTE_TYPE))) {
     mService->ForgetFutureSource(mClientInfo.ToIPC());
     return IPC_FAIL(Manager(), "Invalid PrincipalInfo!");
   }

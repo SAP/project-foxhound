@@ -15,7 +15,8 @@ class PrincipalInfo;
 namespace dom {
 
 bool ClientIsValidPrincipalInfo(
-    const mozilla::ipc::PrincipalInfo& aPrincipalInfo);
+    const mozilla::ipc::PrincipalInfo& aPrincipalInfo,
+    const nsACString& aRemoteType);
 
 bool ClientIsValidCreationURL(const mozilla::ipc::PrincipalInfo& aPrincipalInfo,
                               const nsACString& aURL);
