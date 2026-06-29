@@ -349,6 +349,8 @@ export class AboutWelcomeParent extends JSWindowActorParent {
         return lazy.ASRouterScreenUtils.evaluateTargetingAndRemoveScreens(data);
       case "AWPage:ADD_SCREEN_IMPRESSION":
         return lazy.ASRouterScreenUtils.addScreenImpression(data);
+      case "AWPage:IMPRESSION_ACTION":
+        return lazy.ASRouterScreenUtils.handleImpressionAction(data, browser);
       case "AWPage:EVALUATE_ATTRIBUTE_TARGETING":
         return lazy.ASRouterScreenUtils.evaluateScreenTargeting(data);
       case "AWPage:NEGOTIATE_LANGPACK":

@@ -14,6 +14,21 @@ export const MultiStageUtils = {
   handleUserAction(action) {
     return window.AWSendToParent("SPECIAL_ACTION", action);
   },
+  handleImpressionAction(action, messageId, screenId) {
+    return Promise.resolve(
+      window.AWSendImpressionAction?.({
+        action,
+        message_id: messageId,
+        screen_id: screenId,
+      })
+    ).then(fired => {
+      // Record action telemetry only when the parent actually ran the action;
+      // it may be rejected by the allowlist or suppressed by `once`.
+      if (fired) {
+        this.sendActionTelemetry(messageId, action.type, "IMPRESSION_ACTION");
+      }
+    });
+  },
   sendImpressionTelemetry(messageId, context = {}) {
     window.AWSendEventTelemetry?.({
       event: "IMPRESSION",

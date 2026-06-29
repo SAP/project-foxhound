@@ -99,6 +99,17 @@ export const MultiStageAboutWelcome = props => {
             screen_initials: screenInitials,
           });
 
+          // Impression actions should be fired before recording the
+          // impression, so the check that ensures that actions run only once
+          // has an accurate count of how many impressions have actually occured
+          if (screen.content?.impression_action) {
+            MultiStageUtils.handleImpressionAction(
+              screen.content.impression_action,
+              messageId,
+              screen.id
+            );
+          }
+
           window.AWAddScreenImpression?.(screen);
         }
       });

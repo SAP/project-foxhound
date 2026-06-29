@@ -68,3 +68,40 @@ Provides users with set of mutually exclusive options.
 Allows users to select from a set of themes to personalize the browser’s appearance.
 
 ![About Welcome Themes](./aboutwelcome-themes.png)
+
+## Impression Actions
+
+A screen can fire a special message action automatically when it is first shown. This is configured by adding an `impression_action` to the screen's `content`:
+
+```javascript
+{
+  id: "AW_PIN_SCREEN",
+  content: {
+    title: { string_id: "..." },
+    impression_action: {
+      type: "PIN_FIREFOX_TO_TASKBAR",
+      data: { privatePin: false },
+      once: true,
+    },
+  },
+}
+```
+
+There is an [allowlist of action types](https://searchfox.org/firefox-main/search?q=ALLOWED_IMPRESSION_ACTIONS&path=browser%2Fcomponents%2Fasrouter%2Fmodules%2FASRouterScreenUtils.sys.mjs&case=false&regexp=false) that are allowed to fire on impression. The allowlist is enforced in `ASRouterScreenUtils.handleImpressionAction`. A `MULTI_ACTION` may fire on impression only when every nested action is itself allowlisted. If any nested action is not allowlisted, the whole action is rejected. When `once` is `true`, the action fires only on the screen's first view, determined from recorded screen impressions.
+
+For example, to pin to both the taskbar and the Start Menu on impression:
+
+```javascript
+impression_action: {
+  type: "MULTI_ACTION",
+  once: true,
+  data: {
+    actions: [
+      { type: "PIN_FIREFOX_TO_TASKBAR" },
+      { type: "PIN_FIREFOX_TO_START_MENU" },
+    ],
+  },
+}
+```
+
+Impression actions are currently only supported on `about:welcome`. The trigger is scoped by exporting `AWSendImpressionAction` from the about:welcome actor, so on other surfaces it is undefined and the action silently does nothing. Spotlights and feature callouts route through the same `AboutWelcomeParent` message handler and could take advantage of this feature in the future by exporting that `AWSendImpressionAction`, but currently do not.

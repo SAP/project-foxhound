@@ -64,6 +64,10 @@ export class AboutWelcomeChild extends JSWindowActorChild {
       defineAs: "AWAddScreenImpression",
     });
 
+    Cu.exportFunction(this.AWSendImpressionAction.bind(this), window, {
+      defineAs: "AWSendImpressionAction",
+    });
+
     Cu.exportFunction(this.AWGetFeatureConfig.bind(this), window, {
       defineAs: "AWGetFeatureConfig",
     });
@@ -201,6 +205,10 @@ export class AboutWelcomeChild extends JSWindowActorChild {
     return this.wrapPromise(
       this.sendQuery("AWPage:ADD_SCREEN_IMPRESSION", screen)
     );
+  }
+
+  AWSendImpressionAction(data) {
+    return this.wrapPromise(this.sendQuery("AWPage:IMPRESSION_ACTION", data));
   }
 
   AWFindBackupsInWellKnownLocations(data) {

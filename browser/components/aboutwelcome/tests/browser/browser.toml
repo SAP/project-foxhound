@@ -40,6 +40,8 @@ fail-if = [
   "a11y_checks", # Bug 1854514 clicked primary button may not be focusable
 ]
 
+["browser_aboutwelcome_impression_action.js"]
+
 ["browser_aboutwelcome_mobile_downloads.js"]
 
 ["browser_aboutwelcome_multiselect.js"]

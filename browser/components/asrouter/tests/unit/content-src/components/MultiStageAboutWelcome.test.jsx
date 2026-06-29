@@ -461,6 +461,139 @@ describe("MultiStageAboutWelcome module", () => {
 
       sendEventStub.restore();
     });
+
+    it("fires a screen's impression_action on impression before recording the impression", async () => {
+      const impression_action = {
+        type: "PIN_FIREFOX_TO_TASKBAR",
+        once: true,
+      };
+      const screens = [
+        {
+          id: "TEST_SCREEN_AB",
+          content: {
+            title: "test title",
+            impression_action,
+          },
+        },
+      ];
+      const handleImpressionStub = sandbox.stub(
+        MultiStageUtils,
+        "handleImpressionAction"
+      );
+      const addScreenImpressionStub = globals.set(
+        "AWAddScreenImpression",
+        sandbox.stub()
+      );
+
+      const wrapper = mount(
+        <MultiStageAboutWelcome {...DEFAULT_PROPS} defaultScreens={screens} />
+      );
+      await spinEventLoop();
+      wrapper.update();
+
+      assert.calledOnce(handleImpressionStub);
+      assert.calledWith(
+        handleImpressionStub,
+        impression_action,
+        sinon.match.string,
+        "TEST_SCREEN_AB"
+      );
+      // The action must fire before the impression is recorded so the parent's
+      // `once` check sees the impression count from before this view.
+      assert.calledOnce(addScreenImpressionStub);
+      assert.ok(
+        handleImpressionStub.calledBefore(addScreenImpressionStub),
+        "Expected impression action to be dispatched before AWAddScreenImpression"
+      );
+    });
+
+    it("does not fire an impression_action when a screen doesn't have one", async () => {
+      const screens = [
+        {
+          id: "TEST_SCREEN_NO_ACTION",
+          content: { title: "test title" },
+        },
+      ];
+      const handleImpressionStub = sandbox.stub(
+        MultiStageUtils,
+        "handleImpressionAction"
+      );
+
+      const wrapper = mount(
+        <MultiStageAboutWelcome {...DEFAULT_PROPS} defaultScreens={screens} />
+      );
+      await spinEventLoop();
+      wrapper.update();
+
+      assert.notCalled(handleImpressionStub);
+    });
+  });
+
+  describe("MultiStageUtils.handleImpressionAction", () => {
+    it("no-ops and sends no telemetry when AWSendImpressionAction is unavailable", async () => {
+      // AWSendImpressionAction is only exported on about:welcome. When it is undefined elsewhere
+      // the impression action should silently not dispatch without error.
+      const telemetryStub = sandbox.stub(
+        MultiStageUtils,
+        "sendActionTelemetry"
+      );
+
+      await MultiStageUtils.handleImpressionAction(
+        { type: "PIN_FIREFOX_TO_TASKBAR" },
+        "MSG_1",
+        "SCREEN_1"
+      );
+
+      assert.notCalled(telemetryStub);
+    });
+
+    it("dispatches the wrapped action when on about:welcome", () => {
+      const action = { type: "PIN_FIREFOX_TO_TASKBAR", once: true };
+      const sendStub = globals.set("AWSendImpressionAction", sandbox.stub());
+
+      MultiStageUtils.handleImpressionAction(action, "MSG_1", "SCREEN_1");
+
+      assert.calledOnce(sendStub);
+      assert.calledWithMatch(sendStub, {
+        action,
+        message_id: "MSG_1",
+        screen_id: "SCREEN_1",
+      });
+    });
+
+    it("sends action telemetry when the parent confirms the action fired", async () => {
+      const action = { type: "PIN_FIREFOX_TO_TASKBAR" };
+      globals.set("AWSendImpressionAction", () => Promise.resolve(true));
+      const telemetryStub = sandbox.stub(
+        MultiStageUtils,
+        "sendActionTelemetry"
+      );
+
+      await MultiStageUtils.handleImpressionAction(action, "MSG_1", "SCREEN_1");
+
+      assert.calledOnceWithExactly(
+        telemetryStub,
+        "MSG_1",
+        "PIN_FIREFOX_TO_TASKBAR",
+        "IMPRESSION_ACTION"
+      );
+    });
+
+    it("does not send action telemetry when the action did not fire", async () => {
+      globals.set("AWSendImpressionAction", () => Promise.resolve(false));
+      const telemetryStub = sandbox.stub(
+        MultiStageUtils,
+        "sendActionTelemetry"
+      );
+
+      await MultiStageUtils.handleImpressionAction(
+        { type: "PIN_FIREFOX_TO_TASKBAR" },
+        "MSG_1",
+        "SCREEN_1"
+      );
+
+      assert.notCalled(telemetryStub);
+    });
   });
 
   describe("WelcomeScreen component", () => {

@@ -7,6 +7,8 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   ASRouter: "resource:///modules/asrouter/ASRouter.sys.mjs",
   ASRouterTargeting: "resource:///modules/asrouter/ASRouterTargeting.sys.mjs",
+  SpecialMessageActions:
+    "resource://messaging-system/lib/SpecialMessageActions.sys.mjs",
 });
 
 export const ASRouterScreenUtils = {
@@ -85,5 +87,73 @@ export const ASRouterScreenUtils = {
 
   async addScreenImpression(screen) {
     await lazy.ASRouter.addScreenImpression(screen);
+  },
+
+  /**
+   * Whether the given screen has already recorded an impression.
+   *
+   * @param {string} screenId - The id of the screen to check.
+   * @returns {boolean}
+   */
+  async hasSeenScreen(screenId) {
+    return Boolean(lazy.ASRouter.state.screenImpressions?.[screenId]);
+  },
+
+  /**
+   * Whether a special message action is allowed to fire automatically on screen
+   * impression. A MULTI_ACTION is allowed only when every nested action is
+   * itself an allowed action.
+   *
+   * @param {object} action - The special message action to validate.
+   * @returns {boolean}
+   */
+  isAllowedImpressionAction(action) {
+    const ALLOWED_IMPRESSION_ACTIONS = [
+      "PIN_FIREFOX_TO_TASKBAR",
+      "PIN_FIREFOX_TO_START_MENU",
+    ];
+    if (!action) {
+      return false;
+    }
+    if (action.type === "MULTI_ACTION") {
+      const actions = action.data?.actions;
+      return (
+        Array.isArray(actions) &&
+        !!actions.length &&
+        actions.every(nestedAction =>
+          ALLOWED_IMPRESSION_ACTIONS.includes(nestedAction?.type)
+        )
+      );
+    }
+    return ALLOWED_IMPRESSION_ACTIONS.includes(action.type);
+  },
+
+  /**
+   * Handle a special message action fired automatically when a screen is first
+   * shown, rather than by a button click. Only allowed actions (see
+   * `isAllowedImpressionAction`) may fire on impression. When the action sets
+   * `once`, it is skipped if the screen has already been seen.
+   *
+   * @param {object} data
+   * @param {object} data.action - The special message action to run.
+   * @param {boolean} [data.action.once] - Only fire on the screen's first view.
+   * @param {string} data.screen_id - The id of the screen firing the action.
+   * @param {Browser} browser - The xul:browser rendering the page.
+   * @returns {Promise<boolean>} Whether the action was dispatched. False when
+   *   rejected by the allowlist or suppressed by `once`.
+   */
+  async handleImpressionAction(data, browser) {
+    const { action, screen_id } = data;
+    if (!this.isAllowedImpressionAction(action)) {
+      return false;
+    }
+    if (action.once && (await this.hasSeenScreen(screen_id))) {
+      return false;
+    }
+    lazy.SpecialMessageActions.handleAction(
+      { type: action.type, data: action.data },
+      browser
+    );
+    return true;
   },
 };

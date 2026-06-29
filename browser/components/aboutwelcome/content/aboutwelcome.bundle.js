@@ -43,6 +43,21 @@ const MultiStageUtils = {
   handleUserAction(action) {
     return window.AWSendToParent("SPECIAL_ACTION", action);
   },
+  handleImpressionAction(action, messageId, screenId) {
+    return Promise.resolve(
+      window.AWSendImpressionAction?.({
+        action,
+        message_id: messageId,
+        screen_id: screenId,
+      })
+    ).then(fired => {
+      // Record action telemetry only when the parent actually ran the action;
+      // it may be rejected by the allowlist or suppressed by `once`.
+      if (fired) {
+        this.sendActionTelemetry(messageId, action.type, "IMPRESSION_ACTION");
+      }
+    });
+  },
   sendImpressionTelemetry(messageId, context = {}) {
     window.AWSendEventTelemetry?.({
       event: "IMPRESSION",
@@ -242,6 +257,13 @@ const MultiStageAboutWelcome = props => {
             screen_id: screen.id,
             screen_initials: screenInitials
           });
+
+          // Impression actions should be fired before recording the
+          // impression, so the check that ensures that actions run only once
+          // has an accurate count of how many impressions have actually occured
+          if (screen.content?.impression_action) {
+            _lib_multistage_utils_mjs__WEBPACK_IMPORTED_MODULE_2__.MultiStageUtils.handleImpressionAction(screen.content.impression_action, messageId, screen.id);
+          }
           window.AWAddScreenImpression?.(screen);
         }
       });

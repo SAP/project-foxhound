@@ -159,6 +159,21 @@ const MultiStageUtils = {
   handleUserAction(action) {
     return window.AWSendToParent("SPECIAL_ACTION", action);
   },
+  handleImpressionAction(action, messageId, screenId) {
+    return Promise.resolve(
+      window.AWSendImpressionAction?.({
+        action,
+        message_id: messageId,
+        screen_id: screenId,
+      })
+    ).then(fired => {
+      // Record action telemetry only when the parent actually ran the action;
+      // it may be rejected by the allowlist or suppressed by `once`.
+      if (fired) {
+        this.sendActionTelemetry(messageId, action.type, "IMPRESSION_ACTION");
+      }
+    });
+  },
   sendImpressionTelemetry(messageId, context = {}) {
     window.AWSendEventTelemetry?.({
       event: "IMPRESSION",
@@ -1282,7 +1297,7 @@ const SingleSelect = ({
   }, /*#__PURE__*/external_React_default().createElement("div", null, /*#__PURE__*/external_React_default().createElement("fieldset", {
     className: `tiles-single-select-section ${category}`
   }, /*#__PURE__*/external_React_default().createElement(Localized, {
-    text: content.subtitle
+    text: content.tiles?.subtitle || content.subtitle
   }, /*#__PURE__*/external_React_default().createElement("legend", {
     className: "sr-only"
   })), content.tiles.data.map(({
@@ -3502,6 +3517,13 @@ const MultiStageAboutWelcome = props => {
             screen_id: screen.id,
             screen_initials: screenInitials
           });
+
+          // Impression actions should be fired before recording the
+          // impression, so the check that ensures that actions run only once
+          // has an accurate count of how many impressions have actually occured
+          if (screen.content?.impression_action) {
+            MultiStageUtils.handleImpressionAction(screen.content.impression_action, messageId, screen.id);
+          }
           window.AWAddScreenImpression?.(screen);
         }
       });
