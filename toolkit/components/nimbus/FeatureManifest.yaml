@@ -5934,6 +5934,9 @@ macAppMenuSetAsDefault:
   variables:
     shown:
       type: boolean
+      setPref:
+        branch: user
+        pref: browser.macAppMenu.setAsDefaultShown
       description: >-
         Whether or not the macOS app menu contains "Set as Default Browser" item
 

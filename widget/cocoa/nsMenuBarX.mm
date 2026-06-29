@@ -30,7 +30,7 @@
 #include "mozilla/Components.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/glean/WidgetCocoaMetrics.h"
-#include "mozilla/browser/NimbusFeatures.h"
+#include "mozilla/Preferences.h"
 
 using namespace mozilla;
 using mozilla::dom::Element;
@@ -587,7 +587,7 @@ void nsMenuBarX::ApplicationMenuOpened() {
 
 #ifdef MOZ_BUILD_APP_IS_BROWSER
   // Only show if Set as Default Browser item if Nimbus allows.
-  if (NimbusFeatures::GetBool("macAppMenuSetAsDefault"_ns, "shown"_ns, false)) {
+  if (Preferences::GetBool("browser.macAppMenu.setAsDefaultShown")) {
     bool isDefaultBrowser = false;
 
     nsCOMPtr<nsIShellService> shell(do_GetService(NS_SHELLSERVICE_CONTRACTID));
