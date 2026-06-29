@@ -144,11 +144,11 @@ bool ClientSourceParent::DeallocPClientSourceOpParent(
 
 ClientSourceParent::ClientSourceParent(
     const ClientSourceConstructorArgs& aArgs,
-    const Maybe<ContentParentId>& aContentParentId)
+    ThreadsafeContentParentHandle* aContentParentHandle)
     : mClientInfo(aArgs.id(), aArgs.agentClusterId(), aArgs.type(),
                   aArgs.principalInfo(), aArgs.creationTime(), aArgs.url(),
                   aArgs.frameType()),
-      mContentParentId(aContentParentId),
+      mContentParentHandle(aContentParentHandle),
       mService(ClientManagerService::GetOrCreateInstance()),
       mExecutionReady(false),
       mFrozen(false) {}
