@@ -222,6 +222,9 @@ function loadDetails(details, experiment, baseURI, id, version, logger) {
 }
 
 export var LightweightThemeManager = {
+  // Bump this number whenever the shape or interpretation of the theme data
+  // changes, in order to invalidate extensions startup cache.
+  DATA_VERSION: 1,
   aiThemeData: null,
   _aiThemeDataPromise: null,
   privateThemeData: null,
@@ -308,6 +311,7 @@ export var LightweightThemeManager = {
       experiment.stylesheet = baseURI.resolve(experiment.stylesheet);
     }
     let lwtData = {
+      dataVersion: this.DATA_VERSION,
       experiment,
     };
     lwtData.theme = loadDetails(
@@ -332,7 +336,7 @@ export var LightweightThemeManager = {
   },
 
   set fallbackThemeData(data) {
-    if (data && Object.getOwnPropertyNames(data).length) {
+    if (data?.dataVersion === this.DATA_VERSION) {
       _fallbackThemeData = Object.assign({}, data);
     } else {
       _fallbackThemeData = null;
