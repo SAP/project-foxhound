@@ -8,6 +8,7 @@
 #include "ErrorList.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/dom/ContentParent.h"
+#include "mozilla/dom/ProcessIsolation.h"
 #include "mozilla/dom/QMResult.h"
 #include "mozilla/dom/cache/ManagerId.h"
 #include "mozilla/dom/quota/ResultExtensions.h"
@@ -96,6 +97,12 @@ void PrincipalVerifier::VerifyOnMainThread() {
   QM_TRY_INSPECT(
       const auto& principal, PrincipalInfoToPrincipal(mPrincipalInfo), QM_VOID,
       [this](const nsresult result) { DispatchToInitiatingThread(result); });
+
+  if (NS_WARN_IF(mHandle && !ValidatePrincipalCouldPotentiallyBeLoadedBy(
+                                principal, mHandle->GetRemoteType(), {}))) {
+    DispatchToInitiatingThread(NS_ERROR_FAILURE);
+    return;
+  }
 
   // We disallow null principal on the client side, but double-check here.
   if (NS_WARN_IF(principal->GetIsNullPrincipal())) {
