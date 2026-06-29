@@ -90,6 +90,19 @@ class IPProtectionTelemetryMiddlewareTest {
         assertNull(Vpn.fxAuthorizationFlowCompleted.testGetValue())
     }
 
+    @Test
+    fun `GIVEN the VPN toggle failed THEN a generic network error telemetry is recorded`() {
+        assertNull(Vpn.errorEncountered.testGetValue())
+
+        val store = createStore(initialStatus = AccountStatus.EnrolledAndEntitled)
+
+        store.dispatch(IPProtectionAction.ToggleFailed)
+
+        val events = Vpn.errorEncountered.testGetValue()
+        assertNotNull(events)
+        assertEquals(1, events.size)
+    }
+
     private fun createStore(initialStatus: AccountStatus) = IPProtectionStore(
         initialState = IPProtectionState(accountState = AccountState(status = initialStatus)),
         middleware = listOf(middleware),

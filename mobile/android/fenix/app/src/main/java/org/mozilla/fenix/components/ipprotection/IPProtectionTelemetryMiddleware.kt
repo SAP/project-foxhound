@@ -13,7 +13,8 @@ import mozilla.components.lib.state.Store
 import org.mozilla.fenix.GleanMetrics.Vpn
 
 /**
- * [Middleware] that records telemetry for the FxA authentication and authorization initiated through IP Protection.
+ * [Middleware] that records telemetry for the FxA authentication and authorization initiated through IP Protection
+ * as well as if a network error is encountered when user tries to toggle the VPN.
  *
  * A flow is considered complete when the status leaves
  * [AccountStatus.AwaitingAuthentication] or [AccountStatus.AwaitingAuthorization] for a successful
@@ -38,6 +39,10 @@ internal class IPProtectionTelemetryMiddleware(
         val previousStatus = store.state.accountState.status
         next(action)
         val currentStatus = store.state.accountState.status
+
+        if (action is IPProtectionAction.ToggleFailed) {
+            Vpn.errorEncountered.record()
+        }
 
         if (previousStatus == currentStatus) {
             return
