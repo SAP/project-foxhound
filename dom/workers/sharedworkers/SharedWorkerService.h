@@ -51,8 +51,8 @@ class SharedWorkerService final {
   void GetOrCreateWorkerManagerOnMainThread(
       nsIEventTarget* aBackgroundEventTarget,
       ThreadsafeContentParentHandle* aContentParentHandle,
-      SharedWorkerParent* aActor, const RemoteWorkerData& aData,
-      uint64_t aWindowID, UniqueMessagePortId& aPortIdentifier);
+      SharedWorkerParent* aActor, RemoteWorkerData aData, uint64_t aWindowID,
+      UniqueMessagePortId& aPortIdentifier);
 
   void RemoveWorkerManagerOnMainThread(SharedWorkerManager* aManager);
 

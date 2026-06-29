@@ -173,37 +173,29 @@ void SharedWorkerService::GetOrCreateWorkerManager(
 void SharedWorkerService::GetOrCreateWorkerManagerOnMainThread(
     nsIEventTarget* aBackgroundEventTarget,
     ThreadsafeContentParentHandle* aContentParentHandle,
-    SharedWorkerParent* aActor, const RemoteWorkerData& aData,
-    uint64_t aWindowID, UniqueMessagePortId& aPortIdentifier) {
-  MOZ_ASSERT(NS_IsMainThread());
+    SharedWorkerParent* aActor, RemoteWorkerData aData, uint64_t aWindowID,
+    UniqueMessagePortId& aPortIdentifier) {
+  AssertIsOnMainThread();
   MOZ_ASSERT(aBackgroundEventTarget);
   MOZ_ASSERT(aActor);
 
-  RemoteWorkerData copyData = aData;
-  auto principalOrErr = PrincipalInfoToPrincipal(copyData.principalInfo());
+  RefPtr<ContentParent> contentParent =
+      aContentParentHandle ? aContentParentHandle->GetContentParent() : nullptr;
+  if (aContentParentHandle && !contentParent) {
+    ErrorPropagationOnMainThread(aBackgroundEventTarget, aActor,
+                                 NS_ERROR_UNEXPECTED);
+    return;
+  }
+
+  auto principalOrErr = PrincipalInfoToPrincipal(aData.principalInfo());
   if (NS_WARN_IF(principalOrErr.isErr())) {
     ErrorPropagationOnMainThread(aBackgroundEventTarget, aActor,
                                  principalOrErr.unwrapErr());
     return;
   }
 
-  nsCOMPtr<nsIPrincipal> principal = principalOrErr.unwrap();
-
-  nsCString currentRemoteType = aContentParentHandle
-                                    ? aContentParentHandle->GetRemoteType()
-                                    : NOT_REMOTE_TYPE;
-  auto remoteType = RemoteWorkerManager::GetRemoteType(
-      principal, WorkerKind::WorkerKindShared, currentRemoteType);
-  if (NS_WARN_IF(remoteType.isErr())) {
-    ErrorPropagationOnMainThread(aBackgroundEventTarget, aActor,
-                                 remoteType.unwrapErr());
-    return;
-  }
-
-  copyData.remoteType() = remoteType.unwrap();
-
   auto partitionedPrincipalOrErr =
-      PrincipalInfoToPrincipal(copyData.partitionedPrincipalInfo());
+      PrincipalInfoToPrincipal(aData.partitionedPrincipalInfo());
   if (NS_WARN_IF(partitionedPrincipalOrErr.isErr())) {
     ErrorPropagationOnMainThread(aBackgroundEventTarget, aActor,
                                  partitionedPrincipalOrErr.unwrapErr());
@@ -211,32 +203,67 @@ void SharedWorkerService::GetOrCreateWorkerManagerOnMainThread(
   }
 
   auto loadingPrincipalOrErr =
-      PrincipalInfoToPrincipal(copyData.loadingPrincipalInfo());
+      PrincipalInfoToPrincipal(aData.loadingPrincipalInfo());
   if (NS_WARN_IF(loadingPrincipalOrErr.isErr())) {
     ErrorPropagationOnMainThread(aBackgroundEventTarget, aActor,
                                  loadingPrincipalOrErr.unwrapErr());
     return;
   }
 
-  RefPtr<SharedWorkerManagerHolder> managerHolder;
-
+  nsCOMPtr<nsIPrincipal> principal = principalOrErr.unwrap();
   nsCOMPtr<nsIPrincipal> loadingPrincipal = loadingPrincipalOrErr.unwrap();
   nsCOMPtr<nsIPrincipal> partitionedPrincipal =
       partitionedPrincipalOrErr.unwrap();
 
+  // If this is being created by a content process, validate that that process
+  // would be allowed to load the SharedWorker.
+  //
+  // This may be hit for cross-origin loads triggered by web content which would
+  // fail later in the load process. As those loads would fail anyway, it should
+  // be OK to fail early here in those cases.
+  if (contentParent) {
+    if (NS_WARN_IF(!contentParent->ValidatePrincipal(loadingPrincipal, {})) ||
+        NS_WARN_IF(!contentParent->ValidatePrincipal(principal, {})) ||
+        NS_WARN_IF(
+            !contentParent->ValidatePrincipal(partitionedPrincipal, {}))) {
+      ErrorPropagationOnMainThread(aBackgroundEventTarget, aActor,
+                                   NS_ERROR_DOM_SECURITY_ERR);
+      return;
+    }
+  }
+
+  // Determine the remote type this SharedWorker should load into, and clobber
+  // the ununsed remoteType field from the passed-in `RemoteWorkerData` with it.
+  auto remoteType = RemoteWorkerManager::GetRemoteType(
+      principal, WorkerKind::WorkerKindShared,
+      contentParent ? contentParent->GetRemoteType() : NOT_REMOTE_TYPE);
+  if (NS_WARN_IF(remoteType.isErr())) {
+    ErrorPropagationOnMainThread(aBackgroundEventTarget, aActor,
+                                 remoteType.unwrapErr());
+    return;
+  }
+  aData.remoteType() = remoteType.unwrap();
+
   nsCOMPtr<nsIPrincipal> effectiveStoragePrincipal = partitionedPrincipal;
-  if (copyData.useRegularPrincipal()) {
+  if (aData.useRegularPrincipal()) {
     effectiveStoragePrincipal = loadingPrincipal;
   }
 
-  // Let's see if there is already a SharedWorker to share.
   nsCOMPtr<nsIURI> resolvedScriptURL =
-      DeserializeURI(copyData.resolvedScriptURL());
+      DeserializeURI(aData.resolvedScriptURL());
+  if (!resolvedScriptURL) {
+    ErrorPropagationOnMainThread(aBackgroundEventTarget, aActor,
+                                 NS_ERROR_FAILURE);
+    return;
+  }
+
+  // Let's see if there is already a SharedWorker to share.
+  RefPtr<SharedWorkerManagerHolder> managerHolder;
   for (SharedWorkerManager* workerManager : mWorkerManagers) {
     bool matchNameButNotOptions = false;
 
     managerHolder = workerManager->MatchOnMainThread(
-        this, copyData, resolvedScriptURL, loadingPrincipal,
+        this, aData, resolvedScriptURL, loadingPrincipal,
         BasePrincipal::Cast(effectiveStoragePrincipal)->OriginAttributesRef(),
         &matchNameButNotOptions);
     if (managerHolder) {
@@ -253,14 +280,14 @@ void SharedWorkerService::GetOrCreateWorkerManagerOnMainThread(
   // Let's create a new one.
   if (!managerHolder) {
     managerHolder = SharedWorkerManager::Create(
-        this, aBackgroundEventTarget, copyData, loadingPrincipal,
+        this, aBackgroundEventTarget, aData, loadingPrincipal,
         BasePrincipal::Cast(effectiveStoragePrincipal)->OriginAttributesRef());
 
     mWorkerManagers.AppendElement(managerHolder->Manager());
   } else {
     // We are attaching the actor to an existing one.
     if (managerHolder->Manager()->IsSecureContext() !=
-        copyData.isSecureContext()) {
+        aData.isSecureContext()) {
       ErrorPropagationOnMainThread(aBackgroundEventTarget, aActor,
                                    NS_ERROR_DOM_SECURITY_ERR);
       return;
@@ -271,7 +298,7 @@ void SharedWorkerService::GetOrCreateWorkerManagerOnMainThread(
       new SharedWorkerManagerWrapper(managerHolder.forget());
 
   RefPtr<WorkerManagerCreatedRunnable> r = new WorkerManagerCreatedRunnable(
-      wrapper.forget(), aActor, copyData, aWindowID, aPortIdentifier);
+      wrapper.forget(), aActor, aData, aWindowID, aPortIdentifier);
   aBackgroundEventTarget->Dispatch(r.forget(), NS_DISPATCH_NORMAL);
 }
 
