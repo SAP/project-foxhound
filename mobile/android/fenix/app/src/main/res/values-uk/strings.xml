@@ -643,8 +643,23 @@
     %1$s is replaced by an active link, using nova_onboarding_marketing_body_link_text as text (“How we use the data”).
   -->
   <string name="nova_onboarding_marketing_body_6" tools:ignore="BrandUsage,UnusedResources">Допоможіть нам охопити більше людей, дозволивши Mozilla інформувати ресурс, із якого ви прийшли, про те, що ви використовуєте Firefox. %1$s</string>
+  <!--
+    Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
+    “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
+    %1$s is replaced by an active link, using nova_onboarding_marketing_body_link_text_1 as text (“Learn More”).
+  -->
+  <string name="nova_onboarding_marketing_body_7" tools:ignore="BrandUsage">Ви можете допомогти нам охопити більше людей, дозволивши Mozilla інформувати ресурс, із якого ви прийшли, про те, що ви використовуєте Firefox. %1$s</string>
+  <!-- Marketing onboarding additional body text. 'Firefox' is intentionally hardcoded. -->
+  <string name="nova_onboarding_marketing_body_line_two" tools:ignore="BrandUsage">Firefox відомий своєю незалежністю та відданістю захисту відкритого інтернету від технологічних монополій.</string>
+  <!--
+    Marketing onboarding additional body text. 'Firefox' is intentionally hardcoded.
+    “Allowing” refers to the main button “Allow and Continue”; the ask for the user is to allow communicating back to the platform.
+  -->
+  <string name="nova_onboarding_marketing_body_line_three" tools:ignore="BrandUsage">Допоможіть Firefox перемогти.</string>
   <!-- Marketing onboarding body link text. -->
   <string name="nova_onboarding_marketing_body_link_text">Як ми використовуємо дані</string>
+  <!-- Marketing onboarding body link text. -->
+  <string name="nova_onboarding_marketing_body_link_text_1">Докладніше</string>
   <!-- Marketing onboarding primary button text. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage">Підтримайте Firefox</string>
   <!-- Marketing onboarding primary button text. -->

@@ -172,6 +172,8 @@
   <string name="mozac_feature_prompts_collapse_address_content_description_2">ยุบที่อยู่ที่บันทึกไว้</string>
   <!-- Text for the manage addresses button. -->
   <string name="mozac_feature_prompts_manage_address">จัดการที่อยู่</string>
+  <!-- Text for the title of a save address dialog. -->
+  <string name="mozac_feature_prompts_save_address_prompt_title">ต้องการบันทึกที่อยู่หรือไม่?</string>
   <!--
     Federated Credential Management prompts
 
