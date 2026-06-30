@@ -1382,10 +1382,9 @@ IPCResult BrowserParent::RecvNewWindowGlobal(
   // NOTE: Keep this in sync with the similar check in
   // DocumentLoadListener::TriggerRedirectToRealChannel.
   EnumSet<ValidatePrincipalOptions> validationOptions = {};
-  // FIXME(bug 1699385): Remove allowSystem for blobs
   // FIXME(bug 1698087): chrome://devtools/**/webextension-fallback.html
   // Automation-Only: chrome://reftest/** + blank subframes
-  if (docURI->SchemeIs("blob") || docURI->SchemeIs("chrome") ||
+  if (docURI->SchemeIs("chrome") ||
       (xpc::IsInAutomation() && NS_IsAboutBlank(docURI) && parentWgp &&
        parentWgp->Manager() == this &&
        parentWgp->DocumentPrincipal()->IsSystemPrincipal())) {
