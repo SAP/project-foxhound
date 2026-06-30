@@ -37,6 +37,9 @@ skip-if = [
 
 ["browser_pref_check.js"]
 
+["browser_private_close.js"]
+support-files = ["image_cache.html", "image_cache.png"]
+
 ["browser_remote_settings_updates.js"]
 
 ["browser_shims.js"]
