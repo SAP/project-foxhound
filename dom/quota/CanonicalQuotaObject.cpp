@@ -17,6 +17,19 @@
 
 namespace mozilla::dom::quota {
 
+CanonicalQuotaObject::CanonicalQuotaObject(
+    const RefPtr<OriginInfo>& aOriginInfo, Client::Type aClientType,
+    const nsAString& aPath, int64_t aSize)
+    : QuotaObject(/* aIsRemote */ false),
+      mOriginInfo(aOriginInfo),
+      mPath(aPath),
+      mSize(aSize),
+      mClientType(aClientType),
+      mQuotaCheckDisabled(false),
+      mWritingDone(false) {
+  MOZ_COUNT_CTOR(CanonicalQuotaObject);
+}
+
 NS_IMETHODIMP_(MozExternalRefCountType) CanonicalQuotaObject::AddRef() {
   QuotaManager* quotaManager = QuotaManager::Get();
   if (!quotaManager) {
@@ -54,8 +67,8 @@ NS_IMETHODIMP_(MozExternalRefCountType) CanonicalQuotaObject::Release() {
       return mRefCnt;
     }
 
-    if (mOriginInfo) {
-      mOriginInfo->mCanonicalQuotaObjects.Remove(mPath);
+    if (RefPtr<OriginInfo> originInfo = RefPtr<OriginInfo>(mOriginInfo)) {
+      originInfo->mCanonicalQuotaObjects.Remove(mPath);
     }
   }
 
@@ -111,9 +124,11 @@ bool CanonicalQuotaObject::LockedMaybeUpdateSize(int64_t aSize, bool aTruncate)
 
   quotaManager->mQuotaMutex.AssertCurrentThreadOwns();
 
-  if (mWritingDone == false && mOriginInfo) {
+  RefPtr<OriginInfo> originInfo = RefPtr<OriginInfo>(mOriginInfo);
+
+  if (mWritingDone == false && originInfo) {
     mWritingDone = true;
-    StorageActivityService::SendActivity(mOriginInfo->mOrigin);
+    StorageActivityService::SendActivity(originInfo->mOrigin);
   }
 
   if (mQuotaCheckDisabled) {
@@ -124,18 +139,18 @@ bool CanonicalQuotaObject::LockedMaybeUpdateSize(int64_t aSize, bool aTruncate)
     return true;
   }
 
-  if (!mOriginInfo) {
+  if (!originInfo) {
     mSize = aSize;
     return true;
   }
 
-  DebugOnly<GroupInfo*> groupInfo = mOriginInfo->mGroupInfo;
+  DebugOnly<GroupInfo*> groupInfo = originInfo->mGroupInfo;
   MOZ_ASSERT(groupInfo);
 
   if (mSize > aSize) {
     if (aTruncate) {
       const int64_t delta = mSize - aSize;
-      mOriginInfo->LockedTruncateUsages(mClientType, delta);
+      originInfo->LockedTruncateUsages(mClientType, delta);
       mSize = aSize;
     }
     return true;
@@ -149,7 +164,7 @@ bool CanonicalQuotaObject::LockedMaybeUpdateSize(int64_t aSize, bool aTruncate)
   // global limit though).
 
   if (const auto& maybeReturnValue =
-          mOriginInfo->LockedUpdateUsages(mClientType, delta)) {
+          originInfo->LockedUpdateUsages(mClientType, delta)) {
     if (maybeReturnValue.value()) {
       mSize = aSize;  // No limit was breached and we are done.
     }
@@ -192,11 +207,9 @@ bool CanonicalQuotaObject::LockedMaybeUpdateSize(int64_t aSize, bool aTruncate)
 
   // Relocked.
 
-  NS_ASSERTION(mOriginInfo, "How come?!");
-
   for (const auto& lock : locks) {
     MOZ_ASSERT(!(lock->GetPersistenceType() == groupInfo->mPersistenceType &&
-                 lock->Origin() == mOriginInfo->mOrigin),
+                 lock->Origin() == originInfo->mOrigin),
                "Deleted itself!");
 
     quotaManager->LockedRemoveQuotaForOrigin(lock->OriginMetadata());
@@ -208,7 +221,7 @@ bool CanonicalQuotaObject::LockedMaybeUpdateSize(int64_t aSize, bool aTruncate)
   AssertNoUnderflow(aSize, mSize);
   const uint64_t increase = aSize - mSize;
 
-  if (!mOriginInfo->LockedUpdateUsagesForEviction(mClientType, increase)) {
+  if (!originInfo->LockedUpdateUsagesForEviction(mClientType, increase)) {
     // Unfortunately some other thread increased the group usage in the
     // meantime and we are not below the group limit anymore.
 
