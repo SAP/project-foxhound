@@ -43,9 +43,9 @@ class GroupInfo final {
   // Private destructor, to discourage deletion outside of Release():
   MOZ_COUNTED_DTOR(GroupInfo)
 
-  SafeRefPtr<OriginInfo> LockedGetOriginInfo(const nsACString& aOrigin);
+  already_AddRefed<OriginInfo> LockedGetOriginInfo(const nsACString& aOrigin);
 
-  void LockedAddOriginInfo(NotNull<SafeRefPtr<OriginInfo>>&& aOriginInfo);
+  void LockedAddOriginInfo(NotNull<RefPtr<OriginInfo>>&& aOriginInfo);
 
   void LockedAdjustUsageForRemovedOriginInfo(const OriginInfo& aOriginInfo);
 
@@ -59,7 +59,7 @@ class GroupInfo final {
     return !mOriginInfos.IsEmpty();
   }
 
-  nsTArray<NotNull<SafeRefPtr<OriginInfo>>> mOriginInfos;
+  nsTArray<NotNull<RefPtr<OriginInfo>>> mOriginInfos;
 
   GroupInfoPair* mGroupInfoPair;
   PersistenceType mPersistenceType;

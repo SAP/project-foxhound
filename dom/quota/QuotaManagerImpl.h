@@ -15,10 +15,10 @@ namespace mozilla::dom::quota {
 template <typename F>
 auto QuotaManager::WithOriginInfo(const OriginMetadata& aOriginMetadata,
                                   F aFunction)
-    -> std::invoke_result_t<F, const SafeRefPtr<OriginInfo>&> {
+    -> std::invoke_result_t<F, const RefPtr<OriginInfo>&> {
   MutexAutoLock lock(mQuotaMutex);
 
-  SafeRefPtr<OriginInfo> originInfo =
+  RefPtr<OriginInfo> originInfo =
       LockedGetOriginInfo(aOriginMetadata.mPersistenceType, aOriginMetadata);
   MOZ_ASSERT(originInfo);
 

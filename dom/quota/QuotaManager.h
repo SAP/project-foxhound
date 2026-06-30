@@ -30,6 +30,16 @@
 #include "mozilla/dom/quota/NotifyUtils.h"
 #include "mozilla/dom/quota/OpenClientDirectoryInfo.h"
 #include "mozilla/dom/quota/OriginOperationCallbacks.h"
+#include "mozilla/dom/quota/PersistenceType.h"
+#include "nsCOMPtr.h"
+#include "nsClassHashtable.h"
+#include "nsDebug.h"
+#include "nsHashKeys.h"
+#include "nsISupports.h"
+#include "nsStringFwd.h"
+#include "nsTArray.h"
+#include "nsTHashMap.h"
+#include "nsTStringRepr.h"
 #include "nscore.h"
 #include "prenv.h"
 
@@ -257,7 +267,7 @@ class QuotaManager final : public BackgroundThreadObject {
 
   template <typename F>
   auto WithOriginInfo(const OriginMetadata& aOriginMetadata, F aFunction)
-      -> std::invoke_result_t<F, const SafeRefPtr<OriginInfo>&>;
+      -> std::invoke_result_t<F, const RefPtr<OriginInfo>&>;
 
   using DirectoryLockIdTableArray =
       AutoTArray<Client::DirectoryLockIdTable, Client::TYPE_MAX>;
@@ -774,7 +784,7 @@ class QuotaManager final : public BackgroundThreadObject {
       PersistenceType aPersistenceType, const nsACString& aSuffix,
       const nsACString& aGroup);
 
-  SafeRefPtr<OriginInfo> LockedGetOriginInfo(
+  already_AddRefed<OriginInfo> LockedGetOriginInfo(
       PersistenceType aPersistenceType,
       const OriginMetadata& aOriginMetadata) const;
 
@@ -857,10 +867,11 @@ class QuotaManager final : public BackgroundThreadObject {
                             const FullOriginMetadata& aFullOriginMetadata,
                             bool aForGroup = false);
 
-  using OriginInfosFlatTraversable = nsTArray<NotNull<SafeRefPtr<OriginInfo>>>;
+  using OriginInfosFlatTraversable =
+      nsTArray<NotNull<RefPtr<const OriginInfo>>>;
 
   using OriginInfosNestedTraversable =
-      nsTArray<nsTArray<NotNull<SafeRefPtr<OriginInfo>>>>;
+      nsTArray<nsTArray<NotNull<RefPtr<const OriginInfo>>>>;
 
   OriginInfosNestedTraversable GetOriginInfosExceedingGroupLimit() const;
 

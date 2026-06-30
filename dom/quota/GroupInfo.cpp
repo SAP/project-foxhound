@@ -10,13 +10,14 @@
 
 namespace mozilla::dom::quota {
 
-SafeRefPtr<OriginInfo> GroupInfo::LockedGetOriginInfo(
+already_AddRefed<OriginInfo> GroupInfo::LockedGetOriginInfo(
     const nsACString& aOrigin) {
   AssertCurrentThreadOwnsQuotaMutex();
 
   for (const auto& originInfo : mOriginInfos) {
     if (originInfo->mOrigin == aOrigin) {
-      return originInfo.get().clonePtr();
+      RefPtr<OriginInfo> result = originInfo;
+      return result.forget();
     }
   }
 
@@ -28,8 +29,7 @@ const nsCString& GroupInfo::GetGroup() const {
   return mGroupInfoPair->Group();
 }
 
-void GroupInfo::LockedAddOriginInfo(
-    NotNull<SafeRefPtr<OriginInfo>>&& aOriginInfo) {
+void GroupInfo::LockedAddOriginInfo(NotNull<RefPtr<OriginInfo>>&& aOriginInfo) {
   AssertCurrentThreadOwnsQuotaMutex();
 
   NS_ASSERTION(!mOriginInfos.Contains(aOriginInfo),
