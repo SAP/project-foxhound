@@ -646,6 +646,9 @@ nsresult DNSPacket::DecodeInternal(
 
   aCname.Truncate();
 
+  // Reset any type record accumulated by a previous decode of this packet.
+  aTypeResult = mozilla::AsVariant(Nothing());
+
   if (aLen < 12) {
     LOG(("TRR bad incoming DOH, eject!\n"));
     return NS_ERROR_ILLEGAL_VALUE;
