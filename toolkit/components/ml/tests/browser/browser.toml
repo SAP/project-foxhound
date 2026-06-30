@@ -21,6 +21,9 @@ skip-if = [
 # Simulates a missing native runtime via a worker stub and asserts the
 # fallback resolves to wasm onnx. Pair with the test above.
 ["browser_ml_best_onnx_fallback.js"]
+support-files = [
+  "ml_best_onnx_fallback_stub.worker.mjs",
+]
 
 ["browser_ml_cache.js"]
 

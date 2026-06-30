@@ -1202,16 +1202,6 @@ function generateFloat16Numpy(vocabSize, dimensions) {
 }
 
 /**
- * @returns {Promise<string>}
- */
-async function getMLEngineWorkerCode() {
-  const response = await fetch(
-    "chrome://global/content/ml/MLEngine.worker.mjs"
-  );
-  return response.text();
-}
-
-/**
  * Checks that a process exists.
  *
  * @param {string} remoteType

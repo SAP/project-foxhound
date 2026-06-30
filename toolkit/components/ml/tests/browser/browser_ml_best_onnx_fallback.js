@@ -9,6 +9,9 @@ const { sinon } = ChromeUtils.importESModule(
   "resource://testing-common/Sinon.sys.mjs"
 );
 
+const WORKER_STUB_URL =
+  "chrome://mochitests/content/browser/toolkit/components/ml/tests/browser/ml_best_onnx_fallback_stub.worker.mjs";
+
 const BEST_ONNX_OPTIONS = {
   taskName: "text-classification",
   modelId: "acme/bert",
@@ -22,25 +25,12 @@ const BEST_ONNX_OPTIONS = {
  * with the same message InferenceSession.cpp uses when libonnxruntime is
  * missing. Returns a cleanup function the caller must invoke in `finally`.
  */
-async function stubNativeUnavailable() {
-  const workerCode = `
-    ${await getMLEngineWorkerCode()}
-
-    lazy.getBackend = async function (mlEngineWorker, wasm, options) {
-      if (options.backend === "onnx-native") {
-        throw new Error("onnxruntime shared library could not be loaded");
-      }
-      return { run: () => ({}) };
-    };
-  `;
-  const blob = new Blob([workerCode], { type: "application/javascript" });
-  const blobURL = URL.createObjectURL(blob);
+function stubNativeUnavailable() {
   const workerConfigStub = sinon
     .stub(MLEngineParent, "getWorkerConfig")
-    .callsFake(() => ({ url: blobURL, options: { type: "module" } }));
+    .callsFake(() => ({ url: WORKER_STUB_URL, options: { type: "module" } }));
   return () => {
     workerConfigStub.restore();
-    URL.revokeObjectURL(blobURL);
   };
 }
 
@@ -60,7 +50,7 @@ async function stubNativeUnavailable() {
  */
 add_task(async function test_best_onnx_lazy_init_handles_null_cache() {
   const { cleanup, remoteClients } = await setup();
-  const restoreStub = await stubNativeUnavailable();
+  const restoreStub = stubNativeUnavailable();
 
   try {
     // First best-onnx call: cache may be null. The lazy-init path inside
@@ -96,7 +86,7 @@ add_task(async function test_best_onnx_lazy_init_handles_null_cache() {
  */
 add_task(async function test_best_onnx_falls_back_to_wasm() {
   const { cleanup, remoteClients } = await setup();
-  const restoreStub = await stubNativeUnavailable();
+  const restoreStub = stubNativeUnavailable();
 
   try {
     const enginePromise = createEngine(BEST_ONNX_OPTIONS);
@@ -127,7 +117,7 @@ add_task(async function test_best_onnx_falls_back_to_wasm() {
  */
 add_task(async function test_best_onnx_engine_is_reused_after_fallback() {
   const { cleanup, remoteClients } = await setup();
-  const restoreStub = await stubNativeUnavailable();
+  const restoreStub = stubNativeUnavailable();
 
   try {
     const enginePromise1 = createEngine(BEST_ONNX_OPTIONS);
