@@ -22,15 +22,17 @@ const lazy = XPCOMUtils.declareLazy({
 
 export var DefaultWindowsLaunchOnLogin = {
   /**
-   * `browser-before-ui-startup` category entry point.
+   * `browser-idle-startup` category entry point.
    *
-   * Registered to run early in startup so the (unavoidable) wait for Nimbus's
-   * first Remote Settings fetch starts as soon as possible. The Windows
-   * startup apps registry key only matters before the user reboots Windows,
-   * so this does not need to run especially early -- but writing it promptly
-   * minimizes two unkind outcomes: 1) the user closes Firefox before we enable
-   * it, 2) the user opens about:preferences and sees the setting reported as off
-   * before we turn it on.
+   * This deliberately runs off the startup-critical path. Waiting for Nimbus's
+   * first Remote Settings fetch (see `waitForNimbusReady`) forces Remote
+   * Settings initialization, which does significant disk I/O; doing that in a
+   * pre-UI category regressed Talos startup file-I/O metrics (bug 2050775).
+   * The Windows startup apps registry key only matters before the user reboots
+   * Windows, so this has ample slack and is dispatched once the browser is
+   * idle instead. There is some risk that users could see the option disabled
+   * in preferences before we get to enable it, but this is unlikely to be a
+   * significant problem and we've accepted that risk.
    *
    * The category manager invokes this with a `jsGlobal` first argument, which
    * we ignore; the real work and its inputs live in `enableOnFirstRunIfNeeded`
