@@ -248,6 +248,10 @@ bool IMEContentObserver::InitWithEditor(nsPresContext& aPresContext,
   if (NS_WARN_IF(!mRootEditableNodeOrTextControlElement)) {
     return false;
   }
+  MOZ_ASSERT_IF(mRootEditableNodeOrTextControlElement->IsInDesignMode(),
+                IsForDesignMode());
+  MOZ_ASSERT_IF(!mRootEditableNodeOrTextControlElement->IsInDesignMode(),
+                !IsForDesignMode());
 
   mEditorBase = &aEditorBase;
 
@@ -259,6 +263,15 @@ bool IMEContentObserver::InitWithEditor(nsPresContext& aPresContext,
   }
 
   mRootElement = ComputeRootElement(presShell);
+  // If we're in the design mode, but there are no contents, this document
+  // is not editable. However, this is not illegal. Don't warn.
+  if (!mRootElement && IsForDesignMode()) {
+    return false;
+  }
+  // Otherwise, there must be a root editable element.
+  if (NS_WARN_IF(!mRootElement)) {
+    return false;
+  }
 
   if (mEditorBase->IsTextEditor()) {
     MOZ_ASSERT(mRootElement);
@@ -268,15 +281,6 @@ bool IMEContentObserver::InitWithEditor(nsPresContext& aPresContext,
       mTextControlValueLength = ContentEventHandler::GetNativeTextLength(*text);
     }
     mIsTextControl = true;
-  }
-  if (!mRootElement && mRootEditableNodeOrTextControlElement->IsDocument()) {
-    // The document node is editable, but there are no contents, this document
-    // is not editable.
-    return false;
-  }
-
-  if (NS_WARN_IF(!mRootElement)) {
-    return false;
   }
 
   mDocShell = aPresContext.GetDocShell();
@@ -614,21 +618,33 @@ bool IMEContentObserver::IsObservingElement(const nsPresContext& aPresContext,
     return !aElement->IsInDesignMode() &&
            aElement == mRootEditableNodeOrTextControlElement;
   }
-  // In the design mode, GetMostDistantInclusiveEditableAncestorNode() returns
-  // the document so that we need to check whether mRootElement is the same.
-  if (mRootEditableNodeOrTextControlElement &&
-      mRootEditableNodeOrTextControlElement->IsInDesignMode()) {
+  if (!mRootEditableNodeOrTextControlElement) {
+    return false;
+  }
+  // If design mode state has been changed, IMEContentObserver shouldn't be
+  // reused because we handle differently between contenteditable and design
+  // mode.
+  if (IsForDesignMode()) {
+    // If this was initialized for the design mode,
+    // mRootEditableNodeOrTextControlElement is the document node. If the
+    // document is not in the design mode, this instance shouldn't be reused for
+    // contenteditable.
+    if (!mRootEditableNodeOrTextControlElement->IsInDesignMode()) {
+      return false;
+    }
+    // In the design mode, GetMostDistantInclusiveEditableAncestorNode() returns
+    // the document so that we need to check whether mRootElement is the same.
     return mRootElement && (!aElement || aElement->IsInDesignMode()) &&
            mRootElement == ComputeRootElement(aPresContext.GetPresShell());
   }
+
   // If this is initialized with an HTMLEditor,
   // mRootEditableNodeOrTextControlElement is an editing host when this is
   // initialized.  However, its ancestor may become editable.  Therefore, we
   // need to check whether it's still an editing host.
-  return mRootEditableNodeOrTextControlElement &&
-         mRootEditableNodeOrTextControlElement ==
-             IMEContentObserver::GetMostDistantInclusiveEditableAncestorNode(
-                 aPresContext, aElement);
+  return mRootEditableNodeOrTextControlElement ==
+         IMEContentObserver::GetMostDistantInclusiveEditableAncestorNode(
+             aPresContext, aElement);
 }
 
 // static
