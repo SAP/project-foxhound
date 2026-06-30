@@ -557,15 +557,20 @@ void RemoteTextureMap::GetLatestBufferSnapshot(
     uint8_t* src = bufferTextureHost->GetBuffer();
     uint8_t* dst = aDestShmem.get<uint8_t>();
 
-    const Maybe<int32_t> src_stride = ImageDataSerializer::GetRGBStride(
+    const Maybe<int32_t> maybe_src_stride = ImageDataSerializer::GetRGBStride(
         bufferTextureHost->GetBufferDescriptor());
-    MOZ_RELEASE_ASSERT(src_stride.isSome());
-    // note that this might still copy some padding bytes
-    const size_t min_stride = std::min(size_t(src_stride.value()), aDestStride);
+    MOZ_RELEASE_ASSERT(maybe_src_stride.isSome());
+    const size_t src_stride = static_cast<size_t>(maybe_src_stride.value());
+    const size_t bytesPerRow = static_cast<size_t>(src_size.width) * 4;
+    MOZ_RELEASE_ASSERT(src_stride >= bytesPerRow);
+    MOZ_RELEASE_ASSERT(aDestStride >= bytesPerRow);
 
     for (int y = 0; y < src_size.height; y++) {
-      memcpy(dst, src, min_stride);
-      src += src_stride.value();
+      memcpy(dst, src, bytesPerRow);
+      if (bytesPerRow < aDestStride) {
+        memset(dst + bytesPerRow, 0, aDestStride - bytesPerRow);
+      }
+      src += src_stride;
       dst += aDestStride;
     }
   }

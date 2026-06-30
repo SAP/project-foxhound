@@ -146,11 +146,15 @@ void SharedTextureDMABuf::GetSnapshot(const ipc::Shmem& aDestShmem,
   uint8_t* dst = aDestShmem.get<uint8_t>();
 
   const size_t src_stride = static_cast<size_t>(map.GetStride());
-  // note that this might still copy some padding bytes
-  const size_t min_stride = std::min(src_stride, aDestStride);
+  const size_t bytesPerRow = static_cast<size_t>(mWidth) * 4;
+  MOZ_RELEASE_ASSERT(src_stride >= bytesPerRow);
+  MOZ_RELEASE_ASSERT(aDestStride >= bytesPerRow);
 
   for (uint32_t y = 0; y < mHeight; y++) {
-    memcpy(dst, src, min_stride);
+    memcpy(dst, src, bytesPerRow);
+    if (bytesPerRow < aDestStride) {
+      memset(dst + bytesPerRow, 0, aDestStride - bytesPerRow);
+    }
     src += src_stride;
     dst += aDestStride;
   }
