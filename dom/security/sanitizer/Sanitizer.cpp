@@ -1630,6 +1630,7 @@ bool Sanitizer::SetDataAttributes(bool aAllow) {
 // https://wicg.github.io/sanitizer-api/#built-in-safe-baseline-configuration
 // The built-in safe baseline configuration
 #define FOR_EACH_BASELINE_REMOVE_ELEMENT(ELEMENT) \
+  ELEMENT(XHTML, xhtml, base)                     \
   ELEMENT(XHTML, xhtml, embed)                    \
   ELEMENT(XHTML, xhtml, frame)                    \
   ELEMENT(XHTML, xhtml, iframe)                   \
@@ -1762,8 +1763,7 @@ static bool RemoveJavascriptNavigationURLAttribute(Element* aElement,
   // Step 1. If «[elementName, attrName]» matches an entry in the built-in
   // navigating URL attributes list, and if attribute contains a javascript:
   // URL, then remove attribute from child.
-  if ((aElement->IsAnyOfHTMLElements(nsGkAtoms::a, nsGkAtoms::area,
-                                     nsGkAtoms::base) &&
+  if ((aElement->IsAnyOfHTMLElements(nsGkAtoms::a, nsGkAtoms::area) &&
        aLocalName == nsGkAtoms::href && aNamespaceID == kNameSpaceID_None) ||
       (aElement->IsAnyOfHTMLElements(nsGkAtoms::button, nsGkAtoms::input) &&
        aLocalName == nsGkAtoms::formaction &&
