@@ -23,11 +23,6 @@ support-files = [
 
 ["browser_bug1047663.js"]
 
-["browser_bug1104623.js"]
-run-if = [
-  "buildapp == 'browser'",
-]
-
 ["browser_consoleSharedWorkers.js"]
 run-if = [
   "!release_or_beta", # requires dom.postMessage.sharedArrayBuffer.bypassCOOP_COEP.insecure.enabled
