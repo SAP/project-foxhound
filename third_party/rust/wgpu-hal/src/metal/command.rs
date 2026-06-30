@@ -742,14 +742,17 @@ impl crate::CommandEncoder for super::CommandEncoder {
             _ => {}
         }
     }
-    unsafe fn end_query(&mut self, set: &super::QuerySet, _index: u32) {
+    unsafe fn end_query(&mut self, set: &super::QuerySet, index: u32) {
         match set.ty {
             wgt::QueryType::Occlusion => {
                 self.state
                     .render
                     .as_ref()
                     .unwrap()
-                    .setVisibilityResultMode_offset(MTLVisibilityResultMode::Disabled, 0);
+                    .setVisibilityResultMode_offset(
+                        MTLVisibilityResultMode::Disabled,
+                        index as usize * crate::QUERY_SIZE as usize,
+                    );
             }
             _ => {}
         }
@@ -811,14 +814,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
         };
     }
 
-    unsafe fn reset_queries(&mut self, set: &super::QuerySet, range: Range<u32>) {
-        let encoder = self.enter_blit();
-        let raw_range = NSRange {
-            location: range.start as usize * crate::QUERY_SIZE as usize,
-            length: (range.end - range.start) as usize * crate::QUERY_SIZE as usize,
-        };
-        encoder.fillBuffer_range_value(&set.raw_buffer, raw_range, 0);
-    }
+    unsafe fn reset_queries(&mut self, _set: &super::QuerySet, _range: Range<u32>) {}
 
     unsafe fn copy_query_results(
         &mut self,
