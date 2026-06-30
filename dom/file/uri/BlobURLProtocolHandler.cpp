@@ -898,7 +898,10 @@ bool BlobURLProtocolHandler::GetBlobURLPrincipal(nsIURI* aURI,
 
   nsDependentCSubstring originPart = blobURL->OriginPart();
   if (originPart == "system"_ns) {
-    principal = nsContentUtils::GetSystemPrincipal();
+    // This BlobURL was created with a system principal, and can only actually
+    // be loaded by the system principal, but exposes a resource with an
+    // arbitrary null principal.
+    principal = NullPrincipal::Create(aAttrs);
   } else if (originPart == "null"_ns) {
     // If the origin part is the string "null", the principal should have been
     // cached on the URI when it was parsed.
