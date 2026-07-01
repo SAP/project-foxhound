@@ -72,7 +72,7 @@
   <!-- Text for the menu button to remove a recently saved bookmark from the user's home screen -->
   <string name="home_bookmarks_menu_item_remove">Wotstronić</string>
   <!-- About content. %1$s is the name of the app (for example "Firefox"). -->
-  <string name="about_content">%1$s so přez Mozilla zhotowja.</string>
+  <string name="about_content" tools:ignore="BrandUsage">%1$s so přez Mozilla zhotowja.</string>
   <!-- Private Browsing -->
   <string name="private_browsing_common_myths">Časte myty wo priwatnym modusu</string>
   <!-- Text to be announced by the accessibility service to inform the user that the private browsing mode is currently active. -->
@@ -149,6 +149,8 @@
   <string name="home_screen_shortcut_open_new_private_tab_2">Nowy priwatny rajtark</string>
   <!-- Shortcut action to open Passwords screen -->
   <string name="home_screen_shortcut_passwords">Hesła</string>
+  <!-- Shortcut action to open uninstall survey -->
+  <string name="home_screen_shortcut_uninstall_survey">Wotinstalować, čehodla?</string>
   <!--
     Recent Tabs
 
@@ -473,7 +475,7 @@
   <!-- Button text to reopen firefox after the crash is processed %s is the name of the app (for example "Firefox") -->
   <string name="startup_crash_restart">%s znowa wočinić</string>
   <!-- Title for the usage data option in the privacy preferences dialog shown during onboarding. Note: The word "Mozilla" should NOT be translated. -->
-  <string name="onboarding_preferences_dialog_usage_data_title">Techniske daty a daty interakcije na Mozilla pósłać</string>
+  <string name="onboarding_preferences_dialog_usage_data_title" tools:ignore="BrandUsage">Techniske daty a daty interakcije na Mozilla pósłać</string>
   <string name="onboarding_preferences_dialog_usage_data_description_2" tools:ignore="BrandUsage">Daty wo wašim graće, wašej hardwarowej konfiguraciji a wo tym, kak Firefox wužiwaće, wšudźe pomhaja, funkcije, wukon a stabilnosć za kóždeho polěpšić.</string>
   <string name="onboarding_preferences_dialog_usage_data_learn_more_2">Dalše informacije</string>
   <!-- Positive button label for the privacy preferences dialog shown during onboarding. -->
@@ -845,7 +847,7 @@
   <!-- Preference for accessibility -->
   <string name="preferences_accessibility">Bjezbarjernosć</string>
   <!-- Preference to override the Mozilla account server -->
-  <string name="preferences_override_account_server">Swójski kontowy serwer Mozilla</string>
+  <string name="preferences_override_account_server" tools:ignore="BrandUsage">Swójski kontowy serwer Mozilla</string>
   <!-- Preference to override the Sync token server -->
   <string name="preferences_override_sync_tokenserver">Swójski synchronizowanski serwer</string>
   <!-- Preference category for account information -->
@@ -873,7 +875,7 @@
   <!-- Preference description shown in the banner prompting the user to sign in for sync features -->
   <string name="preferences_sign_in_description">Synchronizujće rajtarki, zapołožki, hesła a wjace.</string>
   <!-- Preference shown instead of account display name while account profile information isn't available yet. -->
-  <string name="preferences_account_default_name_2">Konto Mozilla</string>
+  <string name="preferences_account_default_name_2" tools:ignore="BrandUsage">Konto Mozilla</string>
   <!-- Preference text for account title when there was an error syncing FxA -->
   <string name="preferences_account_sync_error">Zaso zwjazać, zo by ze synchronizaciju pokročowało</string>
   <!-- Preference for language -->
@@ -921,7 +923,7 @@
   <!-- Summary for preference to show Firefox Suggest search suggestions for web content -->
   <string name="preferences_show_nonsponsored_suggestions_summary">Wobstarajće sej namjety z weba nastupajo waše pytanje</string>
   <!-- Preference title for switch preference to show search optimization cards -->
-  <string name="preferences_show_search_optimization_cards">Wotwołajće namjety wot Mozilla, hdyž pisaće</string>
+  <string name="preferences_show_search_optimization_cards" tools:ignore="BrandUsage">Wotwołajće namjety wot Mozilla, hdyž pisaće</string>
   <!-- Preference for link sharing -->
   <string name="preferences_link_sharing">Dźělenje wotkazow</string>
   <!-- Title for the link sharing toggle. %1$s is replaced by the brand name (e.g. Firefox). -->
@@ -1251,7 +1253,7 @@
   <string name="preferences_usage_data_description_1" tools:ignore="BrandUsage">Daty wo wašim graće, wašej hardwarowej konfiguraciji a wo wužiću nam pomhaja, funkcije, wukon a stabilnosć Firefox polěpšić.</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preferences_daily_usage_ping_title">Ping za wšědne wužiwanje</string>
-  <string name="preferences_daily_usage_ping_description">To Mozilla pomha, sej aktiwnych wužiwarjow wažić.</string>
+  <string name="preferences_daily_usage_ping_description" tools:ignore="BrandUsage">To Mozilla pomha, sej aktiwnych wužiwarjow wažić.</string>
   <string name="preferences_daily_usage_ping_learn_more">Zhońće wjace wo pingu za wšědne wužiwanje</string>
   <!-- Title for the crash reporting option in the privacy preferences dialog shown during onboarding. -->
   <string name="crash_reporting_snack_bar_message">Rozprawa je so pósłała</string>
@@ -1277,7 +1279,7 @@
   <!-- Title for studies preferences -->
   <string name="preference_experiments_2">Studije</string>
   <!-- Summary for studies preferences -->
-  <string name="preference_experiments_summary_2">Mozilla dowolić, studije instalować a přewjesć</string>
+  <string name="preference_experiments_summary_2" tools:ignore="BrandUsage">Mozilla dowolić, studije instalować a přewjesć</string>
   <!--
     Turn On Sync Preferences
 
@@ -2052,7 +2054,7 @@
   -->
   <string name="tab_crash_title_2">Bohužel %1$s njemóže tutu stronu začitać.</string>
   <!-- Send crash report checkbox text on the tab crash page -->
-  <string name="tab_crash_send_report">Mozilla spadowu rozprawu pósłać</string>
+  <string name="tab_crash_send_report" tools:ignore="BrandUsage">Mozilla spadowu rozprawu pósłać</string>
   <!-- Close tab button text on the tab crash page -->
   <string name="tab_crash_close">Rajtark začinić</string>
   <!-- Restore tab button text on the tab crash page -->
@@ -2461,6 +2463,8 @@
   <string name="preferences_take_survey">Woprašowanje wupjelnić</string>
   <!-- Preference for not taking the short survey. -->
   <string name="preferences_not_take_survey">Ně, dźakuju so</string>
+  <!-- Error message shown in a Toast when the system fails to trigger the device uninstallation prompt. -->
+  <string name="uninstall_survey_error_failed">Systemowa wotinstalowanska namołwa njeda so wočinić, prošu wužiwajće direktnje systemowu wotinstalowansku akciju.</string>
   <!--
     Snackbar
 
@@ -4100,6 +4104,8 @@
   <string name="microsurvey_sync_title" tools:ignore="BrandUsage,UnusedResources">Kak spokojny sće ze synchronizaciju w Firefox?</string>
   <!-- Text shown in the survey title for 'describe your experience so far' microsurvey. Note: The word "Firefox" should NOT be translated. -->
   <string name="microsurvey_describe_your_experience_title" tools:ignore="BrandUsage,UnusedResources">Pomhajće nam Firefox polěpšować. Kak da so waše dotalne dožiwjenje najlěpje wopisować?</string>
+  <!-- Uninstall Survey -->
+  <string name="uninstall_survey_button_label">Měnjenje zapodać a wotinstalować</string>
   <!--
     Accessibility
 

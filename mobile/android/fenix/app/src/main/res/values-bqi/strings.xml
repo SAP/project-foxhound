@@ -72,7 +72,7 @@
   <!-- Text for the menu button to remove a recently saved bookmark from the user's home screen -->
   <string name="home_bookmarks_menu_item_remove">پاک کردن</string>
   <!-- About content. %1$s is the name of the app (for example "Firefox"). -->
-  <string name="about_content">%1$s و دست مۊزیلا وورکل وابیڌه.</string>
+  <string name="about_content" tools:ignore="BrandUsage">%1$s و دست مۊزیلا وورکل وابیڌه.</string>
   <!-- Private Browsing -->
   <string name="private_browsing_common_myths">باورا اشتوا من زایار زبار گشتن سیخومی</string>
   <!-- Text to be announced by the accessibility service to inform the user that the private browsing mode is currently active. -->
@@ -149,6 +149,8 @@
   <string name="home_screen_shortcut_open_new_private_tab_2">بلگه سیخومی نۊ</string>
   <!-- Shortcut action to open Passwords screen -->
   <string name="home_screen_shortcut_passwords">رزما</string>
+  <!-- Shortcut action to open uninstall survey -->
+  <string name="home_screen_shortcut_uninstall_survey">لقو پۊرنیڌن، سیچه؟</string>
   <!--
     Recent Tabs
 
@@ -473,7 +475,7 @@
   <!-- Button text to reopen firefox after the crash is processed %s is the name of the app (for example "Firefox") -->
   <string name="startup_crash_restart">گۊشیڌن دووارته %s</string>
   <!-- Title for the usage data option in the privacy preferences dialog shown during onboarding. Note: The word "Mozilla" should NOT be translated. -->
-  <string name="onboarding_preferences_dialog_usage_data_title">فشناڌن داده یل فنی وو تعامولا و Mozilla</string>
+  <string name="onboarding_preferences_dialog_usage_data_title" tools:ignore="BrandUsage">فشناڌن داده یل فنی وو تعامولا و Mozilla</string>
   <string name="onboarding_preferences_dialog_usage_data_description_2" tools:ignore="BrandUsage">دووسمندیا زبار دسگا ایسا، سامووا سخت ٱفزار وو بارت و کار گرؽڌن ایسا ز Firefox و بؽڌر وابیڌن ویژیی یل، کارایی وو پایداری پوی هیاری اده.</string>
   <string name="onboarding_preferences_dialog_usage_data_learn_more_2">قلوه دووسته بۊین</string>
   <!-- Positive button label for the privacy preferences dialog shown during onboarding. -->
@@ -843,7 +845,7 @@
   <!-- Preference for accessibility -->
   <string name="preferences_accessibility">دسرسی پزیری</string>
   <!-- Preference to override the Mozilla account server -->
-  <string name="preferences_override_account_server">سرور هساو منتوری سفارشی Mozilla</string>
+  <string name="preferences_override_account_server" tools:ignore="BrandUsage">سرور هساو منتوری سفارشی Mozilla</string>
   <!-- Preference to override the Sync token server -->
   <string name="preferences_override_sync_tokenserver">سرور هوم گوم کردن سفارشی</string>
   <!-- Preference category for account information -->
@@ -871,7 +873,7 @@
   <!-- Preference description shown in the banner prompting the user to sign in for sync features -->
   <string name="preferences_sign_in_description">هوم گوم کردن بلگه یل، نشووکا، رزما، وو مووردا بیشتر.</string>
   <!-- Preference shown instead of account display name while account profile information isn't available yet. -->
-  <string name="preferences_account_default_name_2">هساو منتوری Mozilla</string>
+  <string name="preferences_account_default_name_2" tools:ignore="BrandUsage">هساو منتوری Mozilla</string>
   <!-- Preference text for account title when there was an error syncing FxA -->
   <string name="preferences_account_sync_error">سی ز سر گرؽڌن هوم گوم کردن دووارته منپیز بۊین</string>
   <!-- Preference for language -->
@@ -919,7 +921,7 @@
   <!-- Summary for preference to show Firefox Suggest search suggestions for web content -->
   <string name="preferences_show_nonsponsored_suggestions_summary">گرؽڌن پؽشنهاڌا ز وب ک و پیتینیڌن ایسا ربت داره</string>
   <!-- Preference title for switch preference to show search optimization cards -->
-  <string name="preferences_show_search_optimization_cards">مجال تایپ کردن، پؽشنهاڌا Mozilla ن بگیرین</string>
+  <string name="preferences_show_search_optimization_cards" tools:ignore="BrandUsage">مجال تایپ کردن، پؽشنهاڌا Mozilla ن بگیرین</string>
   <!-- Preference for link sharing -->
   <string name="preferences_link_sharing">یک رسۊوی لینگ</string>
   <!-- Title for the link sharing toggle. %1$s is replaced by the brand name (e.g. Firefox). -->
@@ -1249,7 +1251,7 @@
   <string name="preferences_usage_data_description_1" tools:ignore="BrandUsage">دووسمندیا زبار دسگا ایسا، سامووا سخت ٱفزار وو بارت و کار گرؽڌن ایسا و ایما هیاری اده تا ویژیی یل، کارایی وو پایداری Firefox ن بؽڌر کۊنیم.</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preferences_daily_usage_ping_title">پینگ و کار گرؽڌن رۊزووه</string>
-  <string name="preferences_daily_usage_ping_description">یو Mozilla ن هیاری اده تا منتورا رۊزووه ن بشماره.</string>
+  <string name="preferences_daily_usage_ping_description" tools:ignore="BrandUsage">یو Mozilla ن هیاری اده تا منتورا رۊزووه ن بشماره.</string>
   <string name="preferences_daily_usage_ping_learn_more">زبار پینگ و کار گرؽڌن رۊزووه قلوه دووسته بۊبن</string>
   <!-- Title for the crash reporting option in the privacy preferences dialog shown during onboarding. -->
   <string name="crash_reporting_snack_bar_message">گوزارش فشناڌه وابی</string>
@@ -1275,7 +1277,7 @@
   <!-- Title for studies preferences -->
   <string name="preference_experiments_2">خۊندنیا</string>
   <!-- Summary for studies preferences -->
-  <string name="preference_experiments_summary_2">مۊزیلا ن بهلین تا وردنی یل خۊندنی ن بپرنه وو ر ونه</string>
+  <string name="preference_experiments_summary_2" tools:ignore="BrandUsage">مۊزیلا ن بهلین تا وردنی یل خۊندنی ن بپرنه وو ر ونه</string>
   <!--
     Turn On Sync Preferences
 
@@ -2038,7 +2040,7 @@
   -->
   <string name="tab_crash_title_2">وابخشی. %1$s نتره ای بلگه ن بوگوشه.</string>
   <!-- Send crash report checkbox text on the tab crash page -->
-  <string name="tab_crash_send_report">فشناڌن گوزارش خراویا و مۊزیلا</string>
+  <string name="tab_crash_send_report" tools:ignore="BrandUsage">فشناڌن گوزارش خراویا و مۊزیلا</string>
   <!-- Close tab button text on the tab crash page -->
   <string name="tab_crash_close">بستن بلگه</string>
   <!-- Restore tab button text on the tab crash page -->
@@ -2447,6 +2449,8 @@
   <string name="preferences_take_survey">شرکت من منشڌسنجی</string>
   <!-- Preference for not taking the short survey. -->
   <string name="preferences_not_take_survey">ن ممنووݩ</string>
+  <!-- Error message shown in a Toast when the system fails to trigger the device uninstallation prompt. -->
+  <string name="uninstall_survey_error_failed">گۊشیڌن نیمدری لقو پۊرنیڌن سیستوم شکست خرد، موستقیمن لقو پۊرنیڌن ز سیستوم ن و کار بوورین.</string>
   <!--
     Snackbar
 
@@ -4066,6 +4070,8 @@
   <string name="microsurvey_sync_title" tools:ignore="BrandUsage,UnusedResources">چندؽ ز هوم گوم کردن من Firefox رازی هڌین؟</string>
   <!-- Text shown in the survey title for 'describe your experience so far' microsurvey. Note: The word "Firefox" should NOT be translated. -->
   <string name="microsurvey_describe_your_experience_title" tools:ignore="BrandUsage,UnusedResources">و ایما من بؽڌر وابیڌن Firefox هیاری بڌین. کو موورد بؽڌر اگو ک تجروبه ایسا تا سکو چ بؽڌه؟</string>
+  <!-- Uninstall Survey -->
+  <string name="uninstall_survey_button_label">فشناڌن منشڌ وو لقو پۊرنیڌن</string>
   <!--
     Accessibility
 

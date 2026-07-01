@@ -72,7 +72,7 @@
   <!-- Text for the menu button to remove a recently saved bookmark from the user's home screen -->
   <string name="home_bookmarks_menu_item_remove">Fjern</string>
   <!-- About content. %1$s is the name of the app (for example "Firefox"). -->
-  <string name="about_content">%1$s er produsert av Mozilla.</string>
+  <string name="about_content" tools:ignore="BrandUsage">%1$s er produsert av Mozilla.</string>
   <!-- Private Browsing -->
   <string name="private_browsing_common_myths">Vanlige myter om privat nettlesing</string>
   <!-- Text to be announced by the accessibility service to inform the user that the private browsing mode is currently active. -->
@@ -149,6 +149,8 @@
   <string name="home_screen_shortcut_open_new_private_tab_2">Ny privat fane</string>
   <!-- Shortcut action to open Passwords screen -->
   <string name="home_screen_shortcut_passwords">Passord</string>
+  <!-- Shortcut action to open uninstall survey -->
+  <string name="home_screen_shortcut_uninstall_survey">Avinstaller, hvorfor?</string>
   <!--
     Recent Tabs
 
@@ -473,7 +475,7 @@
   <!-- Button text to reopen firefox after the crash is processed %s is the name of the app (for example "Firefox") -->
   <string name="startup_crash_restart">Åpne %s igjen</string>
   <!-- Title for the usage data option in the privacy preferences dialog shown during onboarding. Note: The word "Mozilla" should NOT be translated. -->
-  <string name="onboarding_preferences_dialog_usage_data_title">Send tekniske data og interaksjonsdata til Mozilla</string>
+  <string name="onboarding_preferences_dialog_usage_data_title" tools:ignore="BrandUsage">Send tekniske data og interaksjonsdata til Mozilla</string>
   <string name="onboarding_preferences_dialog_usage_data_description_2" tools:ignore="BrandUsage">Data om enheten din, maskinvarekonfigurasjonen og hvordan du bruker Firefox bidrar til å forbedre funksjoner, ytelse og stabilitet for alle.</string>
   <string name="onboarding_preferences_dialog_usage_data_learn_more_2">Les mer</string>
   <!-- Positive button label for the privacy preferences dialog shown during onboarding. -->
@@ -843,7 +845,7 @@
   <!-- Preference for accessibility -->
   <string name="preferences_accessibility">Tilgjengelighet</string>
   <!-- Preference to override the Mozilla account server -->
-  <string name="preferences_override_account_server">Selvvalgt server for Mozilla-konto</string>
+  <string name="preferences_override_account_server" tools:ignore="BrandUsage">Selvvalgt server for Mozilla-konto</string>
   <!-- Preference to override the Sync token server -->
   <string name="preferences_override_sync_tokenserver">Selvvalgt synkroniseringsserver</string>
   <!-- Preference category for account information -->
@@ -871,7 +873,7 @@
   <!-- Preference description shown in the banner prompting the user to sign in for sync features -->
   <string name="preferences_sign_in_description">Synkroniser faner, bokmerker, passord og mer.</string>
   <!-- Preference shown instead of account display name while account profile information isn't available yet. -->
-  <string name="preferences_account_default_name_2">Mozilla-konto</string>
+  <string name="preferences_account_default_name_2" tools:ignore="BrandUsage">Mozilla-konto</string>
   <!-- Preference text for account title when there was an error syncing FxA -->
   <string name="preferences_account_sync_error">Koble til igjen for å fortsette synkroniseringen</string>
   <!-- Preference for language -->
@@ -919,7 +921,7 @@
   <!-- Summary for preference to show Firefox Suggest search suggestions for web content -->
   <string name="preferences_show_nonsponsored_suggestions_summary">Få forslag fra nettet relatert til søket ditt</string>
   <!-- Preference title for switch preference to show search optimization cards -->
-  <string name="preferences_show_search_optimization_cards">Hent forslag fra Mozilla mens du skriver</string>
+  <string name="preferences_show_search_optimization_cards" tools:ignore="BrandUsage">Hent forslag fra Mozilla mens du skriver</string>
   <!-- Preference for link sharing -->
   <string name="preferences_link_sharing">Lenkedeling</string>
   <!-- Title for the link sharing toggle. %1$s is replaced by the brand name (e.g. Firefox). -->
@@ -1249,7 +1251,7 @@
   <string name="preferences_usage_data_description_1" tools:ignore="BrandUsage">Data om enheten din, maskinvarekonfigurasjon og bruk hjelper oss med å forbedre Firefox-funksjoner, ytelse og stabilitet.</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preferences_daily_usage_ping_title">Ping for daglig bruk</string>
-  <string name="preferences_daily_usage_ping_description">Dette hjelper Mozilla med å beregne aktive brukere.</string>
+  <string name="preferences_daily_usage_ping_description" tools:ignore="BrandUsage">Dette hjelper Mozilla med å beregne aktive brukere.</string>
   <string name="preferences_daily_usage_ping_learn_more">Les mer om ping for daglig bruk</string>
   <!-- Title for the crash reporting option in the privacy preferences dialog shown during onboarding. -->
   <string name="crash_reporting_snack_bar_message">Rapport sendt</string>
@@ -1275,7 +1277,7 @@
   <!-- Title for studies preferences -->
   <string name="preference_experiments_2">Undersøkelse</string>
   <!-- Summary for studies preferences -->
-  <string name="preference_experiments_summary_2">Tillater Mozilla å installere og kjøre undersøkelser</string>
+  <string name="preference_experiments_summary_2" tools:ignore="BrandUsage">Tillater Mozilla å installere og kjøre undersøkelser</string>
   <!--
     Turn On Sync Preferences
 
@@ -2038,7 +2040,7 @@
   -->
   <string name="tab_crash_title_2">Beklager. %1$s kan ikke laste den siden.</string>
   <!-- Send crash report checkbox text on the tab crash page -->
-  <string name="tab_crash_send_report">Send krasjrapport til Mozilla</string>
+  <string name="tab_crash_send_report" tools:ignore="BrandUsage">Send krasjrapport til Mozilla</string>
   <!-- Close tab button text on the tab crash page -->
   <string name="tab_crash_close">Lukk fane</string>
   <!-- Restore tab button text on the tab crash page -->
@@ -2447,6 +2449,8 @@
   <string name="preferences_take_survey">Delta i undersøkelsen</string>
   <!-- Preference for not taking the short survey. -->
   <string name="preferences_not_take_survey">Nei takk</string>
+  <!-- Error message shown in a Toast when the system fails to trigger the device uninstallation prompt. -->
+  <string name="uninstall_survey_error_failed">Kunne ikke åpne systemets avinstalleringsdialog. Bruk systemets avinstalleringsfunksjon direkte.</string>
   <!--
     Snackbar
 
@@ -4066,6 +4070,8 @@
   <string name="microsurvey_sync_title" tools:ignore="BrandUsage,UnusedResources">Hvor fornøyd er du med synkroniseringsopplevelsen i Firefox?</string>
   <!-- Text shown in the survey title for 'describe your experience so far' microsurvey. Note: The word "Firefox" should NOT be translated. -->
   <string name="microsurvey_describe_your_experience_title" tools:ignore="BrandUsage,UnusedResources">Hjelp oss med å forbedre Firefox. Hva beskriver best opplevelsen din så langt?</string>
+  <!-- Uninstall Survey -->
+  <string name="uninstall_survey_button_label">Send tilbakemelding og avinstaller</string>
   <!--
     Accessibility
 

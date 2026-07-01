@@ -156,7 +156,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>يعطيك %1$s الدفّة.</p>\n<p>استعمله كمتصفّح خاص:\n<ul>\n<li>ابحث وتصفّح مباشرة في التطبيق</li>\n<li>احجب المتعقّبات (أو حدّث الإعدادات للسماح بها)</li>\n<li>امسح الكعكات بالإضافة إلى حذف تأريخ البحث والتصفّح</li>\n</ul> </p>\n<p>%1$s منتج من Mozilla. مهمتنا تكمن في التشجيع نحو إنترنت مفتوح وصحّي.<br/>\n<a href=\"%2$s\">اطّلع على المزيد</a></p>]]></string>
+  <string name="about_content" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote"><![CDATA[<p>يعطيك %1$s الدفّة.</p>\n<p>استعمله كمتصفّح خاص:\n<ul>\n<li>ابحث وتصفّح مباشرة في التطبيق</li>\n<li>احجب المتعقّبات (أو حدّث الإعدادات للسماح بها)</li>\n<li>امسح الكعكات بالإضافة إلى حذف تأريخ البحث والتصفّح</li>\n</ul> </p>\n<p>%1$s منتج من Mozilla. مهمتنا تكمن في التشجيع نحو إنترنت مفتوح وصحّي.<br/>\n<a href=\"%2$s\">اطّلع على المزيد</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">اطّلع على المزيد</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -251,7 +251,7 @@
   <!-- "Hint" text for the "custom autocomplete URL" input field. Shown when the field is empty. -->
   <string name="preference_autocomplete_add_hint">ألصِق مسارا أو أدخِله</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
-  <string name="preference_autocomplete_add_example2">مثال: mozilla.org</string>
+  <string name="preference_autocomplete_add_example2" tools:ignore="BrandUsage">مثال: mozilla.org</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">مثال: example.com</string>
   <!-- Confirmation "snackbar" shown after a new custom autocomplete URL has been added. -->
@@ -323,15 +323,15 @@
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
   <string name="preference_default_browser2">اجعل %1$s متصفّحك المبدئي</string>
-  <string name="preference_category_mozilla">موزيلا</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">موزيلا</string>
   <string name="preference_mozilla_telemetry2">أرسل بيانات الاستخدام</string>
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">اطّلع على المزيد</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-  <string name="preference_mozilla_telemetry_summary2">تحاول موزيلا ألا تجمع أكثر مما تحتاجه لإتاحة %1$s و تحسينه للجميع.</string>
+  <string name="preference_mozilla_telemetry_summary2" tools:ignore="BrandUsage">تحاول موزيلا ألا تجمع أكثر مما تحتاجه لإتاحة %1$s و تحسينه للجميع.</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preference_daily_usage_ping_title">تنبيه الاستخدام اليومي</string>
-  <string name="preference_daily_usage_ping_description">يساعد هذا Mozilla على تقدير عدد المستخدمين النشطين.</string>
+  <string name="preference_daily_usage_ping_description" tools:ignore="BrandUsage">يساعد هذا Mozilla على تقدير عدد المستخدمين النشطين.</string>
   <string name="preference_daily_usage_ping_learn_more">اطلع على المزيد</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
   <string name="preference_privacy_notice">تنويه الخصوصية</string>
@@ -829,7 +829,7 @@
   <!-- Label for button to close the tab -->
   <string name="tab_crash_report_close_tab_button_label">أغلِق اللسان</string>
   <!-- Label for the checkbox to send the tab crash report to Mozilla -->
-  <string name="crash_report_send_crash_label">أرسِل تقرير الانهيار إلى موزيلا</string>
+  <string name="crash_report_send_crash_label" tools:ignore="BrandUsage">أرسِل تقرير الانهيار إلى موزيلا</string>
   <!-- Tracking protection bottom sheet -->
 
   <!-- Label for the total number of trackers blocked. %s is the app install date. -->

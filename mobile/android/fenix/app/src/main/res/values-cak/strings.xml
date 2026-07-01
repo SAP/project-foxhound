@@ -58,7 +58,7 @@
   <!-- Text for the menu button to remove a recently saved bookmark from the user's home screen -->
   <string name="home_bookmarks_menu_item_remove">Tiyuj</string>
   <!-- About content. %1$s is the name of the app (for example "Firefox"). -->
-  <string name="about_content">%1$s b\'anon ruma Mozilla.</string>
+  <string name="about_content" tools:ignore="BrandUsage">%1$s b\'anon ruma Mozilla.</string>
   <!-- Private Browsing -->
   <string name="private_browsing_common_myths">Ch\'ob\'on taq tzij chi rij ri ichinan okem pa k\'amaya\'l</string>
   <!-- Text to be announced by the accessibility service to inform the user that the private browsing mode is currently active. -->
@@ -426,7 +426,7 @@
   <!-- Preference for accessibility -->
   <string name="preferences_accessibility">Okel</string>
   <!-- Preference to override the Mozilla account server -->
-  <string name="preferences_override_account_server">Ichinan ruk\'u\'x rusamaj Mozilla account</string>
+  <string name="preferences_override_account_server" tools:ignore="BrandUsage">Ichinan ruk\'u\'x rusamaj Mozilla account</string>
   <!-- Preference to override the Sync token server -->
   <string name="preferences_override_sync_tokenserver">Ichinan ruk\'u\'x rusamaj Sync</string>
   <!-- Preference category for account information -->
@@ -440,7 +440,7 @@
   <!-- Preference for settings related to visual options -->
   <string name="preferences_customize">Tichinäx</string>
   <!-- Preference shown instead of account display name while account profile information isn't available yet. -->
-  <string name="preferences_account_default_name_2">Rub\'i\' rutaqoya\'l Mozilla</string>
+  <string name="preferences_account_default_name_2" tools:ignore="BrandUsage">Rub\'i\' rutaqoya\'l Mozilla</string>
   <!-- Preference text for account title when there was an error syncing FxA -->
   <string name="preferences_account_sync_error">Tokisäx chik richin nitikirisäx chik ri ximoj</string>
   <!-- Preference for language -->
@@ -620,7 +620,7 @@
   <!-- Title for studies preferences -->
   <string name="preference_experiments_2">Taq tijonïk</string>
   <!-- Summary for studies preferences -->
-  <string name="preference_experiments_summary_2">Taya\' q\'ij chi ri Mozilla nuyäk chuqa\' nub\'än taq tijonïk</string>
+  <string name="preference_experiments_summary_2" tools:ignore="BrandUsage">Taya\' q\'ij chi ri Mozilla nuyäk chuqa\' nub\'än taq tijonïk</string>
   <!-- Preference for reconnecting to FxA sync -->
   <string name="preferences_sync_sign_in_to_reconnect">Titikirisäx molojri\'ïl richin nok chik</string>
   <!-- Preference for removing FxA account -->
@@ -859,7 +859,7 @@
   -->
   <string name="tab_crash_title_2">Takuyu\'. Man nitikïr ta nusamajij ri ruxaq ri %1$s.</string>
   <!-- Send crash report checkbox text on the tab crash page -->
-  <string name="tab_crash_send_report">Titaq rutzijol sachoj chi re ri Mozilla</string>
+  <string name="tab_crash_send_report" tools:ignore="BrandUsage">Titaq rutzijol sachoj chi re ri Mozilla</string>
   <!-- Close tab button text on the tab crash page -->
   <string name="tab_crash_close">Titz\'apïx ruwi\'</string>
   <!-- Restore tab button text on the tab crash page -->

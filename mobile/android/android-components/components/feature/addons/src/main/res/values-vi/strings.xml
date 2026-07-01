@@ -372,7 +372,7 @@
   <!-- Text shown when attempting to install an add-on and an error occurred because the extension was incompatible. %1$s is the add-on name, %2$s is the app name and %3$s is the app version. -->
   <string name="mozac_feature_addons_failed_to_install_incompatible_error">Không thể cài đặt %1$s vì nó không tương thích với %2$s %3$s.</string>
   <!-- Text shown when attempting to install a (hard) blocked add-on. %1$s is the add-on name. %2$s is the app name. -->
-  <string name="mozac_feature_addons_blocklisted_2">%1$s vi phạm chính sách của Mozilla và không thể cài đặt trên %2$s.</string>
+  <string name="mozac_feature_addons_blocklisted_2" tools:ignore="BrandUsage">%1$s vi phạm chính sách của Mozilla và không thể cài đặt trên %2$s.</string>
   <!-- Text shown when attempting to install an add-on that can only be install via Enterprise Policies, which is not supported on Android.  %1$s is the add-on name. -->
   <string name="mozac_feature_addons_admin_install_only">Không thể cài đặt %1$s vì nó chỉ có thể được cài đặt bởi tổ chức sử dụng chính sách doanh nghiệp, mà không được hỗ trợ trên nền tảng này.</string>
   <!-- Text shown when attempting to install an add-on that is soft-blocked. %1$s is the add-on name. %2$s is the app name. -->
@@ -420,7 +420,7 @@
   <!-- "See details" link displayed below an add-on status message. -->
   <string name="mozac_feature_addons_status_see_details">Xem chi tiết</string>
   <!-- Status message below an add-on in the add-ons manager when this add-on has been blocklisted. %1$s is the add-on name. -->
-  <string name="mozac_feature_addons_status_blocklisted_1">Tiện ích mở rộng này bị chặn do vi phạm chính sách của Mozilla và đã bị vô hiệu hóa.</string>
+  <string name="mozac_feature_addons_status_blocklisted_1" tools:ignore="BrandUsage">Tiện ích mở rộng này bị chặn do vi phạm chính sách của Mozilla và đã bị vô hiệu hóa.</string>
   <!-- Status message below an add-on in the add-ons manager when this add-on has been soft-blocked. -->
   <string name="mozac_feature_addons_status_softblocked_2">Tiện ích mở rộng này bị hạn chế và đã bị vô hiệu hóa. Bạn có thể bật nó, nhưng việc này có thể tiềm ẩn rủi ro.</string>
   <!-- Status message below an add-on in the add-ons manager when this add-on has been soft-blocked but the user re-enabled it. -->

@@ -156,7 +156,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s kuya´ rilawachixik chi awech.</p>\n<p>Chakojo´ pacha´ nik´ob´al rech echeb´alil:\n<ul>\n<li>Chatzukuj chi´l chanik´oj pa le kojkemchak:</li>\n<li>Che´aq´atej taq tzukub´al (on chak´ak´arisaj taq wiqitajem chech uya´ik b´e chi kech taq tzukub´al)</li>\n<li>Chayuju´ chech kichupik cookies chi´l utzukuxik chi´l unik´oxik b´antal kanoq</li>\n</ul> </p>\n<p>%1$s are b´anowinaq le Mozilla. Le qachak are uya´ik jun utzalaj, ujaqik kemk´atz.<br/>\n<a href=\"%2$s\">Chaweta´maj nik´aj chik</a></p>]]></string>
+  <string name="about_content" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s kuya´ rilawachixik chi awech.</p>\n<p>Chakojo´ pacha´ nik´ob´al rech echeb´alil:\n<ul>\n<li>Chatzukuj chi´l chanik´oj pa le kojkemchak:</li>\n<li>Che´aq´atej taq tzukub´al (on chak´ak´arisaj taq wiqitajem chech uya´ik b´e chi kech taq tzukub´al)</li>\n<li>Chayuju´ chech kichupik cookies chi´l utzukuxik chi´l unik´oxik b´antal kanoq</li>\n</ul> </p>\n<p>%1$s are b´anowinaq le Mozilla. Le qachak are uya´ik jun utzalaj, ujaqik kemk´atz.<br/>\n<a href=\"%2$s\">Chaweta´maj nik´aj chik</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">Chaweta\'maj nik\'aj chik</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -251,7 +251,7 @@
   <!-- "Hint" text for the "custom autocomplete URL" input field. Shown when the field is empty. -->
   <string name="preference_autocomplete_add_hint">Chanak\'a\' on chatz\'ib\'aj URL</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
-  <string name="preference_autocomplete_add_example2">K\'utb\'al: mozilla.org</string>
+  <string name="preference_autocomplete_add_example2" tools:ignore="BrandUsage">K\'utb\'al: mozilla.org</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">K\'utb\'al: example.com</string>
   <!-- Confirmation "snackbar" shown after a new custom autocomplete URL has been added. -->
@@ -323,15 +323,15 @@
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
   <string name="preference_default_browser2">Chab\'ana\' %1$s nik\'ob\'al ya\'om chi uloq</string>
-  <string name="preference_category_mozilla">Mozilla</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">Mozilla</string>
   <string name="preference_mozilla_telemetry2">Utaqik taq juq\'attzij rech ukojik</string>
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">Chaweta\'maj nik\'aj chik</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-  <string name="preference_mozilla_telemetry_summary2">Le Mozilla kukoj uchuq\'ab\' chech umulixik xew le rajawaxik kya\'ik chi\'l uk\'exsuk\'umaxik %1$s chi kech konojel.</string>
+  <string name="preference_mozilla_telemetry_summary2" tools:ignore="BrandUsage">Le Mozilla kukoj uchuq\'ab\' chech umulixik xew le rajawaxik kya\'ik chi\'l uk\'exsuk\'umaxik %1$s chi kech konojel.</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preference_daily_usage_ping_title">Chakub\'al qas kkojik</string>
-  <string name="preference_daily_usage_ping_description">Wa\' ktob\'an chech Mozilla chech uyakik kik\'u\'x taq e k\'ask\'atel kojonelab\'.</string>
+  <string name="preference_daily_usage_ping_description" tools:ignore="BrandUsage">Wa\' ktob\'an chech Mozilla chech uyakik kik\'u\'x taq e k\'ask\'atel kojonelab\'.</string>
   <string name="preference_daily_usage_ping_learn_more">Chaweta\'maj nik\'aj chik</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
   <string name="preference_privacy_notice">Ub\'ixikil rech echeb\'alil</string>
@@ -829,7 +829,7 @@
   <!-- Label for button to close the tab -->
   <string name="tab_crash_report_close_tab_button_label">Chatz\'apij K\'utjaqb\'al</string>
   <!-- Label for the checkbox to send the tab crash report to Mozilla -->
-  <string name="crash_report_send_crash_label">Utaqik uk\'axk\'olil chech Mozilla</string>
+  <string name="crash_report_send_crash_label" tools:ignore="BrandUsage">Utaqik uk\'axk\'olil chech Mozilla</string>
   <!-- Tracking protection bottom sheet -->
 
   <!-- Label for the total number of trackers blocked. %s is the app install date. -->

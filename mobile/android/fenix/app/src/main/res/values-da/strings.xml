@@ -72,7 +72,7 @@
   <!-- Text for the menu button to remove a recently saved bookmark from the user's home screen -->
   <string name="home_bookmarks_menu_item_remove">Fjern</string>
   <!-- About content. %1$s is the name of the app (for example "Firefox"). -->
-  <string name="about_content">%1$s er lavet af Mozilla.</string>
+  <string name="about_content" tools:ignore="BrandUsage">%1$s er lavet af Mozilla.</string>
   <!-- Private Browsing -->
   <string name="private_browsing_common_myths">Udbredte myter om privat browsing</string>
   <!-- Text to be announced by the accessibility service to inform the user that the private browsing mode is currently active. -->
@@ -473,7 +473,7 @@
   <!-- Button text to reopen firefox after the crash is processed %s is the name of the app (for example "Firefox") -->
   <string name="startup_crash_restart">Genåbn %s</string>
   <!-- Title for the usage data option in the privacy preferences dialog shown during onboarding. Note: The word "Mozilla" should NOT be translated. -->
-  <string name="onboarding_preferences_dialog_usage_data_title">Send tekniske data og data om brug til Mozilla</string>
+  <string name="onboarding_preferences_dialog_usage_data_title" tools:ignore="BrandUsage">Send tekniske data og data om brug til Mozilla</string>
   <string name="onboarding_preferences_dialog_usage_data_description_2" tools:ignore="BrandUsage">Data om din enhed, hardwarekonfiguration og hvordan du bruger Firefox hjælper med at forbedre funktioner, ydeevne og stabilitet for alle.</string>
   <string name="onboarding_preferences_dialog_usage_data_learn_more_2">Læs mere</string>
   <!-- Positive button label for the privacy preferences dialog shown during onboarding. -->
@@ -828,7 +828,7 @@
   <!-- Preference for accessibility -->
   <string name="preferences_accessibility">Tilgængelighed</string>
   <!-- Preference to override the Mozilla account server -->
-  <string name="preferences_override_account_server">Selvvalgt Mozilla-kontoserver</string>
+  <string name="preferences_override_account_server" tools:ignore="BrandUsage">Selvvalgt Mozilla-kontoserver</string>
   <!-- Preference to override the Sync token server -->
   <string name="preferences_override_sync_tokenserver">Selvvalgt synkroniseringsserver</string>
   <!-- Preference category for account information -->
@@ -856,7 +856,7 @@
   <!-- Preference description shown in the banner prompting the user to sign in for sync features -->
   <string name="preferences_sign_in_description">Synkroniser faneblade, bogmærker, adgangskoder m.m.</string>
   <!-- Preference shown instead of account display name while account profile information isn't available yet. -->
-  <string name="preferences_account_default_name_2">Mozilla-konto</string>
+  <string name="preferences_account_default_name_2" tools:ignore="BrandUsage">Mozilla-konto</string>
   <!-- Preference text for account title when there was an error syncing FxA -->
   <string name="preferences_account_sync_error">Opret forbindelse igen for at fortsætte synkronisering</string>
   <!-- Preference for language -->
@@ -904,7 +904,7 @@
   <!-- Summary for preference to show Firefox Suggest search suggestions for web content -->
   <string name="preferences_show_nonsponsored_suggestions_summary">Få forslag fra nettet relateret til din søgning</string>
   <!-- Preference title for switch preference to show search optimization cards -->
-  <string name="preferences_show_search_optimization_cards">Hent forslag fra Mozilla, mens du skriver</string>
+  <string name="preferences_show_search_optimization_cards" tools:ignore="BrandUsage">Hent forslag fra Mozilla, mens du skriver</string>
   <!-- Preference for link sharing -->
   <string name="preferences_link_sharing">Link-deling</string>
   <!-- Title for the link sharing toggle. %1$s is replaced by the brand name (e.g. Firefox). -->
@@ -1232,7 +1232,7 @@
   <string name="preferences_usage_data_description_1" tools:ignore="BrandUsage">Data om din enhed, din hardware-konfiguration og hvordan du bruger appen hjælper os med at forbedre funktioner, ydelse og stabilitet i Firefox.</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preferences_daily_usage_ping_title">Ping for dagligt brug</string>
-  <string name="preferences_daily_usage_ping_description">Dette hjælper Mozilla med at vurdere antallet af aktive brugere.</string>
+  <string name="preferences_daily_usage_ping_description" tools:ignore="BrandUsage">Dette hjælper Mozilla med at vurdere antallet af aktive brugere.</string>
   <string name="preferences_daily_usage_ping_learn_more">Læs mere om ping for dagligt brug</string>
   <!-- Title for the crash reporting option in the privacy preferences dialog shown during onboarding. -->
   <string name="crash_reporting_snack_bar_message">Rapport sendt</string>
@@ -1258,7 +1258,7 @@
   <!-- Title for studies preferences -->
   <string name="preference_experiments_2">Undersøgelser</string>
   <!-- Summary for studies preferences -->
-  <string name="preference_experiments_summary_2">Tillad at Mozilla installerer og afvikler undersøgelser</string>
+  <string name="preference_experiments_summary_2" tools:ignore="BrandUsage">Tillad at Mozilla installerer og afvikler undersøgelser</string>
   <!--
     Turn On Sync Preferences
 
@@ -2007,7 +2007,7 @@
   -->
   <string name="tab_crash_title_2">%1$s kan ikke indlæse siden.</string>
   <!-- Send crash report checkbox text on the tab crash page -->
-  <string name="tab_crash_send_report">Send fejlrapport til Mozilla</string>
+  <string name="tab_crash_send_report" tools:ignore="BrandUsage">Send fejlrapport til Mozilla</string>
   <!-- Close tab button text on the tab crash page -->
   <string name="tab_crash_close">Luk faneblad</string>
   <!-- Restore tab button text on the tab crash page -->

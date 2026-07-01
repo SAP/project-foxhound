@@ -156,7 +156,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>Το %1$s σάς δίνει τον έλεγχο.</p>\n<p>Χρησιμοποιήστε το για:\n<ul>\n<li>Αναζήτηση και περιήγηση</li>\n<li>Φραγή ιχνηλατών (ή αποδοχή, ενημερώνοντας τις ρυθμίσεις)</li>\n<li>Διαγραφή των cookie και του ιστορικού αναζητήσεων και περιήγησης</li>\n</ul> </p>\n<p>Το %1$s αναπτύσσεται από τη Mozilla. Αποστολή μας είναι ένα υγιές και ανοικτό διαδίκτυο.<br/>\n<a href=\"%2$s\">Μάθετε περισσότερα</a></p>]]></string>
+  <string name="about_content" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote"><![CDATA[<p>Το %1$s σάς δίνει τον έλεγχο.</p>\n<p>Χρησιμοποιήστε το για:\n<ul>\n<li>Αναζήτηση και περιήγηση</li>\n<li>Φραγή ιχνηλατών (ή αποδοχή, ενημερώνοντας τις ρυθμίσεις)</li>\n<li>Διαγραφή των cookie και του ιστορικού αναζητήσεων και περιήγησης</li>\n</ul> </p>\n<p>Το %1$s αναπτύσσεται από τη Mozilla. Αποστολή μας είναι ένα υγιές και ανοικτό διαδίκτυο.<br/>\n<a href=\"%2$s\">Μάθετε περισσότερα</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">Μάθετε περισσότερα</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -251,7 +251,7 @@
   <!-- "Hint" text for the "custom autocomplete URL" input field. Shown when the field is empty. -->
   <string name="preference_autocomplete_add_hint">Επικόλληση ή εισαγωγή URL</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
-  <string name="preference_autocomplete_add_example2">Παράδειγμα: mozilla.org</string>
+  <string name="preference_autocomplete_add_example2" tools:ignore="BrandUsage">Παράδειγμα: mozilla.org</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">Παράδειγμα: example.com</string>
   <!-- Confirmation "snackbar" shown after a new custom autocomplete URL has been added. -->
@@ -323,15 +323,15 @@
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
   <string name="preference_default_browser2">Ορισμός του %1$s ως προεπιλογής</string>
-  <string name="preference_category_mozilla">Mozilla</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">Mozilla</string>
   <string name="preference_mozilla_telemetry2">Αποστολή δεδομένων χρήσης</string>
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">Μάθετε περισσότερα</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-  <string name="preference_mozilla_telemetry_summary2">Η Mozilla προσπαθεί να συλλέγει μόνο όσα χρειάζεται για την παροχή και τη βελτίωση του %1$s για όλους.</string>
+  <string name="preference_mozilla_telemetry_summary2" tools:ignore="BrandUsage">Η Mozilla προσπαθεί να συλλέγει μόνο όσα χρειάζεται για την παροχή και τη βελτίωση του %1$s για όλους.</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preference_daily_usage_ping_title">Ping ημερήσιας χρήσης</string>
-  <string name="preference_daily_usage_ping_description">Αυτό βοηθά τη Mozilla να εκτιμήσει τους ενεργούς χρήστες.</string>
+  <string name="preference_daily_usage_ping_description" tools:ignore="BrandUsage">Αυτό βοηθά τη Mozilla να εκτιμήσει τους ενεργούς χρήστες.</string>
   <string name="preference_daily_usage_ping_learn_more">Μάθετε περισσότερα</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
   <string name="preference_privacy_notice">Σημείωση απορρήτου</string>
@@ -829,7 +829,7 @@
   <!-- Label for button to close the tab -->
   <string name="tab_crash_report_close_tab_button_label">Κλείσιμο καρτέλας</string>
   <!-- Label for the checkbox to send the tab crash report to Mozilla -->
-  <string name="crash_report_send_crash_label">Αποστολή αναφοράς κατάρρευσης στη Mozilla</string>
+  <string name="crash_report_send_crash_label" tools:ignore="BrandUsage">Αποστολή αναφοράς κατάρρευσης στη Mozilla</string>
   <!-- Tracking protection bottom sheet -->
 
   <!-- Label for the total number of trackers blocked. %s is the app install date. -->

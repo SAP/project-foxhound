@@ -156,7 +156,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s dajo was kontrolu wobchowaś.</p>\n<p>Wužywajśo jen ako priwatny wobglědowak:\n<ul>\n<li>Pytajśo a pśeglědujśo direktnje w nałoženju</li>\n<li>Blokěrujśo pśeslědowaki (abo aktualizěrujśo nastajenja, aby pśeslědowaki dowólił)</li>\n<li>Lašujśo cookieje a pytańsku a pśeglědowańsku historiju</li>\n</ul> </p>\n<p>%1$s se wót Mozilla wuwija. Naša misija jo spěchowanje strowego, wótwórjonego interneta.<br/>\n<a href=\"%2$s\">Dalšne informacije</a></p>]]></string>
+  <string name="about_content" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s dajo was kontrolu wobchowaś.</p>\n<p>Wužywajśo jen ako priwatny wobglědowak:\n<ul>\n<li>Pytajśo a pśeglědujśo direktnje w nałoženju</li>\n<li>Blokěrujśo pśeslědowaki (abo aktualizěrujśo nastajenja, aby pśeslědowaki dowólił)</li>\n<li>Lašujśo cookieje a pytańsku a pśeglědowańsku historiju</li>\n</ul> </p>\n<p>%1$s se wót Mozilla wuwija. Naša misija jo spěchowanje strowego, wótwórjonego interneta.<br/>\n<a href=\"%2$s\">Dalšne informacije</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">Dalšne informacije</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -251,7 +251,7 @@
   <!-- "Hint" text for the "custom autocomplete URL" input field. Shown when the field is empty. -->
   <string name="preference_autocomplete_add_hint">Adresu zasajźiś abo zapódaś</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
-  <string name="preference_autocomplete_add_example2">Pśikład: mozilla.org</string>
+  <string name="preference_autocomplete_add_example2" tools:ignore="BrandUsage">Pśikład: mozilla.org</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">Pśikład: example.com</string>
   <!-- Confirmation "snackbar" shown after a new custom autocomplete URL has been added. -->
@@ -323,15 +323,15 @@
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
   <string name="preference_default_browser2">%1$s ako standardny wobglědowak nastajiś</string>
-  <string name="preference_category_mozilla">Mozilla</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">Mozilla</string>
   <string name="preference_mozilla_telemetry2">Wužywańske daty pósłaś</string>
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">Dalšne informacije</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-  <string name="preference_mozilla_telemetry_summary2">Mozilla se procujo, jano informacije gromaźiś, z kótarymiž móžomy %1$s za kuždego póbitowaś a pólěpšyś.</string>
+  <string name="preference_mozilla_telemetry_summary2" tools:ignore="BrandUsage">Mozilla se procujo, jano informacije gromaźiś, z kótarymiž móžomy %1$s za kuždego póbitowaś a pólěpšyś.</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preference_daily_usage_ping_title">Ping za wšedne wužywanje</string>
-  <string name="preference_daily_usage_ping_description">To Mozilla pomaga, se aktiwne wužywarje wažyś.</string>
+  <string name="preference_daily_usage_ping_description" tools:ignore="BrandUsage">To Mozilla pomaga, se aktiwne wužywarje wažyś.</string>
   <string name="preference_daily_usage_ping_learn_more">Dalšne informacije</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
   <string name="preference_privacy_notice">Powěźeńka priwatnosći</string>
@@ -829,7 +829,7 @@
   <!-- Label for button to close the tab -->
   <string name="tab_crash_report_close_tab_button_label">Rejtarik zacyniś</string>
   <!-- Label for the checkbox to send the tab crash report to Mozilla -->
-  <string name="crash_report_send_crash_label">Mozilla rozpšawu wowalenja pósłaś</string>
+  <string name="crash_report_send_crash_label" tools:ignore="BrandUsage">Mozilla rozpšawu wowalenja pósłaś</string>
   <!-- Tracking protection bottom sheet -->
 
   <!-- Label for the total number of trackers blocked. %s is the app install date. -->

@@ -125,7 +125,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s आपल्याला नियंत्रण देतो.</p>\n<p>खाजगी ब्राउझर म्हणून वापरा:\n<ul>\n<li>अँप मध्येच शोध व ब्राउझ करा</li>\n<li>मागोवा यंत्रणा अडवा(किंवा सेटिंग बदलून मागोवा यंत्रणेला परवानगी द्या)</li>\n<li>कुकीज, सर्च व ब्राऊझिंग इतिहास नष्ट करण्यासाठी खोडून टाका</li>\n</ul> </p>\n<p>%1$s Mozilla ने उत्पादित केला आहे. खुले व सुधृढ इंटरनेट जोपासणे आमचे ध्येय आहे.<br/>\n<a href=\"%2$s\">अधिक जाणून घ्या</a></p>]]></string>
+  <string name="about_content" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s आपल्याला नियंत्रण देतो.</p>\n<p>खाजगी ब्राउझर म्हणून वापरा:\n<ul>\n<li>अँप मध्येच शोध व ब्राउझ करा</li>\n<li>मागोवा यंत्रणा अडवा(किंवा सेटिंग बदलून मागोवा यंत्रणेला परवानगी द्या)</li>\n<li>कुकीज, सर्च व ब्राऊझिंग इतिहास नष्ट करण्यासाठी खोडून टाका</li>\n</ul> </p>\n<p>%1$s Mozilla ने उत्पादित केला आहे. खुले व सुधृढ इंटरनेट जोपासणे आमचे ध्येय आहे.<br/>\n<a href=\"%2$s\">अधिक जाणून घ्या</a></p>]]></string>
   <!-- Header for the Privacy and Security settings menu -->
   <string name="preference_privacy_and_security_header">गोपनीयता आणि सुरक्षा</string>
   <!-- Preference summary for settings related to privacy and security -->
@@ -204,7 +204,7 @@
   <!-- "Hint" text for the "custom autocomplete URL" input field. Shown when the field is empty. -->
   <string name="preference_autocomplete_add_hint">चिकटवा किंवा URL प्रविष्ट करा</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
-  <string name="preference_autocomplete_add_example2">उदाहरण: mozilla.org</string>
+  <string name="preference_autocomplete_add_example2" tools:ignore="BrandUsage">उदाहरण: mozilla.org</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">उदाहरण: example.com</string>
   <!-- Confirmation "snackbar" shown after a new custom autocomplete URL has been added. -->
@@ -268,12 +268,12 @@
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
   <string name="preference_default_browser2">मुलभूत ब्राउझर म्हणून %1$s वापरा</string>
-  <string name="preference_category_mozilla">Mozilla</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">Mozilla</string>
   <string name="preference_mozilla_telemetry2">वापर डेटा पाठवा</string>
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">अधिक जाणा</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-  <string name="preference_mozilla_telemetry_summary2">सर्वांसाठी %1$s उपलब्ध करण्यासाठी व सुधारण्यास जी गरजेची आहे फक्त तीच माहिती जमा करण्यास Mozilla तत्पर आहे.</string>
+  <string name="preference_mozilla_telemetry_summary2" tools:ignore="BrandUsage">सर्वांसाठी %1$s उपलब्ध करण्यासाठी व सुधारण्यास जी गरजेची आहे फक्त तीच माहिती जमा करण्यास Mozilla तत्पर आहे.</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
   <string name="preference_privacy_notice">गोपनीयता सूचना</string>
   <!-- Item in Preferences that shows the about page. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar"). -->

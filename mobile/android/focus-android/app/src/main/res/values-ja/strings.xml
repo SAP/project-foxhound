@@ -156,7 +156,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s ではあなたがすべてをコントロールできます。</p>\n<p>次のようにプライベートブラウザーとして使えます。\n<ul>\n<li>アプリで適切に検索、閲覧</li>\n<li>トラッカーをブロック （あるいは設定を更新して許可）</li>\n<li>検索履歴、閲覧履歴の消去だけでなく Cookie を削除</li>\n</ul> </p>\n<p>%1$s は Mozilla が開発しています。私たちのミッションは健全で開かれたインターネットを発展させることです。<br/>\n<a href=\"%2$s\">詳しくはこちら</a></p>]]></string>
+  <string name="about_content" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s ではあなたがすべてをコントロールできます。</p>\n<p>次のようにプライベートブラウザーとして使えます。\n<ul>\n<li>アプリで適切に検索、閲覧</li>\n<li>トラッカーをブロック （あるいは設定を更新して許可）</li>\n<li>検索履歴、閲覧履歴の消去だけでなく Cookie を削除</li>\n</ul> </p>\n<p>%1$s は Mozilla が開発しています。私たちのミッションは健全で開かれたインターネットを発展させることです。<br/>\n<a href=\"%2$s\">詳しくはこちら</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">詳細情報</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -251,7 +251,7 @@
   <!-- "Hint" text for the "custom autocomplete URL" input field. Shown when the field is empty. -->
   <string name="preference_autocomplete_add_hint">URL を入力するか貼り付けてください</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
-  <string name="preference_autocomplete_add_example2">例: mozilla.org</string>
+  <string name="preference_autocomplete_add_example2" tools:ignore="BrandUsage">例: mozilla.org</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">入力例: example.com</string>
   <!-- Confirmation "snackbar" shown after a new custom autocomplete URL has been added. -->
@@ -323,15 +323,15 @@
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
   <string name="preference_default_browser2">%1$s を既定のブラウザーに設定</string>
-  <string name="preference_category_mozilla">Mozilla</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">Mozilla</string>
   <string name="preference_mozilla_telemetry2">使用状況データを送信</string>
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">詳細情報</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-  <string name="preference_mozilla_telemetry_summary2">Mozilla は %1$s を皆さんに提供し改善するために必要な情報だけを収集するよう努めています。</string>
+  <string name="preference_mozilla_telemetry_summary2" tools:ignore="BrandUsage">Mozilla は %1$s を皆さんに提供し改善するために必要な情報だけを収集するよう努めています。</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preference_daily_usage_ping_title">毎日の使用頻度を送信する</string>
-  <string name="preference_daily_usage_ping_description">これは Mozilla がアクティブユーザー数を推定するのに役立ちます。</string>
+  <string name="preference_daily_usage_ping_description" tools:ignore="BrandUsage">これは Mozilla がアクティブユーザー数を推定するのに役立ちます。</string>
   <string name="preference_daily_usage_ping_learn_more">詳細情報</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
   <string name="preference_privacy_notice">プライバシー通知</string>
@@ -829,7 +829,7 @@
   <!-- Label for button to close the tab -->
   <string name="tab_crash_report_close_tab_button_label">タブを閉じる</string>
   <!-- Label for the checkbox to send the tab crash report to Mozilla -->
-  <string name="crash_report_send_crash_label">クラッシュレポートを Mozilla へ送信する</string>
+  <string name="crash_report_send_crash_label" tools:ignore="BrandUsage">クラッシュレポートを Mozilla へ送信する</string>
   <!-- Tracking protection bottom sheet -->
 
   <!-- Label for the total number of trackers blocked. %s is the app install date. -->

@@ -30,7 +30,7 @@
   <!-- Content description for close button while in multiselect mode in tab tray -->
   <string name="tab_tray_close_multiselect_content_description">பன்முறை தேர் பயன்முறையிலிருந்து வெளியேறுக</string>
   <!-- About content. %1$s is the name of the app (for example "Firefox"). -->
-  <string name="about_content">%1$s மொசில்லாவால் தயாரிக்கப்படுகிறது.</string>
+  <string name="about_content" tools:ignore="BrandUsage">%1$s மொசில்லாவால் தயாரிக்கப்படுகிறது.</string>
   <!-- Private Browsing -->
   <string name="private_browsing_common_myths">கமுக்க உலாவல் பற்றிய பொதுவான தொன்மங்கள்</string>
   <!-- Text for the positive action button -->
@@ -415,7 +415,7 @@
   -->
   <string name="tab_crash_title_2">மன்னிக்கவும். %1$s பக்கத்தை ஏற்ற முடியாது.</string>
   <!-- Send crash report checkbox text on the tab crash page -->
-  <string name="tab_crash_send_report">செயலிழப்பு அறிக்கையை மொசில்லாவுக்கு அனுப்பு</string>
+  <string name="tab_crash_send_report" tools:ignore="BrandUsage">செயலிழப்பு அறிக்கையை மொசில்லாவுக்கு அனுப்பு</string>
   <!-- Close tab button text on the tab crash page -->
   <string name="tab_crash_close">கீற்றை மூடு</string>
   <!-- Restore tab button text on the tab crash page -->

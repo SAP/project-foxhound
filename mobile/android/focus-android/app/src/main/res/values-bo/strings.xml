@@ -180,7 +180,7 @@
   <!-- "Hint" text for the "custom autocomplete URL" input field. Shown when the field is empty. -->
   <string name="preference_autocomplete_add_hint">དྲ་ཚིཊ་ཁ་བྱང་འདིར་འཇུག་རོཊ།</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
-  <string name="preference_autocomplete_add_example2">དཔེ་མཚོན། mozilla.org</string>
+  <string name="preference_autocomplete_add_example2" tools:ignore="BrandUsage">དཔེ་མཚོན། mozilla.org</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">དཔེ་མཚོན། example.com</string>
   <!-- Confirmation "snackbar" shown after a new custom autocomplete URL has been added. -->
@@ -221,7 +221,7 @@
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
   <string name="preference_default_browser2">\" %1$s སྔོན་སྒྲིག་བཤར་ཆས་སུ་བཀོད་པ།\"</string>
-  <string name="preference_category_mozilla">Mozilla</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">Mozilla</string>
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">དེ་བས་མང་།</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->

@@ -70,7 +70,7 @@
   <!-- Text for the menu button to remove a recently saved bookmark from the user's home screen -->
   <string name="home_bookmarks_menu_item_remove">Ukloni</string>
   <!-- About content. %1$s is the name of the app (for example "Firefox"). -->
-  <string name="about_content">%1$s proizvodi Mozilla.</string>
+  <string name="about_content" tools:ignore="BrandUsage">%1$s proizvodi Mozilla.</string>
   <!-- Private Browsing -->
   <string name="private_browsing_common_myths">Česti mitovi o privatnom pregledavanju</string>
   <!-- Text to be announced by the accessibility service to inform the user that the private browsing mode is currently active. -->
@@ -469,7 +469,7 @@
   <!-- Button text to reopen firefox after the crash is processed %s is the name of the app (for example "Firefox") -->
   <string name="startup_crash_restart">Ponovo otvori %s</string>
   <!-- Title for the usage data option in the privacy preferences dialog shown during onboarding. Note: The word "Mozilla" should NOT be translated. -->
-  <string name="onboarding_preferences_dialog_usage_data_title">Šalji tehničke podatke i podatke o interakciji Mozilli</string>
+  <string name="onboarding_preferences_dialog_usage_data_title" tools:ignore="BrandUsage">Šalji tehničke podatke i podatke o interakciji Mozilli</string>
   <string name="onboarding_preferences_dialog_usage_data_description_2" tools:ignore="BrandUsage">Podaci o tvom uređaju, hardverskoj konfiguraciji i načinu na koji koristiš Firefox pomažu poboljšati funkcije, performansu i stabilnost za sve.</string>
   <string name="onboarding_preferences_dialog_usage_data_learn_more_2">Saznaj više</string>
   <!-- Positive button label for the privacy preferences dialog shown during onboarding. -->
@@ -823,7 +823,7 @@
   <!-- Preference for accessibility -->
   <string name="preferences_accessibility">Pristupačnost</string>
   <!-- Preference to override the Mozilla account server -->
-  <string name="preferences_override_account_server">Prilagođeni server Mozilla računa</string>
+  <string name="preferences_override_account_server" tools:ignore="BrandUsage">Prilagođeni server Mozilla računa</string>
   <!-- Preference to override the Sync token server -->
   <string name="preferences_override_sync_tokenserver">Prilagođeni poslužitelj za sinkronizaciju</string>
   <!-- Preference category for account information -->
@@ -851,7 +851,7 @@
   <!-- Preference description shown in the banner prompting the user to sign in for sync features -->
   <string name="preferences_sign_in_description">Sinkroniziraj kartice, zabilješke, lozinke i drugo.</string>
   <!-- Preference shown instead of account display name while account profile information isn't available yet. -->
-  <string name="preferences_account_default_name_2">Mozilla račun</string>
+  <string name="preferences_account_default_name_2" tools:ignore="BrandUsage">Mozilla račun</string>
   <!-- Preference text for account title when there was an error syncing FxA -->
   <string name="preferences_account_sync_error">Ponovo se poveži za nastavak sinkronizacije</string>
   <!-- Preference for language -->
@@ -899,7 +899,7 @@
   <!-- Summary for preference to show Firefox Suggest search suggestions for web content -->
   <string name="preferences_show_nonsponsored_suggestions_summary">Dobij prijedloge s weba koji se odnose na tvoju pretragu</string>
   <!-- Preference title for switch preference to show search optimization cards -->
-  <string name="preferences_show_search_optimization_cards">Dohvaćaj Mozilline prijedloge dok tipkaš</string>
+  <string name="preferences_show_search_optimization_cards" tools:ignore="BrandUsage">Dohvaćaj Mozilline prijedloge dok tipkaš</string>
   <!-- Preference for link sharing -->
   <string name="preferences_link_sharing">Dijeljenje poveznica</string>
   <!-- Title for the link sharing toggle. %1$s is replaced by the brand name (e.g. Firefox). -->
@@ -1227,7 +1227,7 @@
   <string name="preferences_usage_data_description_1" tools:ignore="BrandUsage">Podaci o tvom uređaju, hardverskoj konfiguraciji i načinu korištenja nam pomažu poboljšati Firefox funkcije, performansu i stabilnost.</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preferences_daily_usage_ping_title">Ping dnevne upotrebe</string>
-  <string name="preferences_daily_usage_ping_description">Ovo pomaže Mozilli procijeniti broj aktivnih korisnika.</string>
+  <string name="preferences_daily_usage_ping_description" tools:ignore="BrandUsage">Ovo pomaže Mozilli procijeniti broj aktivnih korisnika.</string>
   <string name="preferences_daily_usage_ping_learn_more">Saznaj više o pingu dnevne upotrebe</string>
   <!-- Title for the crash reporting option in the privacy preferences dialog shown during onboarding. -->
   <string name="crash_reporting_snack_bar_message">Izvještaj je poslan</string>
@@ -1253,7 +1253,7 @@
   <!-- Title for studies preferences -->
   <string name="preference_experiments_2">Istraživanja</string>
   <!-- Summary for studies preferences -->
-  <string name="preference_experiments_summary_2">Omogućuje Mozilli instalaciju i pokretanje istraživanja</string>
+  <string name="preference_experiments_summary_2" tools:ignore="BrandUsage">Omogućuje Mozilli instalaciju i pokretanje istraživanja</string>
   <!--
     Turn On Sync Preferences
 
@@ -1992,7 +1992,7 @@
   -->
   <string name="tab_crash_title_2">Oprosti. %1$s ne može učitati tu stranicu.</string>
   <!-- Send crash report checkbox text on the tab crash page -->
-  <string name="tab_crash_send_report">Pošalji izvještaj o prekidu rada programa organizaciji Mozilla</string>
+  <string name="tab_crash_send_report" tools:ignore="BrandUsage">Pošalji izvještaj o prekidu rada programa organizaciji Mozilla</string>
   <!-- Close tab button text on the tab crash page -->
   <string name="tab_crash_close">Zatvori karticu</string>
   <!-- Restore tab button text on the tab crash page -->

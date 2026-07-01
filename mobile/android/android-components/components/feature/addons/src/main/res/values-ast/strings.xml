@@ -204,7 +204,7 @@
   <!-- Text shown when attempting to install an add-on and an error occurred because the extension was incompatible. %1$s is the add-on name, %2$s is the app name and %3$s is the app version. -->
   <string name="mozac_feature_addons_failed_to_install_incompatible_error">«%1$s» nun se pudo instalar porque nun ye compatible con %2$s %3$s.</string>
   <!-- Text shown when attempting to install a (hard) blocked add-on. %1$s is the add-on name. %2$s is the app name. -->
-  <string name="mozac_feature_addons_blocklisted_2">«%1$s» incumple les polítiques de Mozilla y nun se pue instalar en %2$s.</string>
+  <string name="mozac_feature_addons_blocklisted_2" tools:ignore="BrandUsage">«%1$s» incumple les polítiques de Mozilla y nun se pue instalar en %2$s.</string>
   <!-- Text shown when attempting to install an add-on that can only be install via Enterprise Policies, which is not supported on Android.  %1$s is the add-on name. -->
   <string name="mozac_feature_addons_admin_install_only">«%1$s» nun se pudo instalar porque namás pue instalalu una organización qu\'use polítiques d\'empresa, mas esta plataforma nun ye compatible.</string>
   <!-- Text shown after failed to enable an add-on. %1$s is the add-on name. -->
@@ -244,7 +244,7 @@
   <!-- "See details" link displayed below an add-on status message. -->
   <string name="mozac_feature_addons_status_see_details">Ver los detalles</string>
   <!-- Status message below an add-on in the add-ons manager when this add-on has been blocklisted. %1$s is the add-on name. -->
-  <string name="mozac_feature_addons_status_blocklisted_1">Esta estensión ta bloquiada por incumplir les polítiques de Mozilla y desactivóse.</string>
+  <string name="mozac_feature_addons_status_blocklisted_1" tools:ignore="BrandUsage">Esta estensión ta bloquiada por incumplir les polítiques de Mozilla y desactivóse.</string>
   <!-- Status message below an add-on in the add-ons manager when this add-on hasn't been signed correctly. %1$s is the add-on name. -->
   <string name="mozac_feature_addons_status_unsigned">Nun se pudo verificar que\'l complementu «%1$s» seya seguru y desactivóse.</string>
   <!-- Status message below an add-on in the add-ons manager when this add-on isn't compatible with the application version. %1$s is the add-on name, %2$s is the app name and %3$s is the app version. -->

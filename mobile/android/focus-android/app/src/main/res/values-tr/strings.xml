@@ -156,7 +156,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s kontrolü size verir.</p>\n<p>Onu gizlilik odaklı bir tarayıcı olarak kullanabilirsiniz:\n<ul>\n<li>Doğrudan uygulamada arama yapabilir ve web’de gezinebilirsiniz</li>\n<li>Takip kodlarını engelleyebilirsiniz (veya belli takip kodlarına izin verebilirsiniz)</li>\n<li>Tek düğmeyle çerezleri, arama ve gezinti geçmişinizi silebilirsiniz</li>\n</ul> </p>\n<p>%1$s Mozilla tarafından geliştirilmiştir. Misyonumuz daha sağlıklı ve açık bir internet yaratmaktır.<br/>\n<a href=\"%2$s\">Daha fazla bilgi alın</a></p>]]></string>
+  <string name="about_content" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s kontrolü size verir.</p>\n<p>Onu gizlilik odaklı bir tarayıcı olarak kullanabilirsiniz:\n<ul>\n<li>Doğrudan uygulamada arama yapabilir ve web’de gezinebilirsiniz</li>\n<li>Takip kodlarını engelleyebilirsiniz (veya belli takip kodlarına izin verebilirsiniz)</li>\n<li>Tek düğmeyle çerezleri, arama ve gezinti geçmişinizi silebilirsiniz</li>\n</ul> </p>\n<p>%1$s Mozilla tarafından geliştirilmiştir. Misyonumuz daha sağlıklı ve açık bir internet yaratmaktır.<br/>\n<a href=\"%2$s\">Daha fazla bilgi alın</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">Daha fazla bilgi alın</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -251,7 +251,7 @@
   <!-- "Hint" text for the "custom autocomplete URL" input field. Shown when the field is empty. -->
   <string name="preference_autocomplete_add_hint">Adresi yapıştırın veya yazın</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
-  <string name="preference_autocomplete_add_example2">Örnek: mozilla.org</string>
+  <string name="preference_autocomplete_add_example2" tools:ignore="BrandUsage">Örnek: mozilla.org</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">Örnek: example.com</string>
   <!-- Confirmation "snackbar" shown after a new custom autocomplete URL has been added. -->
@@ -323,15 +323,15 @@
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
   <string name="preference_default_browser2">%1$s’u varsayılan tarayıcım yap</string>
-  <string name="preference_category_mozilla">Mozilla</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">Mozilla</string>
   <string name="preference_mozilla_telemetry2">Kullanım verilerini gönder</string>
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">Daha fazla bilgi al</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-  <string name="preference_mozilla_telemetry_summary2">Mozilla, yalnızca %1$s’u daha da geliştirmek için ihtiyaç duyduğumuz verileri toplar.</string>
+  <string name="preference_mozilla_telemetry_summary2" tools:ignore="BrandUsage">Mozilla, yalnızca %1$s’u daha da geliştirmek için ihtiyaç duyduğumuz verileri toplar.</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preference_daily_usage_ping_title">Günlük kullanım ping’i</string>
-  <string name="preference_daily_usage_ping_description">Bu sayede Mozilla aktif kullanıcı sayısını tahmin edebilir.</string>
+  <string name="preference_daily_usage_ping_description" tools:ignore="BrandUsage">Bu sayede Mozilla aktif kullanıcı sayısını tahmin edebilir.</string>
   <string name="preference_daily_usage_ping_learn_more">Daha fazla bilgi al</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
   <string name="preference_privacy_notice">Gizlilik bildirimi</string>
@@ -829,7 +829,7 @@
   <!-- Label for button to close the tab -->
   <string name="tab_crash_report_close_tab_button_label">Sekmeyi kapat</string>
   <!-- Label for the checkbox to send the tab crash report to Mozilla -->
-  <string name="crash_report_send_crash_label">Çökme raporunu Mozilla’ya gönder</string>
+  <string name="crash_report_send_crash_label" tools:ignore="BrandUsage">Çökme raporunu Mozilla’ya gönder</string>
   <!-- Tracking protection bottom sheet -->
 
   <!-- Label for the total number of trackers blocked. %s is the app install date. -->

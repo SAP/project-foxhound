@@ -66,7 +66,7 @@
   <!-- Text for the menu button to remove a recently saved bookmark from the user's home screen -->
   <string name="home_bookmarks_menu_item_remove">Kkes</string>
   <!-- About content. %1$s is the name of the app (for example "Firefox"). -->
-  <string name="about_content">%1$s d afares n Mozilla.</string>
+  <string name="about_content" tools:ignore="BrandUsage">%1$s d afares n Mozilla.</string>
   <!-- Private Browsing -->
   <string name="private_browsing_common_myths">Tiktiwin tigejdanin yuzzlen ur nṣeḥḥi ara</string>
   <!-- Text to be announced by the accessibility service to inform the user that the private browsing mode is currently active. -->
@@ -143,6 +143,8 @@
   <string name="home_screen_shortcut_open_new_private_tab_2">Iccer uslig amaynut</string>
   <!-- Shortcut action to open Passwords screen -->
   <string name="home_screen_shortcut_passwords">Awalen uffiren</string>
+  <!-- Shortcut action to open uninstall survey -->
+  <string name="home_screen_shortcut_uninstall_survey">Kkes asbeddi, ayɣeṛ?</string>
   <!--
     Recent Tabs
 
@@ -397,7 +399,7 @@
   <!-- Button text to reopen firefox after the crash is processed %s is the name of the app (for example "Firefox") -->
   <string name="startup_crash_restart">Ales alday n %s</string>
   <!-- Title for the usage data option in the privacy preferences dialog shown during onboarding. Note: The word "Mozilla" should NOT be translated. -->
-  <string name="onboarding_preferences_dialog_usage_data_title">Azen isefka itiknikanen d yimyigawen ɣer Mozilla</string>
+  <string name="onboarding_preferences_dialog_usage_data_title" tools:ignore="BrandUsage">Azen isefka itiknikanen d yimyigawen ɣer Mozilla</string>
   <string name="onboarding_preferences_dialog_usage_data_description_2" tools:ignore="BrandUsage">Isefka yerzan ibenk-ik, tawila n warrum akked wamek i tesseqdaceḍ Firefox yettal-aneɣ ad nesnerni timahilin, tamlellit akked urkad i yal yiwen.</string>
   <string name="onboarding_preferences_dialog_usage_data_learn_more_2">Issin ugar</string>
   <!-- Positive button label for the privacy preferences dialog shown during onboarding. -->
@@ -597,7 +599,7 @@
   <!-- Preference for accessibility -->
   <string name="preferences_accessibility">Tuffart</string>
   <!-- Preference to override the Mozilla account server -->
-  <string name="preferences_override_account_server">Sagen aqeddac n umiḍan Mozilla</string>
+  <string name="preferences_override_account_server" tools:ignore="BrandUsage">Sagen aqeddac n umiḍan Mozilla</string>
   <!-- Preference to override the Sync token server -->
   <string name="preferences_override_sync_tokenserver">Sagen aeddac n umtawi</string>
   <!-- Preference category for account information -->
@@ -621,7 +623,7 @@
   <!-- Preference description shown in the banner prompting the user to sign in for sync features -->
   <string name="preferences_sign_in_description">Mtawi iccaren, ticraḍ, awalen n uɛeddi d wayen niḍen.</string>
   <!-- Preference shown instead of account display name while account profile information isn't available yet. -->
-  <string name="preferences_account_default_name_2">Amiḍan n Mozilla</string>
+  <string name="preferences_account_default_name_2" tools:ignore="BrandUsage">Amiḍan n Mozilla</string>
   <!-- Preference text for account title when there was an error syncing FxA -->
   <string name="preferences_account_sync_error">Ales tuqqna akken ad ikemmel umtawi</string>
   <!-- Preference for language -->
@@ -955,7 +957,7 @@
   <string name="preferences_usage_data_description_1" tools:ignore="BrandUsage">Isefka yerzan ibenk-ik, tawila n warrum akked useqdec-ik, ttεawanen-aɣ ad nesnerni timahilin, tamlellit akked urkad n Firefox.</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preferences_daily_usage_ping_title">Ping n useqdec n yal ass</string>
-  <string name="preferences_daily_usage_ping_description">Aya yettallel Mozilla ad tessekyed amḍan n yiseqdacen urmiden.</string>
+  <string name="preferences_daily_usage_ping_description" tools:ignore="BrandUsage">Aya yettallel Mozilla ad tessekyed amḍan n yiseqdacen urmiden.</string>
   <string name="preferences_daily_usage_ping_learn_more">Issin ugar ɣef ping n useqdec n yal ass</string>
   <!-- Title for the crash reporting option in the privacy preferences dialog shown during onboarding. -->
   <string name="crash_reporting_snack_bar_message">Aneqqis yettwazen</string>
@@ -976,7 +978,7 @@
   <!-- Title for studies preferences -->
   <string name="preference_experiments_2">Studies</string>
   <!-- Summary for studies preferences -->
-  <string name="preference_experiments_summary_2">Sireg Mozilla ad tesbedded sakin ad tseddu studies</string>
+  <string name="preference_experiments_summary_2" tools:ignore="BrandUsage">Sireg Mozilla ad tesbedded sakin ad tseddu studies</string>
   <!--
     Turn On Sync Preferences
 
@@ -1465,7 +1467,7 @@
   -->
   <string name="tab_crash_title_2">Suref-aɣ. %1$s ur izmir ara ad isali asebter-nni.</string>
   <!-- Send crash report checkbox text on the tab crash page -->
-  <string name="tab_crash_send_report">Azen aneqqis n uɣelluy i Mozilla</string>
+  <string name="tab_crash_send_report" tools:ignore="BrandUsage">Azen aneqqis n uɣelluy i Mozilla</string>
   <!-- Close tab button text on the tab crash page -->
   <string name="tab_crash_close">Mdel iccer</string>
   <!-- Restore tab button text on the tab crash page -->

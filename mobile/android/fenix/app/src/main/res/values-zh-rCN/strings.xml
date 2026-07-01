@@ -72,7 +72,7 @@
   <!-- Text for the menu button to remove a recently saved bookmark from the user's home screen -->
   <string name="home_bookmarks_menu_item_remove">移除</string>
   <!-- About content. %1$s is the name of the app (for example "Firefox"). -->
-  <string name="about_content">%1$s 由 Mozilla 倾力打造。</string>
+  <string name="about_content" tools:ignore="BrandUsage">%1$s 由 Mozilla 倾力打造。</string>
   <!-- Private Browsing -->
   <string name="private_browsing_common_myths">正确认识隐私浏览功能</string>
   <!-- Text to be announced by the accessibility service to inform the user that the private browsing mode is currently active. -->
@@ -473,7 +473,7 @@
   <!-- Button text to reopen firefox after the crash is processed %s is the name of the app (for example "Firefox") -->
   <string name="startup_crash_restart">重新打开 %s</string>
   <!-- Title for the usage data option in the privacy preferences dialog shown during onboarding. Note: The word "Mozilla" should NOT be translated. -->
-  <string name="onboarding_preferences_dialog_usage_data_title">向 Mozilla 发送技术与交互数据</string>
+  <string name="onboarding_preferences_dialog_usage_data_title" tools:ignore="BrandUsage">向 Mozilla 发送技术与交互数据</string>
   <string name="onboarding_preferences_dialog_usage_data_description_2" tools:ignore="BrandUsage">与您的设备、硬件配置、Firefox 使用方式相关的数据，有助于为全体用户改进功能、性能、稳定性。</string>
   <string name="onboarding_preferences_dialog_usage_data_learn_more_2">详细了解</string>
   <!-- Positive button label for the privacy preferences dialog shown during onboarding. -->
@@ -643,8 +643,16 @@
     %1$s is replaced by an active link, using nova_onboarding_marketing_body_link_text as text (“How we use the data”).
   -->
   <string name="nova_onboarding_marketing_body_6" tools:ignore="BrandUsage,UnusedResources">允许 Mozilla 将您正在使用 Firefox 这一信息告知您来源的平台，来帮助我们触达更多人。%1$s</string>
+  <!--
+    Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
+    “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
+    %1$s is replaced by an active link, using nova_onboarding_marketing_body_link_text_1 as text (“Learn More”).
+  -->
+  <string name="nova_onboarding_marketing_body_7" tools:ignore="BrandUsage">您可以通过允许 Mozilla 将您正在使用 Firefox 这一信息告知您来源的平台，来帮助我们触达更多人。%1$s</string>
   <!-- Marketing onboarding body link text. -->
   <string name="nova_onboarding_marketing_body_link_text">我们如何使用您的数据</string>
+  <!-- Marketing onboarding body link text. -->
+  <string name="nova_onboarding_marketing_body_link_text_1">详细了解</string>
   <!-- Marketing onboarding primary button text. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage">帮助 Firefox</string>
   <!-- Marketing onboarding primary button text. -->
@@ -827,7 +835,7 @@
   <!-- Preference for accessibility -->
   <string name="preferences_accessibility">无障碍环境</string>
   <!-- Preference to override the Mozilla account server -->
-  <string name="preferences_override_account_server">自定义 Mozilla 账户服务器</string>
+  <string name="preferences_override_account_server" tools:ignore="BrandUsage">自定义 Mozilla 账户服务器</string>
   <!-- Preference to override the Sync token server -->
   <string name="preferences_override_sync_tokenserver">自定义同步服务器</string>
   <!-- Preference category for account information -->
@@ -855,7 +863,7 @@
   <!-- Preference description shown in the banner prompting the user to sign in for sync features -->
   <string name="preferences_sign_in_description">同步标签页、书签、密码等数据。</string>
   <!-- Preference shown instead of account display name while account profile information isn't available yet. -->
-  <string name="preferences_account_default_name_2">Mozilla 账户</string>
+  <string name="preferences_account_default_name_2" tools:ignore="BrandUsage">Mozilla 账户</string>
   <!-- Preference text for account title when there was an error syncing FxA -->
   <string name="preferences_account_sync_error">重新连接以恢复同步</string>
   <!-- Preference for language -->
@@ -903,7 +911,7 @@
   <!-- Summary for preference to show Firefox Suggest search suggestions for web content -->
   <string name="preferences_show_nonsponsored_suggestions_summary">从网络上获取与您的搜索关键词相关的建议</string>
   <!-- Preference title for switch preference to show search optimization cards -->
-  <string name="preferences_show_search_optimization_cards">在键入时获取来自 Mozilla 的建议</string>
+  <string name="preferences_show_search_optimization_cards" tools:ignore="BrandUsage">在键入时获取来自 Mozilla 的建议</string>
   <!-- Preference for link sharing -->
   <string name="preferences_link_sharing">分享链接</string>
   <!-- Title for the link sharing toggle. %1$s is replaced by the brand name (e.g. Firefox). -->
@@ -1233,7 +1241,7 @@
   <string name="preferences_usage_data_description_1" tools:ignore="BrandUsage">与您的设备、硬件配置、使用方式相关的数据，有助于我们改进 Firefox 的功能、性能、稳定性。</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preferences_daily_usage_ping_title">每日使用情况报告</string>
-  <string name="preferences_daily_usage_ping_description">此信息可帮助 Mozilla 估算活跃用户数量。</string>
+  <string name="preferences_daily_usage_ping_description" tools:ignore="BrandUsage">此信息可帮助 Mozilla 估算活跃用户数量。</string>
   <string name="preferences_daily_usage_ping_learn_more">详细了解每日使用情况报告</string>
   <!-- Title for the crash reporting option in the privacy preferences dialog shown during onboarding. -->
   <string name="crash_reporting_snack_bar_message">报告已发送</string>
@@ -1259,7 +1267,7 @@
   <!-- Title for studies preferences -->
   <string name="preference_experiments_2">研究</string>
   <!-- Summary for studies preferences -->
-  <string name="preference_experiments_summary_2">允许 Mozilla 安装和运行研究</string>
+  <string name="preference_experiments_summary_2" tools:ignore="BrandUsage">允许 Mozilla 安装和运行研究</string>
   <!--
     Turn On Sync Preferences
 
@@ -1940,6 +1948,10 @@
   <!-- The error message of the URL text field when an invalid URL has been entered. -->
   <string name="webcompat_reporter_url_error_invalid">请输入有效网址</string>
   <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
+  <string name="webcompat_reporter_label_whats_broken_3">哪一方面不正常？</string>
+  <!-- Content description for the icon button that clears the selected broken site reason in the WebCompat Reporter. -->
+  <string name="webcompat_reporter_clear_reason_content_description">清除已选择的原因</string>
+  <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_label_whats_broken_2">什么方面出现问题？</string>
   <!-- The placeholder text for the dropdown where a user selects a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_choose_reason_2">选择原因</string>
@@ -1998,6 +2010,10 @@
   <!-- Broken site reason text for site asked to turn off ad blocker -->
   <string name="webcompat_reporter_reason_turn_off_adblocker">网站要求关闭广告拦截器</string>
   <!-- Broken site reason text for browser isn’t supported or blocked -->
+  <string name="webcompat_reporter_reason_notsupported_2">浏览器不受支持或被阻止</string>
+  <!-- Broken site reason text for the site being deceptive -->
+  <string name="webcompat_reporter_reason_site_is_deceptive">这是诈骗网站</string>
+  <!-- Broken site reason text for browser isn’t supported or blocked -->
   <string name="webcompat_reporter_reason_notsupported">浏览器不受支持或被阻止</string>
   <!-- Broken site reason text for something else -->
   <string name="webcompat_reporter_reason_other">其他</string>
@@ -2008,7 +2024,7 @@
   -->
   <string name="tab_crash_title_2">抱歉，%1$s 无法加载该页面。</string>
   <!-- Send crash report checkbox text on the tab crash page -->
-  <string name="tab_crash_send_report">向 Mozilla 发送崩溃报告</string>
+  <string name="tab_crash_send_report" tools:ignore="BrandUsage">向 Mozilla 发送崩溃报告</string>
   <!-- Close tab button text on the tab crash page -->
   <string name="tab_crash_close">关闭标签页</string>
   <!-- Restore tab button text on the tab crash page -->
@@ -3072,6 +3088,8 @@
   <string name="ip_protection_onboarding_body">即使使用公共 Wi-Fi，也能隐藏真实位置，%1$s。每月可免费获得 %2$d GB 流量。</string>
   <!-- Used as text for a link in ip_protection_onboarding_body. Make sure to adapt capitalization if the link is in the middle of the sentence. -->
   <string name="ip_protection_onboarding_body_link">在浏览时获得额外保护</string>
+  <!-- Used as text for a link in ip_protection_onboarding_body. Make sure to adapt capitalization if the link is in the middle of the sentence. -->
+  <string name="ip_protection_onboarding_body_link_promo">详细了解</string>
   <!-- Label for the dismiss button on the onboarding bottom sheet. -->
   <string name="ip_protection_onboarding_not_now_button">暂时不要</string>
   <!-- Snackbar (in-app pop-up notification) text to signal the browser VPN connection error -->
@@ -3081,6 +3099,8 @@
     %1$d is the total monthly allowance in GB (for example "50").
   -->
   <string name="ip_protection_data_limit_reached_snackbar">%1$d GB VPN 流量已用完，使用权限将于下个月重置。</string>
+  <!-- Snackbar (in-app pop-up notification) action button text that takes the user to the VPN settings screen. -->
+  <string name="ip_protection_data_limit_reached_snackbar_action">设置</string>
   <!--
     Autofill
 
@@ -3387,6 +3407,8 @@
   <string name="homepage_shortcuts_add_website">添加网站</string>
   <!-- Title text for the "Enter a Website URL" dialog for adding a shortcut. -->
   <string name="homepage_shortcuts_add_website_title">输入网址</string>
+  <!-- Title for the "Popular sites" section in the "Add to homepage" bottom sheet. -->
+  <string name="homepage_shortcuts_popular_sites">热门网站</string>
   <!-- Title text displayed in the dialog when shortcuts limit is reached. -->
   <string name="shortcut_max_limit_title">超出快捷方式限制</string>
   <!-- Content description text displayed in the dialog when shortcut limit is reached. -->
@@ -4014,6 +4036,8 @@
   <string name="microsurvey_sync_title" tools:ignore="BrandUsage,UnusedResources">您对 Firefox 的同步体验满意度如何？</string>
   <!-- Text shown in the survey title for 'describe your experience so far' microsurvey. Note: The word "Firefox" should NOT be translated. -->
   <string name="microsurvey_describe_your_experience_title" tools:ignore="BrandUsage,UnusedResources">帮助我们改进 Firefox。以下哪项最符合您目前的使用体验？</string>
+  <!-- Uninstall Survey -->
+  <string name="uninstall_survey_button_label">提交反馈并卸载</string>
   <!--
     Accessibility
 
@@ -4593,6 +4617,10 @@
   <string name="privacy_notice_updated_homepage_message_privacy_notice" tools:ignore="UnusedResources">隐私声明</string>
   <!-- The second active link used in privacy_notice_updated_homepage_message -->
   <string name="privacy_notice_updated_homepage_message_learn_more" tools:ignore="UnusedResources">详细了解</string>
+  <!-- Toast shown when the user denies the camera permission requested by the Lens camera screen -->
+  <string name="lens_camera_permission_denied">拒绝访问</string>
+  <!-- Content description for the QR scanner half of the camera mode toggle -->
+  <string name="lens_camera_mode_qr">扫码器</string>
   <!--
     Firefox Labs
 

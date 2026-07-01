@@ -155,7 +155,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>Gans %1$s yth esos\'ta ow kul maystri.</p>\n<p>Gwra hy usya avel peurell brivedh:\n<ul>\n<li>Hwilas ha peuri a-berth y\'n dowlen</li>\n<li>Lettya helerghellow (po nowedhi settyansow dhe amyttya helerghellow)</li>\n<li>Dilea pastiow, keffrys hag istori hwilas ha peuri</li>\n</ul> </p>\n<p>Askorrys gans Mozilla yw %1$s. Agan amkan yw maga kesrosweyth yagh hag ygor.<br/>\n<a href=\"%2$s\">Dyski moy</a></p>]]></string>
+  <string name="about_content" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote"><![CDATA[<p>Gans %1$s yth esos\'ta ow kul maystri.</p>\n<p>Gwra hy usya avel peurell brivedh:\n<ul>\n<li>Hwilas ha peuri a-berth y\'n dowlen</li>\n<li>Lettya helerghellow (po nowedhi settyansow dhe amyttya helerghellow)</li>\n<li>Dilea pastiow, keffrys hag istori hwilas ha peuri</li>\n</ul> </p>\n<p>Askorrys gans Mozilla yw %1$s. Agan amkan yw maga kesrosweyth yagh hag ygor.<br/>\n<a href=\"%2$s\">Dyski moy</a></p>]]></string>
   <!-- Header for the Privacy and Security settings menu -->
   <string name="preference_privacy_and_security_header">Privetter &amp; Diogeledh</string>
   <!-- Preference summary for settings related to privacy and security -->
@@ -248,7 +248,7 @@
   <!-- "Hint" text for the "custom autocomplete URL" input field. Shown when the field is empty. -->
   <string name="preference_autocomplete_add_hint">Glusa po gorra DAK</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
-  <string name="preference_autocomplete_add_example2">Ensampel: mozilla.org</string>
+  <string name="preference_autocomplete_add_example2" tools:ignore="BrandUsage">Ensampel: mozilla.org</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">Ensampel: ensampel.com</string>
   <!-- Confirmation "snackbar" shown after a new custom autocomplete URL has been added. -->
@@ -320,12 +320,12 @@
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
   <string name="preference_default_browser2">Gul dhe %1$s bos peurell skwir</string>
-  <string name="preference_category_mozilla">Mozilla</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">Mozilla</string>
   <string name="preference_mozilla_telemetry2">Danvon kedhlow devnydh</string>
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">Dyski moy</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-  <string name="preference_mozilla_telemetry_summary2">Mozilla a veder orth kuntel an pyth yw res dhyn hepken dhe brovia ha gwellhe %1$s rag peub.</string>
+  <string name="preference_mozilla_telemetry_summary2" tools:ignore="BrandUsage">Mozilla a veder orth kuntel an pyth yw res dhyn hepken dhe brovia ha gwellhe %1$s rag peub.</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
   <string name="preference_privacy_notice">Deklaryans Privetter</string>
   <!-- In-app link (in settings) to Focus licensing information. -->
@@ -777,7 +777,7 @@
   <!-- Label for button to close the tab -->
   <string name="tab_crash_report_close_tab_button_label">Degea Tab</string>
   <!-- Label for the checkbox to send the tab crash report to Mozilla -->
-  <string name="crash_report_send_crash_label">Danvon derivas diskara dhe Mozilla</string>
+  <string name="crash_report_send_crash_label" tools:ignore="BrandUsage">Danvon derivas diskara dhe Mozilla</string>
   <!-- Tracking protection bottom sheet -->
 
   <!-- Label for the total number of trackers blocked. %s is the app install date. -->

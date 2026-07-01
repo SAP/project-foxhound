@@ -156,7 +156,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s ju vë juve në kontroll.</p>\n<p>Përdoreni si një shfletues privat:\n<ul>\n<li>Kërkoni dhe shfletoni drejt e nga aplikacioni</li>\n<li>Bllokoni gjurmues (ose përditësoni rregullimet për lejim gjurmuesish)</li>\n<li>Fshini cookie-t dhe historik kërkimesh dhe shfletimesh</li>\n</ul> </p>\n<p>%1$s prodhohet nga Mozilla. Misioni ynë është të nxisim një Internet të shëndetshëm, të hapët.<br/>\n<a href=\"%2$s\">Mësoni më tepër</a></p>]]></string>
+  <string name="about_content" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s ju vë juve në kontroll.</p>\n<p>Përdoreni si një shfletues privat:\n<ul>\n<li>Kërkoni dhe shfletoni drejt e nga aplikacioni</li>\n<li>Bllokoni gjurmues (ose përditësoni rregullimet për lejim gjurmuesish)</li>\n<li>Fshini cookie-t dhe historik kërkimesh dhe shfletimesh</li>\n</ul> </p>\n<p>%1$s prodhohet nga Mozilla. Misioni ynë është të nxisim një Internet të shëndetshëm, të hapët.<br/>\n<a href=\"%2$s\">Mësoni më tepër</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">Mësoni më tepër</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -251,7 +251,7 @@
   <!-- "Hint" text for the "custom autocomplete URL" input field. Shown when the field is empty. -->
   <string name="preference_autocomplete_add_hint">Ngjitni ose jepni URL</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
-  <string name="preference_autocomplete_add_example2">Shembull: mozilla.org</string>
+  <string name="preference_autocomplete_add_example2" tools:ignore="BrandUsage">Shembull: mozilla.org</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">Shembull: example.com</string>
   <!-- Confirmation "snackbar" shown after a new custom autocomplete URL has been added. -->
@@ -323,15 +323,15 @@
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
   <string name="preference_default_browser2">Bëje %1$s-un shfletuesin parazgjedhje</string>
-  <string name="preference_category_mozilla">Mozilla</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">Mozilla</string>
   <string name="preference_mozilla_telemetry2">Dërgo të dhëna përdorimi</string>
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">Mësoni më tepër</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-  <string name="preference_mozilla_telemetry_summary2">Mozilla rreket të grumbullojë vetëm sa na duhen për të ofruar dhe përmirësuar %1$s-un për këdo.</string>
+  <string name="preference_mozilla_telemetry_summary2" tools:ignore="BrandUsage">Mozilla rreket të grumbullojë vetëm sa na duhen për të ofruar dhe përmirësuar %1$s-un për këdo.</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preference_daily_usage_ping_title">Ping i përditshëm përdorimi</string>
-  <string name="preference_daily_usage_ping_description">Kjo e ndihmon Mozilla-n të hamendësojë numrin e përdoruesve aktivë.</string>
+  <string name="preference_daily_usage_ping_description" tools:ignore="BrandUsage">Kjo e ndihmon Mozilla-n të hamendësojë numrin e përdoruesve aktivë.</string>
   <string name="preference_daily_usage_ping_learn_more">Mësoni më tepër</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
   <string name="preference_privacy_notice">Shënim Privatësie</string>
@@ -821,7 +821,7 @@
   <!-- Label for button to close the tab -->
   <string name="tab_crash_report_close_tab_button_label">Mbylle Skedën</string>
   <!-- Label for the checkbox to send the tab crash report to Mozilla -->
-  <string name="crash_report_send_crash_label">Dërgoni raport vithisje te Mozilla</string>
+  <string name="crash_report_send_crash_label" tools:ignore="BrandUsage">Dërgoni raport vithisje te Mozilla</string>
   <!-- Tracking protection bottom sheet -->
 
   <!-- Label for the total number of trackers blocked. %s is the app install date. -->

@@ -52,7 +52,7 @@
   <!-- Text for the menu button to remove a recently saved bookmark from the user's home screen -->
   <string name="home_bookmarks_menu_item_remove">ہٹاؤ</string>
   <!-- About content. %1$s is the name of the app (for example "Firefox"). -->
-  <string name="about_content">%1$s موزلّا ولوں تیار تھیا ہے۔</string>
+  <string name="about_content" tools:ignore="BrandUsage">%1$s موزلّا ولوں تیار تھیا ہے۔</string>
   <!-- Private Browsing -->
   <string name="private_browsing_common_myths">نجی براؤزنگ بارے عام فرضی قصے</string>
   <!--
@@ -429,7 +429,7 @@
   <!-- Preference for accessibility -->
   <string name="preferences_accessibility">رسائیت</string>
   <!-- Preference to override the Mozilla account server -->
-  <string name="preferences_override_account_server">آپݨی مرضی دا موزیلا اکاؤنٹ سرور</string>
+  <string name="preferences_override_account_server" tools:ignore="BrandUsage">آپݨی مرضی دا موزیلا اکاؤنٹ سرور</string>
   <!-- Preference to override the Sync token server -->
   <string name="preferences_override_sync_tokenserver">من پسند ہم وقت سرور</string>
   <!-- Preference category for account information -->
@@ -445,7 +445,7 @@
   <!-- Preference for settings related to visual options -->
   <string name="preferences_customize">تخصیص کرو</string>
   <!-- Preference shown instead of account display name while account profile information isn't available yet. -->
-  <string name="preferences_account_default_name_2">Mozilla کھاتہ</string>
+  <string name="preferences_account_default_name_2" tools:ignore="BrandUsage">Mozilla کھاتہ</string>
   <!-- Preference text for account title when there was an error syncing FxA -->
   <string name="preferences_account_sync_error">ہم وقت کرݨ کوں ولدا شروع کرݨ کیتے ولدا کنکٹ کرو</string>
   <!-- Preference for language -->
@@ -688,7 +688,7 @@
   <!-- Title for studies preferences -->
   <string name="preference_experiments_2">مطالعہ</string>
   <!-- Summary for studies preferences -->
-  <string name="preference_experiments_summary_2">موزلّا کوں پڑھائی انسٹال کرݨ تے چلاوݨ دی اجازت ݙیندے</string>
+  <string name="preference_experiments_summary_2" tools:ignore="BrandUsage">موزلّا کوں پڑھائی انسٹال کرݨ تے چلاوݨ دی اجازت ݙیندے</string>
   <!-- Preference for reconnecting to FxA sync -->
   <string name="preferences_sync_sign_in_to_reconnect">ولدا کنکٹ کرݨ کیتے سائن ان تھیوو</string>
   <!-- Preference for removing FxA account -->
@@ -960,7 +960,7 @@
   -->
   <string name="tab_crash_title_2">افسوس۔ ایں ورقے کوں %1$s لوڈ کائنی کر سڳدا۔</string>
   <!-- Send crash report checkbox text on the tab crash page -->
-  <string name="tab_crash_send_report">موزلّا کوں کریش رپوٹ بھیڄو</string>
+  <string name="tab_crash_send_report" tools:ignore="BrandUsage">موزلّا کوں کریش رپوٹ بھیڄو</string>
   <!-- Close tab button text on the tab crash page -->
   <string name="tab_crash_close">ٹیب بند کرو</string>
   <!-- Restore tab button text on the tab crash page -->

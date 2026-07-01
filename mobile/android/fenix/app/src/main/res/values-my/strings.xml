@@ -38,7 +38,7 @@
   <!-- Content description for close button while in multiselect mode in tab tray -->
   <string name="tab_tray_close_multiselect_content_description">multiselect mode ကိုပိတ်ပါ</string>
   <!-- About content. %1$s is the name of the app (for example "Firefox"). -->
-  <string name="about_content">%1$s ကို Mozilla မှ ထုတ်လုပ်သည်။</string>
+  <string name="about_content" tools:ignore="BrandUsage">%1$s ကို Mozilla မှ ထုတ်လုပ်သည်။</string>
   <!-- Private Browsing -->
   <string name="private_browsing_common_myths">ပုဂ္ဂလိက browsing ဆိုင်ရာ အမြင်မှားများ</string>
   <!-- Text for the positive action button -->
@@ -331,7 +331,7 @@
   <!-- Title for studies preferences -->
   <string name="preference_experiments_2">လေ့လာရေး</string>
   <!-- Summary for studies preferences -->
-  <string name="preference_experiments_summary_2">Mozilla ကို ထည့်သွင်းစေပြီး လေ့လာခွင့်ပြုပါ</string>
+  <string name="preference_experiments_summary_2" tools:ignore="BrandUsage">Mozilla ကို ထည့်သွင်းစေပြီး လေ့လာခွင့်ပြုပါ</string>
   <!-- Preference for reconnecting to FxA sync -->
   <string name="preferences_sync_sign_in_to_reconnect">ပြန်လည်ချိတ်ဆက်ရန်ဝင်ရောက်ပါ</string>
   <!-- Preference for removing FxA account -->
@@ -525,7 +525,7 @@
   -->
   <string name="tab_crash_title_2">တောင်းပန်ပါတယ်။ ဒီစာမျက်နှာကို %1$s မှမတင်နိုင်ပါ။</string>
   <!-- Send crash report checkbox text on the tab crash page -->
-  <string name="tab_crash_send_report">Mozillaသို့ ပျက်စီးမှုအစီရင်ခံစာပို့ပါ</string>
+  <string name="tab_crash_send_report" tools:ignore="BrandUsage">Mozillaသို့ ပျက်စီးမှုအစီရင်ခံစာပို့ပါ</string>
   <!-- Close tab button text on the tab crash page -->
   <string name="tab_crash_close">တပ်ဗ်ကို ပိတ်ရန်</string>
   <!-- Restore tab button text on the tab crash page -->

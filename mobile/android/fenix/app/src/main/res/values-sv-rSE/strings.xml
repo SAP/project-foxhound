@@ -72,7 +72,7 @@
   <!-- Text for the menu button to remove a recently saved bookmark from the user's home screen -->
   <string name="home_bookmarks_menu_item_remove">Ta bort</string>
   <!-- About content. %1$s is the name of the app (for example "Firefox"). -->
-  <string name="about_content">%1$s produceras av Mozilla.</string>
+  <string name="about_content" tools:ignore="BrandUsage">%1$s produceras av Mozilla.</string>
   <!-- Private Browsing -->
   <string name="private_browsing_common_myths">Vanliga myter om privat surfning</string>
   <!-- Text to be announced by the accessibility service to inform the user that the private browsing mode is currently active. -->
@@ -149,6 +149,8 @@
   <string name="home_screen_shortcut_open_new_private_tab_2">Ny privat flik</string>
   <!-- Shortcut action to open Passwords screen -->
   <string name="home_screen_shortcut_passwords">Lösenord</string>
+  <!-- Shortcut action to open uninstall survey -->
+  <string name="home_screen_shortcut_uninstall_survey">Avinstallera, varför?</string>
   <!--
     Recent Tabs
 
@@ -473,7 +475,7 @@
   <!-- Button text to reopen firefox after the crash is processed %s is the name of the app (for example "Firefox") -->
   <string name="startup_crash_restart">Öppna %s igen</string>
   <!-- Title for the usage data option in the privacy preferences dialog shown during onboarding. Note: The word "Mozilla" should NOT be translated. -->
-  <string name="onboarding_preferences_dialog_usage_data_title">Skicka teknisk information och interaktionsdata till Mozilla</string>
+  <string name="onboarding_preferences_dialog_usage_data_title" tools:ignore="BrandUsage">Skicka teknisk information och interaktionsdata till Mozilla</string>
   <string name="onboarding_preferences_dialog_usage_data_description_2" tools:ignore="BrandUsage">Data om din enhet, hårdvarukonfiguration och hur du använder Firefox hjälper till att förbättra funktioner, prestanda och stabilitet för alla.</string>
   <string name="onboarding_preferences_dialog_usage_data_learn_more_2">Läs mer</string>
   <!-- Positive button label for the privacy preferences dialog shown during onboarding. -->
@@ -843,7 +845,7 @@
   <!-- Preference for accessibility -->
   <string name="preferences_accessibility">Hjälpmedel</string>
   <!-- Preference to override the Mozilla account server -->
-  <string name="preferences_override_account_server">Anpassad Mozilla-kontoserver</string>
+  <string name="preferences_override_account_server" tools:ignore="BrandUsage">Anpassad Mozilla-kontoserver</string>
   <!-- Preference to override the Sync token server -->
   <string name="preferences_override_sync_tokenserver">Anpassad synkroniseringsserver</string>
   <!-- Preference category for account information -->
@@ -871,7 +873,7 @@
   <!-- Preference description shown in the banner prompting the user to sign in for sync features -->
   <string name="preferences_sign_in_description">Synka flikar, bokmärken, lösenord och mer.</string>
   <!-- Preference shown instead of account display name while account profile information isn't available yet. -->
-  <string name="preferences_account_default_name_2">Mozilla-konto</string>
+  <string name="preferences_account_default_name_2" tools:ignore="BrandUsage">Mozilla-konto</string>
   <!-- Preference text for account title when there was an error syncing FxA -->
   <string name="preferences_account_sync_error">Anslut igen för att återuppta synkroniseringen</string>
   <!-- Preference for language -->
@@ -919,7 +921,7 @@
   <!-- Summary for preference to show Firefox Suggest search suggestions for web content -->
   <string name="preferences_show_nonsponsored_suggestions_summary">Få förslag från webben relaterade till din sökning</string>
   <!-- Preference title for switch preference to show search optimization cards -->
-  <string name="preferences_show_search_optimization_cards">Få förslag från Mozilla medan du skriver</string>
+  <string name="preferences_show_search_optimization_cards" tools:ignore="BrandUsage">Få förslag från Mozilla medan du skriver</string>
   <!-- Preference for link sharing -->
   <string name="preferences_link_sharing">Länkdelning</string>
   <!-- Title for the link sharing toggle. %1$s is replaced by the brand name (e.g. Firefox). -->
@@ -1249,7 +1251,7 @@
   <string name="preferences_usage_data_description_1" tools:ignore="BrandUsage">Data om din enhet, hårdvarukonfiguration och användning hjälper oss att förbättra Firefox funktioner, prestanda och stabilitet.</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preferences_daily_usage_ping_title">Ping för daglig användning</string>
-  <string name="preferences_daily_usage_ping_description">Detta hjälper Mozilla att uppskatta antalet aktiva användare.</string>
+  <string name="preferences_daily_usage_ping_description" tools:ignore="BrandUsage">Detta hjälper Mozilla att uppskatta antalet aktiva användare.</string>
   <string name="preferences_daily_usage_ping_learn_more">Läs mer om ping för daglig användning</string>
   <!-- Title for the crash reporting option in the privacy preferences dialog shown during onboarding. -->
   <string name="crash_reporting_snack_bar_message">Rapport skickad</string>
@@ -1275,7 +1277,7 @@
   <!-- Title for studies preferences -->
   <string name="preference_experiments_2">Undersökningar</string>
   <!-- Summary for studies preferences -->
-  <string name="preference_experiments_summary_2">Tillåter Mozilla att installera och köra undersökningar</string>
+  <string name="preference_experiments_summary_2" tools:ignore="BrandUsage">Tillåter Mozilla att installera och köra undersökningar</string>
   <!--
     Turn On Sync Preferences
 
@@ -2038,7 +2040,7 @@
   -->
   <string name="tab_crash_title_2">Tyvärr. %1$s kan inte ladda den sidan.</string>
   <!-- Send crash report checkbox text on the tab crash page -->
-  <string name="tab_crash_send_report">Skicka kraschrapport till Mozilla</string>
+  <string name="tab_crash_send_report" tools:ignore="BrandUsage">Skicka kraschrapport till Mozilla</string>
   <!-- Close tab button text on the tab crash page -->
   <string name="tab_crash_close">Stäng flik</string>
   <!-- Restore tab button text on the tab crash page -->
@@ -2447,6 +2449,8 @@
   <string name="preferences_take_survey">Gör undersökning</string>
   <!-- Preference for not taking the short survey. -->
   <string name="preferences_not_take_survey">Nej tack</string>
+  <!-- Error message shown in a Toast when the system fails to trigger the device uninstallation prompt. -->
+  <string name="uninstall_survey_error_failed">Det gick inte att öppna prompten för systemavinstallation, använd avinstallationsåtgärden direkt.</string>
   <!--
     Snackbar
 
@@ -4066,6 +4070,8 @@
   <string name="microsurvey_sync_title" tools:ignore="BrandUsage,UnusedResources">Hur nöjd är du med synkroniseringen i Firefox?</string>
   <!-- Text shown in the survey title for 'describe your experience so far' microsurvey. Note: The word "Firefox" should NOT be translated. -->
   <string name="microsurvey_describe_your_experience_title" tools:ignore="BrandUsage,UnusedResources">Hjälp oss att förbättra Firefox. Vilken beskriver bäst din upplevelse hittills?</string>
+  <!-- Uninstall Survey -->
+  <string name="uninstall_survey_button_label">Skicka feedback och avinstallera</string>
   <!--
     Accessibility
 

@@ -60,7 +60,7 @@
   <!-- Text for the menu button to remove a recently saved bookmark from the user's home screen -->
   <string name="home_bookmarks_menu_item_remove">Бетерү</string>
   <!-- About content. %1$s is the name of the app (for example "Firefox"). -->
-  <string name="about_content">%1$s Mozilla тарафыннан җитештерелә.</string>
+  <string name="about_content" tools:ignore="BrandUsage">%1$s Mozilla тарафыннан җитештерелә.</string>
   <!-- Private Browsing -->
   <string name="private_browsing_common_myths">Хосусый гизү турында киң таралган мифлар</string>
   <!-- Text to be announced by the accessibility service to inform the user that the private browsing mode is currently active. -->
@@ -464,7 +464,7 @@
   <!-- Preference for accessibility -->
   <string name="preferences_accessibility">Кулайлык</string>
   <!-- Preference to override the Mozilla account server -->
-  <string name="preferences_override_account_server">Үзгә Mozilla Хисап серверы</string>
+  <string name="preferences_override_account_server" tools:ignore="BrandUsage">Үзгә Mozilla Хисап серверы</string>
   <!-- Preference to override the Sync token server -->
   <string name="preferences_override_sync_tokenserver">Үзгә Синхронлау серверы</string>
   <!-- Preference category for account information -->
@@ -482,7 +482,7 @@
   <!-- Preference description shown in the banner prompting the user to sign in for sync features -->
   <string name="preferences_sign_in_description">Таблар, кыстыргычлар, серсүзләр һәм башкаларны cинхронлау.</string>
   <!-- Preference shown instead of account display name while account profile information isn't available yet. -->
-  <string name="preferences_account_default_name_2">Mozilla хисап язмасы</string>
+  <string name="preferences_account_default_name_2" tools:ignore="BrandUsage">Mozilla хисап язмасы</string>
   <!-- Preference text for account title when there was an error syncing FxA -->
   <string name="preferences_account_sync_error">Синхронлауны дәвам итү өчен яңадан тоташыгыз</string>
   <!-- Preference for language -->
@@ -727,11 +727,11 @@
   <string name="exceptions_empty_message_learn_more_link">Күбрәк белү</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preferences_daily_usage_ping_title">Көндәлек куллану пингы</string>
-  <string name="preferences_daily_usage_ping_description">Бу Mozilla-га актив кулланучылар санын бәяләргә ярдәм итә.</string>
+  <string name="preferences_daily_usage_ping_description" tools:ignore="BrandUsage">Бу Mozilla-га актив кулланучылар санын бәяләргә ярдәм итә.</string>
   <!-- Title for studies preferences -->
   <string name="preference_experiments_2">Тикшеренүләр</string>
   <!-- Summary for studies preferences -->
-  <string name="preference_experiments_summary_2">Mozilla-га тикшеренүләр урнаштырырга һәм үткәрергә рөхсәт итү</string>
+  <string name="preference_experiments_summary_2" tools:ignore="BrandUsage">Mozilla-га тикшеренүләр урнаштырырга һәм үткәрергә рөхсәт итү</string>
   <!-- Preference for reconnecting to FxA sync -->
   <string name="preferences_sync_sign_in_to_reconnect">Яңадан тоташу өчен керегез</string>
   <!-- Preference for removing FxA account -->
@@ -1050,7 +1050,7 @@
   -->
   <string name="tab_crash_title_2">Гафу. %1$s бу сәхифәне йөкли алмый.</string>
   <!-- Send crash report checkbox text on the tab crash page -->
-  <string name="tab_crash_send_report">Mozilla-га ватылу турында хәбәр җибәрү</string>
+  <string name="tab_crash_send_report" tools:ignore="BrandUsage">Mozilla-га ватылу турында хәбәр җибәрү</string>
   <!-- Close tab button text on the tab crash page -->
   <string name="tab_crash_close">Табны ябу</string>
   <!-- Restore tab button text on the tab crash page -->
