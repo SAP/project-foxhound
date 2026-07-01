@@ -7440,6 +7440,22 @@
   value: false
   mirror: always
 
+# Use a shader as a fallback if the regular video processor does not support a
+# format combination (e.g. YUV BT.2100 HLG to RGB BT.2100 PQ), this may use more
+# energy than using the regular video processor
+- name: gfx.color_management.hdr.yuv_to_rgb_video_shader.fallback
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+# Use a shader to convert YUV video to RGB video in all cases, this uses more
+# power than using VideoProcessorBlt but does make it look identical across
+# drivers.
+- name: gfx.color_management.hdr.yuv_to_rgb_video_shader.always
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
 #ifdef XP_MACOSX
 # Whether GL contexts can be migrated to a different GPU (to match the one the
 # OS is using for composition).
