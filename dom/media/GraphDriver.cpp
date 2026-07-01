@@ -667,11 +667,15 @@ void AudioCallbackDriver::Start() {
   MOZ_ASSERT(!IsStarted());
   MOZ_ASSERT(mAudioStreamState == AudioStreamState::None);
   MOZ_ASSERT_IF(PreviousDriver(), PreviousDriver()->InIteration());
-  mAudioStreamState = AudioStreamState::Pending;
-
-  // Starting an audio driver could take a while. We start a system driver in
-  // the meantime so that the graph is kept running.
-  (void)TryStartingFallbackDriver();
+  MOZ_ASSERT(mFallbackDriverState == FallbackDriverState::None);
+  // Starting an audio driver could take a while. We will start running from a
+  // fallback system driver in the meantime so that the graph is kept running.
+  // mFallback is set up before starting the cubeb stream so that the cubeb
+  // callbacks know that the fallback driver is running and can
+  // EnsureNextIteration() so the fallback driver can hand graph control back to
+  // the cubeb data callback.
+  mFallbackDriverState = FallbackDriverState::Running;
+  RefPtr fallback = CreateFallbackSystemClockDriver();
 
   if (mPreviousDriver) {
     if (AudioCallbackDriver* previousAudioCallback =
@@ -694,6 +698,16 @@ void AudioCallbackDriver::Start() {
 
   LOG(LogLevel::Debug, ("Starting new audio driver off main thread, "
                         "to ensure it runs after previous shutdown."));
+  QueueInitOp();
+  // Hand over control of the graph to the fallback driver after init is queued
+  // so that future cubeb operations on mAudioStream will be in order.
+  fallback->Start();
+}
+
+void AudioCallbackDriver::QueueInitOp() {
+  MOZ_ASSERT(mAudioStreamState == AudioStreamState::None);
+  mAudioStreamState = AudioStreamState::Pending;
+
   MOZ_ALWAYS_SUCCEEDS(mCubebOperationThread->Dispatch(
       NS_NewRunnableFunction("AudioCallbackDriver Init()",
                              [self = RefPtr{this}, streamName = mStreamName] {
@@ -1073,7 +1087,7 @@ void AudioCallbackDriver::StateCallback(cubeb_state aState) {
 #endif
           mGraphInterface->NotifyInputStopped();
         }
-        FallbackToSystemClockDriver();
+        CreateFallbackSystemClockDriver()->Start();
       }
     }
   }
@@ -1253,7 +1267,7 @@ AudioCallbackDriver::TryStartingFallbackDriver() {
   switch (oldState) {
     case FallbackDriverState::None:
       // None -> Running: we can start the fallback.
-      FallbackToSystemClockDriver();
+      CreateFallbackSystemClockDriver()->Start();
       return true;
     case FallbackDriverState::Stopped:
       // Stopped -> Running: Invalid edge, the graph has told us to stop.
@@ -1267,7 +1281,8 @@ AudioCallbackDriver::TryStartingFallbackDriver() {
   MOZ_CRASH("Unexpected fallback state");
 }
 
-void AudioCallbackDriver::FallbackToSystemClockDriver() {
+RefPtr<AudioCallbackDriver::FallbackWrapper>
+AudioCallbackDriver::CreateFallbackSystemClockDriver() {
   MOZ_ASSERT(mFallbackDriverState == FallbackDriverState::Running);
   DebugOnly<AudioStreamState> audioStreamState =
       static_cast<AudioStreamState>(mAudioStreamState);
@@ -1295,7 +1310,7 @@ void AudioCallbackDriver::FallbackToSystemClockDriver() {
     MOZ_RELEASE_ASSERT(!driver.ref());
     driver.ref() = fallback;
   }
-  fallback->Start();
+  return fallback;
 }
 
 void AudioCallbackDriver::FallbackDriverStopped(GraphTime aStateComputedTime,
@@ -1361,7 +1376,7 @@ void AudioCallbackDriver::MaybeStartAudioStream() {
                TimeDuration::FromMilliseconds(
                    StaticPrefs::media_audio_device_retry_ms()));
   mNextReInitAttempt = now + mNextReInitBackoffStep;
-  Start();
+  QueueInitOp();
 }
 
 const AudioInputProcessingParamsRequest&

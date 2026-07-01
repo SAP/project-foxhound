@@ -694,18 +694,23 @@ class AudioCallbackDriver final : public GraphDriver,
   /* Start the cubeb stream */
   bool StartStream();
   friend class MediaTrackGraphInitThreadRunnable;
+  void QueueInitOp();
   void Init(const nsCString& aStreamName);
   void SetCubebStreamName(const nsCString& aStreamName);
   void Stop();
   /* After the requested input processing params has changed, this applies them
    * on the cubeb stream. */
   void SetInputProcessingParams(AudioInputProcessingParamsRequest aRequest);
-  /* Calls FallbackToSystemClockDriver() if in FallbackDriverState::None.
+  /* If in FallbackDriverState::None, create the mFallback driver and start its
+   * SystemClockDriver.
    * Returns Ok(true) if the fallback driver was started, or the old
    * FallbackDriverState in an Err otherwise. */
   Result<bool, FallbackDriverState> TryStartingFallbackDriver();
-  /* Fall back to a SystemClockDriver using a normal thread. If needed, the
-   * graph will try to re-open an audio stream later. */
+  /* Create the mFallback driver with a SystemClockDriver to use a normal
+   * thread.  Start() should be called on the returned FallbackWrapper, when
+   * ready to hand over control of the graph.  If needed, the fallback graph
+   * wrapper will try to re-open an audio stream later. */
+  [[nodiscard]] RefPtr<FallbackWrapper> CreateFallbackSystemClockDriver();
   void FallbackToSystemClockDriver();
   /* Called by the fallback driver when it has fully stopped, after finishing
    * its last iteration. If it stopped after the audio stream started, aState
@@ -731,7 +736,8 @@ class AudioCallbackDriver final : public GraphDriver,
    * call back with a number of frames lower than one block (128 frames), so we
    * need to keep at most two block in the SpillBuffer, because we always round
    * up to block boundaries during an iteration.
-   * This is only ever accessed on the audio callback thread. */
+   * Initialized before starting the cubeb stream and then accessed from
+   * cubeb callbacks. */
   SpillBuffer<AudioDataValue, WEBAUDIO_BLOCK_SIZE * 2> mScratchBuffer;
   /* Wrapper to ensure we write exactly the number of frames we need in the
    * audio buffer cubeb passes us. This is only ever accessed on the audio
