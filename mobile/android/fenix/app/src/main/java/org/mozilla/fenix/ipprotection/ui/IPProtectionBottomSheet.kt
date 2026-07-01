@@ -168,14 +168,14 @@ private fun BottomSheetContent(
 
                 Spacer(Modifier.height(16.dp))
 
-                if (maxGib > 0) {
-                    IPProtectionContent(
-                        maxGib = maxGib,
-                        onLearnMoreClicked = onLearnMoreClicked,
-                    )
-                } else if (formattedPromoDate != null) {
+                if (formattedPromoDate != null) {
                     IPProtectionPromoContent(
                         formattedDate = formattedPromoDate,
+                        onLearnMoreClicked = onLearnMoreClicked,
+                    )
+                } else if (maxGib > 0) {
+                    IPProtectionContent(
+                        maxGib = maxGib,
                         onLearnMoreClicked = onLearnMoreClicked,
                     )
                 } else {

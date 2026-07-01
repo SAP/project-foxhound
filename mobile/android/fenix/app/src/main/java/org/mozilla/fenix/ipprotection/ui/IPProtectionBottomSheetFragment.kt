@@ -19,6 +19,7 @@ import org.mozilla.fenix.R
 import org.mozilla.fenix.components.accounts.FenixFxAEntryPoint
 import org.mozilla.fenix.ext.nav
 import org.mozilla.fenix.ext.requireComponents
+import org.mozilla.fenix.ipprotection.helpers.IsoPromoDeadline
 import org.mozilla.fenix.ipprotection.helpers.formatPromoDateOrCatch
 import org.mozilla.fenix.ipprotection.store.IPProtectionPromptAction
 import org.mozilla.fenix.ipprotection.store.IPProtectionPromptPreferencesMiddleware
@@ -28,6 +29,7 @@ import org.mozilla.fenix.ipprotection.store.IPProtectionPromptTelemetryMiddlewar
 import org.mozilla.fenix.nimbus.FxNimbus
 import org.mozilla.fenix.settings.SupportUtils
 import org.mozilla.fenix.theme.FirefoxTheme
+import java.time.LocalDate
 import com.google.android.material.R as materialR
 
 /**
@@ -72,8 +74,11 @@ class IPProtectionBottomSheetFragment : BottomSheetDialogFragment() {
         isAlreadyShowing = savedInstanceState?.getBoolean(IS_ALREADY_SHOW_KEY) ?: false
         ipProtectionPromptStore.dispatch(IPProtectionPromptAction.OnPromptCreated)
         val maxGib = FxNimbus.features.ipProtection.value().dataLimitGigabyte
-        val formattedPromoDate =
-            formatPromoDateOrCatch(maxGib) { requireComponents.analytics.crashReporter.submitCaughtException(it) }
+        val formattedPromoDate = FxNimbus.features.ipProtection.value().promoDeadline.let { promoDate ->
+            IsoPromoDeadline(promoDate)
+                .formatPromoDateOrCatch { requireComponents.analytics.crashReporter.submitCaughtException(it) }
+                ?.takeIf { LocalDate.now() <= LocalDate.parse(promoDate) }
+        }
         return content {
             FirefoxTheme {
                 IPProtectionBottomSheet(
