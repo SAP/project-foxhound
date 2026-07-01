@@ -3047,12 +3047,11 @@ bool JSStructuredCloneReader::readSharedWasmMemory(uint32_t nbytes,
     return false;
   }
   if (!payload.isObject() ||
-      !payload.toObject().is<SharedArrayBufferObject>() ||
-      payload.toObject().as<SharedArrayBufferObject>().isGrowable()) {
+      !payload.toObject().is<SharedArrayBufferObject>()) {
     JS_ReportErrorNumberASCII(context(), GetErrorMessage, nullptr,
                               JSMSG_SC_BAD_SERIALIZED_DATA,
                               "shared wasm memory must be backed by a "
-                              "non-growable SharedArrayBuffer");
+                              "SharedArrayBuffer");
     return false;
   }
 
