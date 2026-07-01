@@ -49,8 +49,14 @@ internal fun iPProtectionReducer(
             }
         }
 
-        // We can short-circuit the account-state if the service is ready.
-        val newAccountStatus = if (action.info.serviceState == ServiceState.Ready) {
+        // Apart from the first enrollment where the user goes through the enrollment process,
+        // we rely on the service state to be the source of truth for entitlement.
+        // UNLESS the user is signed out: we could still intermittently get an EngineState
+        // update with the service being READY, before EngineState updates itself with the new
+        // account status.
+        val newAccountStatus = if (action.info.serviceState == ServiceState.Ready &&
+            state.accountState.status != AccountStatus.Uninitialized
+        ) {
             AccountStatus.EnrolledAndEntitled
         } else {
             state.accountState.status

@@ -26,7 +26,7 @@ import org.junit.Test
 @OptIn(ExperimentalAndroidComponentsApi::class)
 class IPProtectionReducerTest {
 
-    private val defaultState = IPProtectionState()
+    private val defaultState = buildIPProtectionState(accountStatus = AccountStatus.Authenticated)
 
     @Test
     fun `WHEN EligibilityChanged is dispatched THEN eligibilityStatus is updated`() {
