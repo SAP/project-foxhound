@@ -49,6 +49,27 @@ export const PrivacyMetricsService = {
   },
 
   /**
+   * Get today's tracking protection statistics.
+   *
+   * TrackingDBService buckets events by UTC date and getEventsByDateRange
+   * truncates both bounds to a date, so passing `now` for both selects just
+   * today's row (matching how events are recorded).
+   *
+   * @returns {Promise<PrivacyMetricsStats>}
+   */
+  async getTodayStats() {
+    /** @type {number} */
+    const todayInMs = Date.now();
+
+    const eventRows = await lazy.TrackingDBService.getEventsByDateRange(
+      todayInMs,
+      todayInMs
+    );
+
+    return this._aggregateStats(eventRows);
+  },
+
+  /**
    * Aggregate TrackingDBService data by category.
    *
    * @param {Array} eventRows - Array of database rows from TrackingDBService
