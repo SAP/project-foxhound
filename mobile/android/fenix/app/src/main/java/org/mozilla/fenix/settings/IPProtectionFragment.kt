@@ -43,6 +43,7 @@ import org.mozilla.fenix.ipprotection.ui.IPProtectionSnackbarBinding
 import org.mozilla.fenix.nimbus.FxNimbus
 import org.mozilla.fenix.snackbar.FenixSnackbarDelegate
 import org.mozilla.fenix.theme.FirefoxTheme
+import java.time.LocalDate
 
 /** Fragment hosting the IP Protection settings screen. */
 class IPProtectionFragment : Fragment(), SystemInsetsPaddedFragment {
@@ -76,9 +77,11 @@ class IPProtectionFragment : Fragment(), SystemInsetsPaddedFragment {
         // To make the transition smoother, we prevent the fragment from drawing UI in that case.
         if (shouldHideUi(state)) return@content
 
-        val promoDate = IsoPromoDeadline(FxNimbus.features.ipProtection.value().promoDeadline)
-            .formatPromoDateOrCatch { requireComponents.analytics.crashReporter.submitCaughtException(it) }
-
+        val promoDate = FxNimbus.features.ipProtection.value().promoDeadline.let { promoDate ->
+            IsoPromoDeadline(promoDate)
+                .formatPromoDateOrCatch { requireComponents.analytics.crashReporter.submitCaughtException(it) }
+                ?.takeIf { LocalDate.now() <= LocalDate.parse(promoDate) }
+        }
         FirefoxTheme {
             IPProtectionScreen(
                 state = state,
