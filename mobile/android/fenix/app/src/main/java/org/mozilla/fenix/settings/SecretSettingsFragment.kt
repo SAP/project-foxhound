@@ -456,7 +456,7 @@ class SecretSettingsFragment : PreferenceFragmentCompat(), SystemInsetsPaddedFra
         }
 
         requirePreference<SwitchPreferenceCompat>(R.string.pref_key_google_lens_integration).apply {
-            isVisible = Config.channel.isNightlyOrDebug
+            isVisible = Config.channel.isNightlyOrDebug || Config.channel.isBeta
             isChecked = settings.googleLensIntegrationEnabled
             onPreferenceChangeListener = SharedPreferenceUpdater()
         }

@@ -1261,7 +1261,7 @@ features:
           enabled: true
       - channel: nightly
         value:
-          enabled: false
+          enabled: true
 
   voice-search-in-display-mode:
     description: Controls whether the voice search entry point is shown in the display-mode browser toolbar.
