@@ -1461,7 +1461,7 @@ nsresult ScriptLoaderRunnable::Run() {
   if (!mWorkerRef->Private()->IsServiceWorker() ||
       mScriptLoader->IsDebuggerScript()) {
     for (ThreadSafeRequestHandle* handle : mLoadingRequests) {
-      handle->mRunnable = this;
+      handle->SetRunnable(this);
     }
 
     for (ThreadSafeRequestHandle* handle : mLoadingRequests) {
@@ -1480,7 +1480,7 @@ nsresult ScriptLoaderRunnable::Run() {
   mCacheCreator = new CacheCreator(mWorkerRef->Private());
 
   for (ThreadSafeRequestHandle* handle : mLoadingRequests) {
-    handle->mRunnable = this;
+    handle->SetRunnable(this);
     WorkerLoadContext* loadContext = handle->GetContext();
     mCacheCreator->AddLoader(MakeNotNull<RefPtr<CacheLoadHandler>>(
         mWorkerRef, handle, loadContext->IsTopLevel(),

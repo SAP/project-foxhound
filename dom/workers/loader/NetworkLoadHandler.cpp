@@ -412,8 +412,13 @@ nsresult NetworkLoadHandler::PrepareForRequest(nsIRequest* aRequest) {
   ir->SetPrincipalInfo(std::move(principalInfo));
   ir->Headers()->FillResponseHeaders(channel);
 
+  RefPtr<CacheCreator> cacheCreator = mRequestHandle->GetCacheCreator();
+  if (NS_WARN_IF(!cacheCreator)) {
+    return NS_ERROR_FAILURE;
+  }
+
   RefPtr<mozilla::dom::Response> response = new mozilla::dom::Response(
-      mRequestHandle->GetCacheCreator()->Global(), std::move(ir), nullptr);
+      cacheCreator->Global(), std::move(ir), nullptr);
 
   mozilla::dom::RequestOrUTF8String request;
 
@@ -427,8 +432,7 @@ nsresult NetworkLoadHandler::PrepareForRequest(nsIRequest* aRequest) {
 
   ErrorResult error;
   RefPtr<Promise> cachePromise =
-      mRequestHandle->GetCacheCreator()->Cache_()->Put(jsapi.cx(), request,
-                                                       *response, error);
+      cacheCreator->Cache_()->Put(jsapi.cx(), request, *response, error);
   error.WouldReportJSException();
   if (NS_WARN_IF(error.Failed())) {
     return error.StealNSResult();

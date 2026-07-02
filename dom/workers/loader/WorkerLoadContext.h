@@ -9,6 +9,7 @@
 #include "js/loader/ScriptKind.h"
 #include "js/loader/ScriptLoadRequest.h"
 #include "mozilla/CORSMode.h"
+#include "mozilla/Mutex.h"
 #include "mozilla/dom/Promise.h"
 #include "nsIChannel.h"
 #include "nsIInputStream.h"
@@ -181,6 +182,9 @@ class ThreadSafeRequestHandle final {
 
   bool IsEmpty() { return !mRequest; }
 
+  // Sets the owning runnable. Called on the main thread before loading begins.
+  void SetRunnable(workerinternals::loader::ScriptLoaderRunnable* aRunnable);
+
   // Runnable controls
   nsresult OnStreamComplete(nsresult aStatus);
 
@@ -198,14 +202,20 @@ class ThreadSafeRequestHandle final {
 
   already_AddRefed<JS::loader::ScriptLoadRequest> ReleaseRequest();
 
-  workerinternals::loader::CacheCreator* GetCacheCreator();
-
-  RefPtr<workerinternals::loader::ScriptLoaderRunnable> mRunnable;
+  already_AddRefed<workerinternals::loader::CacheCreator> GetCacheCreator();
 
   bool mExecutionScheduled = false;
 
  private:
   ~ThreadSafeRequestHandle();
+
+  // Protects mRunnable, which is read on the main thread by the accessors above
+  // but cleared on the worker thread by ReleaseRequest(). Without this lock the
+  // unsynchronized read/write races and the ScriptLoaderRunnable can be freed
+  // while a main-thread accessor is dereferencing it.
+  mozilla::Mutex mMutex{"ThreadSafeRequestHandle::mMutex"};
+  RefPtr<workerinternals::loader::ScriptLoaderRunnable> mRunnable
+      MOZ_GUARDED_BY(mMutex);
 
   RefPtr<JS::loader::ScriptLoadRequest> mRequest;
   nsCOMPtr<nsISerialEventTarget> mOwningEventTarget;
