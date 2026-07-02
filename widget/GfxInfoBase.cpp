@@ -1387,11 +1387,11 @@ static void AppendMonitor(JSContext* aCx, widget::Screen& aScreen,
 
   JS::Rooted<JS::Value> defaultCssScaleFactor(
       aCx,
-      JS::Float32Value(static_cast<float>(aScreen.GetDefaultCSSScaleFactor())));
+      JS_NumberValue(static_cast<float>(aScreen.GetDefaultCSSScaleFactor())));
   JS_SetProperty(aCx, obj, "defaultCSSScaleFactor", defaultCssScaleFactor);
 
   JS::Rooted<JS::Value> contentsScaleFactor(
-      aCx, JS::NumberValue(aScreen.GetContentsScaleFactor()));
+      aCx, JS_NumberValue(aScreen.GetContentsScaleFactor()));
   JS_SetProperty(aCx, obj, "contentsScaleFactor", contentsScaleFactor);
 
 #ifdef XP_WIN

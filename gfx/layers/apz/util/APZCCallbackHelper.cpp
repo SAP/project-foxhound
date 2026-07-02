@@ -24,6 +24,7 @@
 #include "mozilla/ScrollContainerFrame.h"
 #include "mozilla/ToString.h"
 #include "mozilla/ViewportUtils.h"
+#include "jsapi.h"
 #include "nsContainerFrame.h"
 #include "nsContentUtils.h"
 #include "nsIContent.h"
@@ -985,7 +986,7 @@ void APZCCallbackHelper::NotifyScaleGestureComplete(
     return;
   }
   JSContext* cx = jsapi.cx();
-  JS::Rooted<JS::Value> detail(cx, JS::Float32Value(aScale));
+  JS::Rooted<JS::Value> detail(cx, JS_NumberValue(aScale));
   RefPtr<dom::CustomEvent> event = NS_NewDOMCustomEvent(doc, nullptr, nullptr);
   event->InitCustomEvent(cx, u"MozScaleGestureComplete"_ns,
                          /* CanBubble */ true,

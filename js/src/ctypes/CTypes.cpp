@@ -3168,11 +3168,11 @@ static bool ConvertToJS(JSContext* cx, HandleObject typeObj,
   }
       CTYPES_FOR_EACH_WRAPPED_INT_TYPE(WRAPPED_INT_CASE)
 #undef WRAPPED_INT_CASE
-#define FLOAT_CASE(name, type, ffiType)     \
-  case TYPE_##name: {                       \
-    type value = *static_cast<type*>(data); \
-    result.setDouble(double(value));        \
-    break;                                  \
+#define FLOAT_CASE(name, type, ffiType)        \
+  case TYPE_##name: {                          \
+    type value = *static_cast<type*>(data);    \
+    result.set(JS_NumberValue(double(value))); \
+    break;                                     \
   }
       CTYPES_FOR_EACH_FLOAT_TYPE(FLOAT_CASE)
 #undef FLOAT_CASE

@@ -464,7 +464,7 @@ Result<bool, nsresult> Addon::UpdateLastModifiedTime() {
   }
 
   double lastModified = time;
-  JS::Rooted<JS::Value> value(mCx, JS::NumberValue(lastModified));
+  JS::Rooted<JS::Value> value(mCx, JS_NumberValue(lastModified));
   if (!JS_SetProperty(mCx, obj, "currentModifiedTime", value)) {
     JS_ClearPendingException(mCx);
   }

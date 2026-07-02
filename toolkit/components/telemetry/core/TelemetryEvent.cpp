@@ -557,7 +557,7 @@ nsresult SerializeEventsArray(const EventRecordArray& events, JSContext* cx,
 
     // Add timestamp.
     JS::Rooted<JS::Value> val(cx);
-    if (!items.append(JS::NumberValue(floor(record.Timestamp())))) {
+    if (!items.append(JS_NumberValue(floor(record.Timestamp())))) {
       return NS_ERROR_FAILURE;
     }
 
