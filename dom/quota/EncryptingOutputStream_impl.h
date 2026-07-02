@@ -207,6 +207,9 @@ nsresult EncryptingOutputStream<CipherStrategy>::FlushToBaseStream() {
     return NS_OK;
   }
 
+  const size_t roundedNextByte =
+      mEncryptedBlock->RoundedUpToBasicBlockSize(mNextByte);
+
   if (mNextByte < mEncryptedBlock->MaxPayloadLength()) {
     if (!mRandomGenerator) {
       mRandomGenerator =
@@ -218,13 +221,16 @@ nsresult EncryptingOutputStream<CipherStrategy>::FlushToBaseStream() {
 
     const auto payload = mEncryptedBlock->MutablePayload();
 
-    const auto unusedPayload = payload.From(mNextByte);
+    const auto unusedPayload = payload.From(roundedNextByte);
 
     nsresult rv = mRandomGenerator->GenerateRandomBytesInto(
         unusedPayload.Elements(), unusedPayload.Length());
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
     }
+
+    std::fill(mBuffer.begin() + mNextByte, mBuffer.begin() + roundedNextByte,
+              0);
   }
 
   // XXX The compressing stream implementation this was based on wrote a stream
@@ -241,13 +247,10 @@ nsresult EncryptingOutputStream<CipherStrategy>::FlushToBaseStream() {
 
   // Encrypt the data to our internal encrypted buffer.
   // XXX Do we need to know the actual encrypted size?
-  nsresult rv = mCipherStrategy.Cipher(
-      mEncryptedBlock->MutableCipherPrefix(),
-      mozilla::Span(mBuffer.Elements(),
-                    ((mNextByte + (CipherStrategy::BasicBlockSize - 1)) /
-                     CipherStrategy::BasicBlockSize) *
-                        CipherStrategy::BasicBlockSize),
-      mEncryptedBlock->MutablePayload());
+  nsresult rv =
+      mCipherStrategy.Cipher(mEncryptedBlock->MutableCipherPrefix(),
+                             mozilla::Span(mBuffer.Elements(), roundedNextByte),
+                             mEncryptedBlock->MutablePayload());
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }

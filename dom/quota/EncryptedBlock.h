@@ -44,6 +44,10 @@ class EncryptedBlock {
     SetActualPayloadLength(MaxPayloadLength());
   }
 
+  static constexpr size_t RoundedUpToBasicBlockSize(const size_t aValue) {
+    return (aValue + BasicBlockSize - 1) / BasicBlockSize * BasicBlockSize;
+  }
+
   size_t MaxPayloadLength() const {
     return mData.Length() - CipherPrefixLength - CipherPrefixOffset();
   }
@@ -83,10 +87,6 @@ class EncryptedBlock {
  private:
   static constexpr size_t CipherPrefixOffset() {
     return RoundedUpToBasicBlockSize(sizeof(uint16_t));
-  }
-
-  static constexpr size_t RoundedUpToBasicBlockSize(const size_t aValue) {
-    return (aValue + BasicBlockSize - 1) / BasicBlockSize * BasicBlockSize;
   }
 
   nsTArray<uint8_t> mData;
