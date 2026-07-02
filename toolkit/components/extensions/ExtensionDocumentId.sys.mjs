@@ -31,7 +31,9 @@ function ensureMapper() {
     if (!key) {
       // key not found? Something invoked ExtensionDocumentId.sys.mjs before
       // the first extension started. Generate the key now.
-      key = crypto.getRandomValues(new Uint8Array(16));
+      key = Cc["@mozilla.org/keyed-uuid-mapper;1"]
+        .createInstance(Ci.nsIKeyedUUIDMapper)
+        .generateKey();
       Services.ppmm.sharedData.set("extensions/documentIdKey", key);
       // Note: sharedData.flush() is not called because there is no imminent
       // need for the data in the child. Extension.sys.mjs flushes as needed

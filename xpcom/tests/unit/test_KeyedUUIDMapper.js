@@ -19,6 +19,31 @@ function makeMapper(seed) {
 // usual, and then again in the content process in the end as a double check,
 // via test_KeyedUUIDMapper_in_content_process.
 
+add_task(function test_generateKey() {
+  const mapper = Cc["@mozilla.org/keyed-uuid-mapper;1"].createInstance(
+    Ci.nsIKeyedUUIDMapper
+  );
+  const key1 = mapper.generateKey();
+
+  const key2 = Cc["@mozilla.org/keyed-uuid-mapper;1"]
+    .createInstance(Ci.nsIKeyedUUIDMapper)
+    .generateKey();
+
+  Assert.equal(key1.length, key2.length, "Keys have consistent lengths");
+  Assert.ok(
+    key1.some((v, i) => v !== key2[i]),
+    "generateKey() returns unique key"
+  );
+
+  Assert.throws(
+    () => mapper.toUUID(1),
+    /NS_ERROR_NOT_INITIALIZED/,
+    "generateKey() does not initialize mapper"
+  );
+  mapper.init(key2);
+  Assert.ok(mapper.toUUID(1), "generateKey() result can initialize mapper");
+});
+
 add_task(function test_uuid_format() {
   const UUID_RE =
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;

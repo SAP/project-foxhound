@@ -5,6 +5,7 @@
 #include "KeyedUUIDMapper.h"
 
 #include "mozilla/EndianUtils.h"
+#include "mozilla/RandomNum.h"
 #include "nsID.h"
 #include "nsString.h"
 
@@ -45,6 +46,17 @@ static bool ParseUUID(const nsACString& aUUID, uint8_t (&aOut)[16]) {
   // m3 are bytes, we can memcpy without worrying about endianness:
   memcpy(&aOut[8], id.m3, sizeof(id.m3));
   return true;
+}
+
+NS_IMETHODIMP KeyedUUIDMapper::GenerateKey(nsTArray<uint8_t>& aKey) {
+  aKey.SetLength(16);
+  // Intentionally avoids NSS to allow callers to initialize the key early
+  // during browser startup without forced NSS initialization (bug 2050882).
+  if (!GenerateRandomBytesFromOS(aKey.Elements(), aKey.Length())) {
+    aKey.Clear();
+    return NS_ERROR_FAILURE;
+  }
+  return NS_OK;
 }
 
 NS_IMETHODIMP KeyedUUIDMapper::Init(const nsTArray<uint8_t>& aKey) {

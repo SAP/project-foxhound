@@ -16,7 +16,16 @@
 [scriptable, builtinclass, uuid(424ecfce-456d-42ce-8d22-ee934f53a43f)]
 interface nsIKeyedUUIDMapper : nsISupports {
   /**
+   * Generate a random 16-byte key suitable for use with init().
+   *
+   * This uses the OS's CSPRNG instead of NSS to avoid early initialization of
+   * NSS for callers at early browser startup (bug 2050882).
+   */
+  Array<uint8_t> generateKey();
+
+  /**
    * Initialize with a 16-byte key. May be called again to change the key.
+   * This may initialize NSS as needed.
    *
    * Throws NS_ERROR_INVALID_ARG if aKey is not 16 bytes.
    */

@@ -3950,7 +3950,9 @@ export class Extension extends ExtensionData {
       // See ExtensionDocumentId.sys.mjs for an explanation of this.
       sharedData.set(
         "extensions/documentIdKey",
-        crypto.getRandomValues(new Uint8Array(16))
+        Cc["@mozilla.org/keyed-uuid-mapper;1"]
+          .createInstance(Ci.nsIKeyedUUIDMapper)
+          .generateKey()
       );
     }
 
