@@ -60,6 +60,7 @@ vendoring:
   patches:
     - moz-libsoundtouch.patch
     - firfilter-max-channels.patch
+    - ratetransposer-clamp-dest-size.patch
 
   update-actions:
     - action: move-file

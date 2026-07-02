@@ -235,8 +235,17 @@ void TransposerBase::setAlgorithm(TransposerBase::ALGORITHM a)
 // Returns the number of samples returned in the "dest" buffer
 int TransposerBase::transpose(FIFOSampleBuffer &dest, FIFOSampleBuffer &src)
 {
+    const double MAX_DEST_LIMIT = 10240000.0;
+
     int numSrcSamples = src.numSamples();
-    int sizeDemand = (int)((double)numSrcSamples / rate) + 8;
+    double sizeDemand = ((double)numSrcSamples / rate) + 8;
+    if (sizeDemand > MAX_DEST_LIMIT)
+    {
+        // clamp size to sanity check limit to avoid excessively large buffers. may cause artifacts
+        // to output audio yet we're already working way outside of reasonable rate limits
+        numSrcSamples = (int)(MAX_DEST_LIMIT * rate);
+        sizeDemand = ((double)numSrcSamples / rate) + 8;
+    }
     int numOutput;
     SAMPLETYPE *psrc = src.ptrBegin();
     SAMPLETYPE *pdest = dest.ptrEnd(sizeDemand);
