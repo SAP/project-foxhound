@@ -24,6 +24,7 @@ XPCOMUtils.defineLazyServiceGetters(lazy, {
 ChromeUtils.defineESModuleGetters(lazy, {
   AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
   AddonManagerPrivate: "resource://gre/modules/AddonManager.sys.mjs",
+  AddonRepository: "resource://gre/modules/addons/AddonRepository.sys.mjs",
   BookmarksPolicies: "resource:///modules/policies/BookmarksPolicies.sys.mjs",
   CustomizableUI:
     "moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs",
@@ -1601,14 +1602,16 @@ export var Policies = {
             extensionSettings[extensionID].installation_mode ==
               "normal_installed"
           ) {
-            if (!extensionSettings[extensionID].install_url) {
-              throw new Error(`Missing install_url for ${extensionID}`);
+            const existingAddon = addons.get(extensionID);
+            if (extensionSettings[extensionID].install_url) {
+              installAddonFromURL(
+                extensionSettings[extensionID].install_url,
+                extensionID,
+                existingAddon
+              );
+            } else if (!existingAddon) {
+              installAddonFromRepository(extensionID);
             }
-            installAddonFromURL(
-              extensionSettings[extensionID].install_url,
-              extensionID,
-              addons.get(extensionID)
-            );
             manager.disallowFeature(`uninstall-extension:${extensionID}`);
             if (
               extensionSettings[extensionID].installation_mode ==
@@ -3674,6 +3677,22 @@ function applyExtensionGuards(extensionSettings) {
     };
   }
   lazy.setEnterpriseGuards(guards);
+}
+
+function installAddonFromRepository(extensionID) {
+  lazy.AddonRepository.getAddonsByIDs([extensionID])
+    .then(repoAddons => {
+      if (!repoAddons[0]?.sourceURI) {
+        lazy.log.error(
+          `No XPI URL found on AMO for ${extensionID}. Please use install_url for add-ons not listed on addons.mozilla.org.`
+        );
+        return;
+      }
+      installAddonFromURL(repoAddons[0].sourceURI.spec, extensionID, null);
+    })
+    .catch(err => {
+      lazy.log.error(`Failed to retrieve ${extensionID} from AMO: ${err}`);
+    });
 }
 
 /**
