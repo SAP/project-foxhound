@@ -126,7 +126,9 @@ ParentProcessDocumentChannel::OnRedirectVerifyCallback(nsresult aResult) {
       RefPtr<ParentChannelWrapper> wrapper =
           new ParentChannelWrapper(channel, mListener);
 
-      wrapper->Register(mDocumentLoadListener->GetRedirectChannelId());
+      // This is a parent-process document load, so the redirect is owned by
+      // the parent process (ContentParentId 0).
+      wrapper->Register(mDocumentLoadListener->GetRedirectChannelId(), 0);
     }
   }
 

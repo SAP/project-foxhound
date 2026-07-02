@@ -2637,14 +2637,15 @@ bool NS_ShouldRemoveAuthHeaderOnRedirect(nsIChannel* aOldChannel,
   return NS_FAILED(rv);
 }
 
-nsresult NS_LinkRedirectChannels(uint64_t channelId,
+nsresult NS_LinkRedirectChannels(uint64_t channelId, uint64_t aContentParentId,
                                  nsIParentChannel* parentChannel,
                                  nsIChannel** _result) {
   nsCOMPtr<nsIRedirectChannelRegistrar> registrar =
       RedirectChannelRegistrar::GetOrCreate();
   MOZ_ASSERT(registrar);
 
-  return registrar->LinkChannels(channelId, parentChannel, _result);
+  return registrar->LinkChannels(channelId, aContentParentId, parentChannel,
+                                 _result);
 }
 
 nsILoadInfo::CrossOriginEmbedderPolicy
