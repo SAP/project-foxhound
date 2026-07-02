@@ -202,7 +202,7 @@ class uiaRawElmProvider : public IAccessibleEx,
   bool HasTogglePattern();
   bool HasExpandCollapsePattern();
   bool HasValuePattern() const;
-  template <class Derived, class Interface>
+  template <class Interface>
   RefPtr<Interface> GetPatternFromDerived();
   bool HasSelectionItemPattern();
   SAFEARRAY* AccRelationsToUiaArray(

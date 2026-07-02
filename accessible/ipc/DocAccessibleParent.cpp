@@ -295,7 +295,9 @@ RemoteAccessible* DocAccessibleParent::CreateAcc(
     return nullptr;
   }
 
-  if (aAccData.GenericTypes() & eDocument) {
+  if (aAccData.GenericTypes() & eDocument || aAccData.Type() == eRootType ||
+      aAccData.Type() == eApplicationType ||
+      (aAccData.Type() == eImageType && aAccData.GenericTypes() & eHyperText)) {
     MOZ_ASSERT_UNREACHABLE("Invalid acc type");
     return nullptr;
   }

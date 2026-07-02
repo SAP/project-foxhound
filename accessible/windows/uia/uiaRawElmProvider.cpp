@@ -11,9 +11,6 @@
 #include "AccessibleWrap.h"
 #include "ApplicationAccessible.h"
 #include "ARIAMap.h"
-#include "ia2AccessibleHypertext.h"
-#include "ia2AccessibleTable.h"
-#include "ia2AccessibleTableCell.h"
 #include "LocalAccessible-inl.h"
 #include "mozilla/a11y/Compatibility.h"
 #include "mozilla/a11y/RemoteAccessible.h"
@@ -474,14 +471,13 @@ uiaRawElmProvider::GetPatternProvider(
       return S_OK;
     case UIA_GridPatternId:
       if (acc->IsTable()) {
-        auto grid = GetPatternFromDerived<ia2AccessibleTable, IGridProvider>();
+        auto grid = GetPatternFromDerived<IGridProvider>();
         grid.forget(aPatternProvider);
       }
       return S_OK;
     case UIA_GridItemPatternId:
       if (acc->IsTableCell()) {
-        auto item =
-            GetPatternFromDerived<ia2AccessibleTableCell, IGridItemProvider>();
+        auto item = GetPatternFromDerived<IGridItemProvider>();
         item.forget(aPatternProvider);
       }
       return S_OK;
@@ -538,15 +534,13 @@ uiaRawElmProvider::GetPatternProvider(
       return S_OK;
     case UIA_TablePatternId:
       if (acc->IsTable()) {
-        auto table =
-            GetPatternFromDerived<ia2AccessibleTable, ITableProvider>();
+        auto table = GetPatternFromDerived<ITableProvider>();
         table.forget(aPatternProvider);
       }
       return S_OK;
     case UIA_TableItemPatternId:
       if (acc->IsTableCell()) {
-        auto item =
-            GetPatternFromDerived<ia2AccessibleTableCell, ITableItemProvider>();
+        auto item = GetPatternFromDerived<ITableItemProvider>();
         item.forget(aPatternProvider);
       }
       return S_OK;
@@ -1527,14 +1521,11 @@ bool uiaRawElmProvider::HasValuePattern() const {
   return roleMapEntry && roleMapEntry->Is(nsGkAtoms::textbox);
 }
 
-template <class Derived, class Interface>
+template <class Interface>
 RefPtr<Interface> uiaRawElmProvider::GetPatternFromDerived() {
-  // MsaaAccessible inherits from uiaRawElmProvider. Derived
-  // inherits from MsaaAccessible and Interface. The compiler won't let us
-  // directly static_cast to Interface, hence the intermediate casts.
-  auto* msaa = static_cast<MsaaAccessible*>(this);
-  auto* derived = static_cast<Derived*>(msaa);
-  return derived;
+  RefPtr<Interface> provider;
+  QueryInterface(__uuidof(Interface), getter_AddRefs(provider));
+  return provider;
 }
 
 bool uiaRawElmProvider::HasSelectionItemPattern() {
