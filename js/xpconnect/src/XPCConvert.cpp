@@ -98,7 +98,7 @@ bool XPCConvert::NativeData2JS(JSContext* cx, MutableHandleValue d,
       d.setNumber(static_cast<double>(*static_cast<const uint64_t*>(s)));
       return true;
     case nsXPTType::T_FLOAT:
-      d.setNumber(*static_cast<const float*>(s));
+      d.set(JS_NumberValue(double(*static_cast<const float*>(s))));
       return true;
     case nsXPTType::T_DOUBLE:
       d.set(JS_NumberValue(*static_cast<const double*>(s)));

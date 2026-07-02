@@ -243,7 +243,7 @@ bool UntrustedModulesDataSerializer::SerializeEvent(
 
   if (event.mLoadDurationMS) {
     JS::Rooted<JS::Value> jsLoadDurationMS(aCx);
-    jsLoadDurationMS.setNumber(event.mLoadDurationMS.value());
+    jsLoadDurationMS.set(JS_NumberValue(event.mLoadDurationMS.value()));
     if (!JS_DefineProperty(aCx, obj, "loadDurationMS", jsLoadDurationMS,
                            JSPROP_ENUMERATE)) {
       return false;
@@ -346,14 +346,14 @@ nsresult UntrustedModulesDataSerializer::GetPerProcObject(
   }
 
   JS::Rooted<JS::Value> jsElapsed(mCx);
-  jsElapsed.setNumber(aData.mElapsed.ToSeconds());
+  jsElapsed.set(JS_NumberValue(aData.mElapsed.ToSeconds()));
   if (!JS_DefineProperty(mCx, aObj, "elapsed", jsElapsed, JSPROP_ENUMERATE)) {
     return NS_ERROR_FAILURE;
   }
 
   if (aData.mXULLoadDurationMS.isSome()) {
     JS::Rooted<JS::Value> jsXulLoadDurationMS(mCx);
-    jsXulLoadDurationMS.setNumber(aData.mXULLoadDurationMS.value());
+    jsXulLoadDurationMS.set(JS_NumberValue(aData.mXULLoadDurationMS.value()));
     if (!JS_DefineProperty(mCx, aObj, "xulLoadDurationMS", jsXulLoadDurationMS,
                            JSPROP_ENUMERATE)) {
       return NS_ERROR_FAILURE;
