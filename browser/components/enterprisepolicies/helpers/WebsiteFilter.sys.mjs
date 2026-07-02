@@ -165,14 +165,30 @@ export let WebsiteFilter = {
     return this.QueryInterface(iid);
   },
   isAllowed(url) {
-    if (this._blockPatterns?.matches(url.toLowerCase())) {
+    let normalizedURL = this.normalizeURL(url);
+    // A URL we are about to load should always parse, so this is unexpected.
+    // Block it rather than let an unparseable URL skip the filter.
+    if (normalizedURL == null) {
+      return false;
+    }
+    if (this._blockPatterns?.matches(normalizedURL)) {
       if (
         !this._exceptionsPatterns ||
-        !this._exceptionsPatterns.matches(url.toLowerCase())
+        !this._exceptionsPatterns.matches(normalizedURL)
       ) {
         return false;
       }
     }
     return true;
+  },
+  normalizeURL(url) {
+    let parsed = URL.parse(url);
+    if (!parsed) {
+      return null;
+    }
+    if (parsed.hostname.endsWith(".")) {
+      parsed.hostname = parsed.hostname.replace(/\.+$/, "");
+    }
+    return parsed.href.toLowerCase();
   },
 };
