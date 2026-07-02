@@ -196,6 +196,11 @@ nsresult SnappyFrameUtils::ParseCompressedData(char* aDest, size_t aDestLength,
   *aBytesReadOut = 0;
   size_t offset = 0;
 
+  // A CompressedData chunk must contain at least the masked CRC.
+  if (NS_WARN_IF(aDataLength < kCRCLength)) {
+    return NS_ERROR_CORRUPTED_CONTENT;
+  }
+
   uint32_t readCrc = LittleEndian::readUint32(aData + offset);
   offset += kCRCLength;
 
