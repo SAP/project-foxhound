@@ -20,8 +20,6 @@ import androidx.fragment.app.DialogFragment
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import mozilla.components.concept.base.crash.Breadcrumb
 import mozilla.components.support.base.log.logger.Logger
-import mozilla.components.support.ktx.util.PromptAbuserDetector
-import mozilla.components.support.utils.OnEnterAnimationCompleteListener
 import org.mozilla.fenix.R
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.requireComponents
@@ -40,11 +38,9 @@ import org.mozilla.fenix.theme.FirefoxTheme
  *
  * The callback [onConfirmSave] is invoked with the final file name and directory path.
  */
-class RenameAndChangeLocationDialogFragment : DialogFragment(), OnEnterAnimationCompleteListener {
+class RenameAndChangeLocationDialogFragment : DialogFragment() {
     private val logger = Logger("RenameAndChangeLocationDialogFragment")
     private val safeArguments get() = requireNotNull(arguments)
-
-    private val promptAbuserDetector = PromptAbuserDetector(TIME_SHOWN_OFFSET_MILLIS)
 
     internal val fileName: String
         get() = safeArguments.getString(KEY_FILE_NAME, "")
@@ -79,15 +75,6 @@ class RenameAndChangeLocationDialogFragment : DialogFragment(), OnEnterAnimation
         }
     }
 
-    override fun onResume() {
-        super.onResume()
-        promptAbuserDetector.start()
-    }
-
-    override fun onEnterAnimationComplete() {
-        promptAbuserDetector.start()
-    }
-
     override fun onCancel(dialog: DialogInterface) {
         super.onCancel(dialog)
         onCancel()
@@ -111,8 +98,6 @@ class RenameAndChangeLocationDialogFragment : DialogFragment(), OnEnterAnimation
         )
 
         val composeView = createComposeView()
-
-        promptAbuserDetector.start()
 
         return MaterialAlertDialogBuilder(requireContext())
             .setView(composeView)
@@ -159,15 +144,11 @@ class RenameAndChangeLocationDialogFragment : DialogFragment(), OnEnterAnimation
                             directoryLauncher.launch(null)
                         },
                         onConfirm = {
-                            if (promptAbuserDetector.areDialogsBeingAbused()) {
-                                promptAbuserDetector.updateJSDialogAbusedState()
-                            } else {
-                                onConfirmSave(
-                                    dialogState.fileName,
-                                    dialogState.directoryPath,
-                                )
-                                dismiss()
-                            }
+                            onConfirmSave(
+                                dialogState.fileName,
+                                dialogState.directoryPath,
+                            )
+                            dismiss()
                         },
                         onCancel = {
                             onCancel()
@@ -201,7 +182,6 @@ class RenameAndChangeLocationDialogFragment : DialogFragment(), OnEnterAnimation
         private const val KEY_DIRECTORY_PATH = "directory_path"
         private const val KEY_CONTENT_SIZE = "content_size"
         const val RENAME_AND_CHANGE_LOCATION_DIALOG_TAG = "RENAME_AND_CHANGE_LOCATION_DIALOG_TAG"
-        private const val TIME_SHOWN_OFFSET_MILLIS = 500
 
         /**
          * Creates a new instance of [RenameAndChangeLocationDialogFragment].
@@ -222,15 +202,4 @@ class RenameAndChangeLocationDialogFragment : DialogFragment(), OnEnterAnimation
             }
         }
     }
-}
-
-/**
- * Starts (or restarts) the time-based check without increasing the "click count".
- *
- * Makes it safe to call from multiple/successive lifecycle methods, without running into the risk
- * of triggering the more restrictive count-based protection on the 1st click (or even before it).
- */
-private fun PromptAbuserDetector.start() {
-    resetJSAlertAbuseState()
-    updateJSDialogAbusedState()
 }
