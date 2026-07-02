@@ -650,8 +650,11 @@ void ScaledFontDWrite::PrepareCairoScaledFont(cairo_scaled_font_t* aFont) {
 already_AddRefed<UnscaledFont> UnscaledFontDWrite::CreateFromFontDescriptor(
     const uint8_t* aData, uint32_t aDataLength, uint32_t aIndex) {
   // Note that despite the type of aData here, it actually points to a 16-bit
-  // Windows font file path (hence the cast to WCHAR* below).
-  if (aDataLength == 0) {
+  // Windows font file path (hence the cast to WCHAR* below) and must be null-
+  // terminated.
+  const WCHAR* path = (const WCHAR*)aData;
+  size_t pathLen = aDataLength / sizeof(WCHAR);
+  if (pathLen < 1 || path[pathLen - 1] != 0) {
     gfxWarning() << "DWrite font descriptor is truncated.";
     return nullptr;
   }
@@ -663,7 +666,7 @@ already_AddRefed<UnscaledFont> UnscaledFontDWrite::CreateFromFontDescriptor(
 
   MOZ_SEH_TRY {
     RefPtr<IDWriteFontFile> fontFile;
-    HRESULT hr = factory->CreateFontFileReference((const WCHAR*)aData, nullptr,
+    HRESULT hr = factory->CreateFontFileReference(path, nullptr,
                                                   getter_AddRefs(fontFile));
     if (FAILED(hr)) {
       return nullptr;
@@ -688,8 +691,9 @@ already_AddRefed<UnscaledFont> UnscaledFontDWrite::CreateFromFontDescriptor(
     return unscaledFont.forget();
   }
   MOZ_SEH_EXCEPT(EXCEPTION_EXECUTE_HANDLER) {
-    gfxCriticalNote << "Exception occurred creating unscaledFont for "
-                    << NS_ConvertUTF16toUTF8((const char16_t*)aData).get();
+    gfxCriticalNote
+        << "Exception occurred creating UnscaledFont for "
+        << NS_ConvertUTF16toUTF8((const char16_t*)path, pathLen - 1).get();
     return nullptr;
   }
 }
