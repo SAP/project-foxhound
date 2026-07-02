@@ -845,9 +845,9 @@
   <!-- Preference for accessibility -->
   <string name="preferences_accessibility">Tilgjengelighet</string>
   <!-- Preference to override the Mozilla account server -->
-  <string name="preferences_override_account_server" tools:ignore="BrandUsage">Selvvalgt server for Mozilla-konto</string>
+  <string name="preferences_override_account_server" tools:ignore="BrandUsage">Tilpasset server for Mozilla-konto</string>
   <!-- Preference to override the Sync token server -->
-  <string name="preferences_override_sync_tokenserver">Selvvalgt synkroniseringsserver</string>
+  <string name="preferences_override_sync_tokenserver">Tilpasset synkroniseringsserver</string>
   <!-- Preference category for account information -->
   <string name="preferences_category_account">Konto</string>
   <!-- Preference for changing where the AddressBar is positioned -->

@@ -149,6 +149,8 @@
   <string name="home_screen_shortcut_open_new_private_tab_2">Gnove schede privade</string>
   <!-- Shortcut action to open Passwords screen -->
   <string name="home_screen_shortcut_passwords">Passwords</string>
+  <!-- Shortcut action to open uninstall survey -->
+  <string name="home_screen_shortcut_uninstall_survey">Disinstalâ, parcè?</string>
   <!--
     Recent Tabs
 
@@ -2447,6 +2449,8 @@
   <string name="preferences_take_survey">Partecipe al sondaç</string>
   <!-- Preference for not taking the short survey. -->
   <string name="preferences_not_take_survey">No graciis</string>
+  <!-- Error message shown in a Toast when the system fails to trigger the device uninstallation prompt. -->
+  <string name="uninstall_survey_error_failed">Impussibil fâ partî la domande par disinstalâ dal sisteme. Par plasê dopre il sisteme di disinstalazion dal sisteme operatîf.</string>
   <!--
     Snackbar
 
@@ -4066,6 +4070,8 @@
   <string name="microsurvey_sync_title" tools:ignore="BrandUsage,UnusedResources">Trope sodisfazion cjatistu cu la esperience di sincronizazion in Firefox?</string>
   <!-- Text shown in the survey title for 'describe your experience so far' microsurvey. Note: The word "Firefox" should NOT be translated. -->
   <string name="microsurvey_describe_your_experience_title" tools:ignore="BrandUsage,UnusedResources">Judinus a miorâ Firefox. Ce opzion rapresentie miôr la tô esperience fintremai cumò?</string>
+  <!-- Uninstall Survey -->
+  <string name="uninstall_survey_button_label">Mande une opinion e disinstale</string>
   <!--
     Accessibility
 

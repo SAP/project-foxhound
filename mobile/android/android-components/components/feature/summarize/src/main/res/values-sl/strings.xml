@@ -29,6 +29,16 @@
   <string name="mozac_summarize_download_error_positive_button">Poskusi znova</string>
   <!-- Button for the download error screen to cancel -->
   <string name="mozac_summarize_download_error_negative_button">Prekliči</string>
+  <!-- Generic fallback message for the info error screen -->
+  <string name="mozac_summarize_info_error_message">Poskusite znova pozneje.</string>
   <!-- Error code shown on long press of the error icon. %1$d is an error code. -->
   <string name="mozac_summarize_info_error_code">Koda napake: %1$d</string>
+  <!-- Loading text displayed while a page summary is being generated -->
+  <string name="mozac_feature_summarize_loading_title">Povzemanje …</string>
+  <!-- Content description for the settings icon button in the summarized view -->
+  <string name="mozac_summarize_settings_button_content_description">Nastavitve povzemanja strani</string>
+  <!-- Link text to learn more about page summaries in settings -->
+  <string name="mozac_summarize_settings_learn_more">Več o tem</string>
+  <!-- Disclaimer message -->
+  <string name="mozac_feature_summarize_disclaimer_message">UI lahko dela napake</string>
 </resources>

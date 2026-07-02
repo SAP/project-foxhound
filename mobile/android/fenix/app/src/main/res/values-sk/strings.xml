@@ -149,6 +149,8 @@
   <string name="home_screen_shortcut_open_new_private_tab_2">Nová súkromná karta</string>
   <!-- Shortcut action to open Passwords screen -->
   <string name="home_screen_shortcut_passwords">Heslá</string>
+  <!-- Shortcut action to open uninstall survey -->
+  <string name="home_screen_shortcut_uninstall_survey">Odinštalovať, prečo?</string>
   <!--
     Recent Tabs
 
@@ -2461,6 +2463,8 @@
   <string name="preferences_take_survey">Zúčastniť sa prieskumu</string>
   <!-- Preference for not taking the short survey. -->
   <string name="preferences_not_take_survey">Nie, ďakujem</string>
+  <!-- Error message shown in a Toast when the system fails to trigger the device uninstallation prompt. -->
+  <string name="uninstall_survey_error_failed">Nepodarilo sa otvoriť výzvu systému na odinštalovanie, použite priamo akciu odinštalovania v systéme.</string>
   <!--
     Snackbar
 
@@ -4100,6 +4104,8 @@
   <string name="microsurvey_sync_title" tools:ignore="BrandUsage,UnusedResources">Ako ste spokojný so synchronizáciou vo Firefoxe?</string>
   <!-- Text shown in the survey title for 'describe your experience so far' microsurvey. Note: The word "Firefox" should NOT be translated. -->
   <string name="microsurvey_describe_your_experience_title" tools:ignore="BrandUsage,UnusedResources">Pomôžte nám vylepšiť Firefox. Ktoré z tvrdení najlepšie vystihuje vašu doterajšiu skúsenosť?</string>
+  <!-- Uninstall Survey -->
+  <string name="uninstall_survey_button_label">Odoslať spätnú väzbu a odinštalovať</string>
   <!--
     Accessibility
 

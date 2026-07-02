@@ -2449,6 +2449,8 @@
   <string name="preferences_take_survey">Ver med på undersøkinga</string>
   <!-- Preference for not taking the short survey. -->
   <string name="preferences_not_take_survey">Nei takk</string>
+  <!-- Error message shown in a Toast when the system fails to trigger the device uninstallation prompt. -->
+  <string name="uninstall_survey_error_failed">Klarte ikkje å opne avinstalleringsdialogen til systemet. Bruk avinstalleringsfunksjonen til systemet direkte.</string>
   <!--
     Snackbar
 
@@ -4068,6 +4070,8 @@
   <string name="microsurvey_sync_title" tools:ignore="BrandUsage,UnusedResources">Kor fornøgd er du med synkroniseringa i Firefox?</string>
   <!-- Text shown in the survey title for 'describe your experience so far' microsurvey. Note: The word "Firefox" should NOT be translated. -->
   <string name="microsurvey_describe_your_experience_title" tools:ignore="BrandUsage,UnusedResources">Hjelp oss med å gjere Firefox betre. Kva beskriv best opplevinga di så langt?</string>
+  <!-- Uninstall Survey -->
+  <string name="uninstall_survey_button_label">Send inn tilbakemelding og avinstaller</string>
   <!--
     Accessibility
 

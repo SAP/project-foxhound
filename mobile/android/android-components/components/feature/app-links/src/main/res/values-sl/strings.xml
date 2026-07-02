@@ -14,6 +14,11 @@
   <!-- The title of the prompt that warns users their normal browsing session is trying to open another app -->
   <string name="mozac_feature_applinks_normal_confirm_dialog_title_2">Odprem to povezavo v drugi aplikaciji?</string>
   <!--
+    The title of the prompt with app suffix.
+    %s is a placeholder that will be replaced by an app name
+  -->
+  <string name="mozac_feature_applinks_normal_confirm_dialog_title_with_app_name_2">Odprem to povezavo v aplikaciji %s?</string>
+  <!--
     The title of the prompt that warns users their normal browsing session is trying to open another app
     %s is a placeholder that will be replaced by an app name
   -->
@@ -45,4 +50,6 @@
   <string name="mozac_feature_applinks_unique_identifier">Edinstveni identifikator</string>
   <!-- The text shown when there is no Firefox URL -->
   <string name="mozac_feature_applinks_none">Brez</string>
+  <!-- The subtitle showing where the link was navigated from. %s is the domain. -->
+  <string name="mozac_feature_applinks_link_from">Povezava z %s</string>
 </resources>

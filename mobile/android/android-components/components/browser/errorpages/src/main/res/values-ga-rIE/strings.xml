@@ -29,6 +29,16 @@
   <string name="mozac_browser_errorpages_security_bad_cert_back">Amach As Seo (Molta)</string>
   <!-- The text shown inside the advanced options button used to bypass the invalid SSL certificate. It's only shown if the user has expanded the advanced options. -->
   <string name="mozac_browser_errorpages_security_bad_cert_accept_temporary">Tuigim an Baol. Ar Aghaidh Linn!</string>
+  <!-- The document title and heading of the error page shown when a website uses HSTS. -->
+  <string name="mozac_browser_errorpages_security_bad_hsts_cert_title">Tá nasc slán ag teastáil ón suíomh Gréasáin seo.</string>
+  <!-- The error message shown when a website uses HSTS. -->
+  <string name="mozac_browser_errorpages_security_bad_hsts_cert_message"><![CDATA[<ul>\n<li>Ní féidir an leathanach a bhfuil tú ag iarraidh féachaint air a thaispeáint toisc go bhfuil ceangal slán ag teastáil ón suíomh Gréasáin seo.</li>\n<li>Is dócha go bhfuil an fhadhb leis an suíomh Gréasáin, agus níl aon rud is féidir leat a dhéanamh chun í a réiteach.</li>\n<li>Is féidir leat riarthóir an tsuímh Ghréasáin a chur ar an eolas faoin bhfadhb.</li>\n</ul>]]></string>
+  <!-- The text shown inside the advanced button used to expand the advanced options. It's only shown when a website uses HSTS. -->
+  <string name="mozac_browser_errorpages_security_bad_hsts_cert_advanced">Casta…</string>
+  <!-- The advanced certificate information shown when a website uses HSTS. The %1$s will be replaced by the website URL and %2$s will be replaced by the app name. It's only shown when a website uses HSTS. -->
+  <string name="mozac_browser_errorpages_security_bad_hsts_cert_techInfo2"><![CDATA[Tá polasaí slándála ag <label> <b>%1$s</b> ar a dtugtar HTTP Strict Transport Security (HSTS), rud a chiallaíonn nach féidir le <b>%2$s</b> ach ceangal leis go slán. Ní féidir leat eisceacht a chur leis chun cuairt a thabhairt ar an suíomh seo. </label>]]></string>
+  <!-- The text shown inside the advanced options button used to go back. It's only shown if the user has expanded the advanced options. -->
+  <string name="mozac_browser_errorpages_security_bad_hsts_cert_back">Dul ar ais</string>
   <!-- The document title and heading of the error page shown when the user's network connection is interrupted while connecting to a website. -->
   <string name="mozac_browser_errorpages_net_interrupt_title">Idirbhriseadh an ceangal</string>
   <!-- The error message shown when the user's network connection is interrupted while connecting to a website. -->
@@ -129,4 +139,10 @@
   <string name="mozac_browser_errorpages_harmful_addon_uri_title">Cuireadh bac ar an suíomh ar mhaithe le do shábháilteacht</string>
   <!-- The %1$s will be replaced by the malicious website URL -->
   <string name="mozac_browser_errorpages_harmful_addon_uri_message"><![CDATA[<p>Cuireadh bac ar an suíomh Gréasáin seo ag %1$s toisc go ndearna ceann de do bhreiseáin iarracht é a oscailt. D\'fhéadfaí an suíomh seo a úsáid chun faisnéis a ghoid uait — focail faire nó uimhreacha cárta creidmheasa, cuir i gcás.</p>]]></string>
+  <!-- The title of the error page for websites that do not support HTTPS when HTTPS-Only is turned on -->
+  <string name="mozac_browser_errorpages_httpsonly_title">Níl Suíomh Slán ar Fáil</string>
+  <!-- The text of the error page for websites that do not support HTTPS when HTTPS-Only is turned on. %1$s will be replaced with the URL of the website. -->
+  <string name="mozac_browser_errorpages_httpsonly_message"><![CDATA[Tá Mód HTTPS Amháin cumasaithe agat le haghaidh slándála feabhsaithe, agus níl leagan HTTPS de <em>%1$s</em> ar fáil.]]></string>
+  <!-- Button on error page for websites that do not support HTTPS when HTTPS-Only is turned on. Clicking the button allows the user to nevertheless load the website using HTTP. -->
+  <string name="mozac_browser_errorpages_httpsonly_button">Lean ar aghaidh chuig Suíomh HTTP</string>
 </resources>
