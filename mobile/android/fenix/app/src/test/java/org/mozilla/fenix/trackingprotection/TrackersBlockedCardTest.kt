@@ -4,17 +4,21 @@
 
 package org.mozilla.fenix.trackingprotection
 
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mozilla.fenix.helpers.lifecycle.TestLifecycleOwner
 import org.mozilla.fenix.theme.FirefoxTheme
 import org.mozilla.fenix.theme.Theme
 
@@ -63,6 +67,37 @@ class TrackersBlockedCardTest {
         composeTestRule.mainClock.advanceTimeBy(20_000L)
 
         // Once the full peek/dwell/retract sequence ends, the fox is removed.
+        composeTestRule.onNodeWithTag(LONGFOX_FOX_IMAGE_TEST_TAG).assertDoesNotExist()
+    }
+
+    @Test
+    fun `when the card is backgrounded mid-animation the fox is removed instead of replaying its retract`() {
+        // The animation is driven by the compose clock, so pause it to step through deterministically.
+        composeTestRule.mainClock.autoAdvance = false
+
+        val lifecycleOwner = TestLifecycleOwner(initialState = Lifecycle.State.RESUMED)
+        composeTestRule.setContent {
+            CompositionLocalProvider(LocalLifecycleOwner provides lifecycleOwner) {
+                FirefoxTheme(theme = Theme.Light) {
+                    TrackersBlockedCard(
+                        trackersBlockedCount = 3,
+                        showLongfoxAnimation = true,
+                    )
+                }
+            }
+        }
+
+        // The fox is peeking out once the animation starts.
+        composeTestRule.mainClock.advanceTimeBy(100L)
+        composeTestRule.onNodeWithTag(LONGFOX_FOX_IMAGE_TEST_TAG).assertExists()
+
+        // Sending the app to the background must reset the card to its hidden default state.
+        composeTestRule.runOnUiThread { lifecycleOwner.onStop() }
+        composeTestRule.mainClock.advanceTimeBy(100L)
+        composeTestRule.onNodeWithTag(LONGFOX_FOX_IMAGE_TEST_TAG).assertDoesNotExist()
+
+        // It must stay hidden rather than playing the retract transition when the app returns.
+        composeTestRule.mainClock.advanceTimeBy(20_000L)
         composeTestRule.onNodeWithTag(LONGFOX_FOX_IMAGE_TEST_TAG).assertDoesNotExist()
     }
 

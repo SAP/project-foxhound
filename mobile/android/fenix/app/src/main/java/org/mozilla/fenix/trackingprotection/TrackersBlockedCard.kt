@@ -32,6 +32,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -46,7 +47,10 @@ import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import mozilla.components.compose.base.modifier.thenConditional
 import org.mozilla.fenix.R
 import org.mozilla.fenix.theme.FirefoxTheme
@@ -92,6 +96,7 @@ fun TrackersBlockedCard(
     var isPlayingAnimation by remember { mutableStateOf(false) }
     val foxOffsetY = remember { Animatable(1f) }
     var isReversing by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
 
     // Latch the animation becoming visible into isPlayingAnimation. showLongfoxAnimation is
     // cleared as soon as the homepage consumes it, so the animation is driven off the latch below
@@ -102,9 +107,20 @@ fun TrackersBlockedCard(
         }
     }
 
+    // see bug 2050032.
+    // animateTo is frame-driven and freezes while backgrounded, but the delays below keep running,
+    // so a peek interrupted by backgrounding would otherwise play its retract transition on return.
+    // Reset to the hidden state when the card leaves the foreground so it restores cleanly.
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
+        isPlayingAnimation = false
+        coroutineScope.launch { foxOffsetY.snapTo(1f) }
+    }
+
     LaunchedEffect(isPlayingAnimation) {
         if (isPlayingAnimation) {
             isReversing = false
+            // make sure we always start from the beginning position.
+            foxOffsetY.snapTo(1f)
             foxOffsetY.animateTo(
                 targetValue = 0f,
                 animationSpec = tween(durationMillis = FOX_ANIMATION_DURATION, easing = Ease),
