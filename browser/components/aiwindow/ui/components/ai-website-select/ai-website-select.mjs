@@ -12,6 +12,7 @@ const CHANGE_EVENT = "ai-website-select:change";
 /**
  * A website select component for listing and selecting tabs
  *
+ * @property {string} token - Per-row id that maps to the tab's permanentKey
  * @property {string} linkedPanel - Id of the linked panel (used for associating with tab objects)
  * @property {string} label - The text content (tab name)
  * @property {string} iconSrc - Favicon or icon URL
@@ -20,6 +21,7 @@ const CHANGE_EVENT = "ai-website-select:change";
  */
 export class AIWebsiteSelect extends MozLitElement {
   static properties = {
+    token: { type: String },
     linkedPanel: { type: String },
     label: { type: String },
     iconSrc: { type: String },
@@ -29,6 +31,7 @@ export class AIWebsiteSelect extends MozLitElement {
 
   constructor() {
     super();
+    this.token = "";
     this.linkedPanel = "";
     this.label = "";
     this.iconSrc = "";
@@ -53,6 +56,7 @@ export class AIWebsiteSelect extends MozLitElement {
       composed: true,
       cancelable: true,
       detail: {
+        token: this.token,
         linkedPanel: this.linkedPanel,
         label: this.label,
         url: this.url,
@@ -84,6 +88,7 @@ export class AIWebsiteSelect extends MozLitElement {
       composed: true,
       cancelable: true,
       detail: {
+        token: this.token,
         linkedPanel: this.linkedPanel,
         label: this.label,
         url: this.url,

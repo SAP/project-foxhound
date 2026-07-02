@@ -33,6 +33,7 @@ function createFakeTab(
     linkedBrowser: {
       currentURI: { spec: url },
     },
+    permanentKey: {},
     label,
     linkedPanel: linkedPanel ?? `panel-${url}`,
     image: image ?? "",
@@ -75,12 +76,15 @@ add_task(async function test_closeTabsAction_confirmation_path_matches_tabs() {
     });
     setupBrowserWindowTracker(sb, createFakeWindow([tab1, tab2]));
 
+    const registerTabKeys = sb.stub(ToolUI, "registerTabKeys");
+
     const conversation = makeConversation();
 
     const { toolResult: result, uiData } = await closeTabsAction(
       {
         validUrls: new Set([url1, url2]),
         ask_confirmation: true,
+        toolCallId: "tool-call-1",
       },
       conversation
     );
@@ -93,10 +97,12 @@ add_task(async function test_closeTabsAction_confirmation_path_matches_tabs() {
     );
 
     const [shapedTab1, shapedTab2] = uiData.properties.tabs;
+    Assert.ok(shapedTab1.token, "First tab carries a resolution token");
+    Assert.ok(shapedTab2.token, "Second tab carries a resolution token");
     Assert.deepEqual(
       shapedTab1,
       {
-        linkedPanel: "panel-1",
+        token: shapedTab1.token,
         url: url1,
         title: sanitizeUntrustedContent("Example"),
         userContextId: undefined,
@@ -110,7 +116,7 @@ add_task(async function test_closeTabsAction_confirmation_path_matches_tabs() {
     Assert.deepEqual(
       shapedTab2,
       {
-        linkedPanel: "panel-2",
+        token: shapedTab2.token,
         url: url2,
         title: sanitizeUntrustedContent("Mozilla"),
         userContextId: undefined,
@@ -120,6 +126,30 @@ add_task(async function test_closeTabsAction_confirmation_path_matches_tabs() {
         checked: true,
       },
       "Second tab shape matches the UI contract"
+    );
+
+    // The token -> permanentKey map is registered for this confirmation so the
+    // later confirm can resolve the selection back to live tabs.
+    Assert.ok(
+      registerTabKeys.calledOnce,
+      "registerTabKeys is called for the confirmation"
+    );
+    const [registeredToolCallId, tokenToKey] = registerTabKeys.firstCall.args;
+    Assert.equal(
+      registeredToolCallId,
+      "tool-call-1",
+      "Registered under the tool call id"
+    );
+    Assert.equal(tokenToKey.size, 2, "Map has an entry per tab");
+    Assert.equal(
+      tokenToKey.get(shapedTab1.token),
+      tab1.permanentKey,
+      "First token maps to the first tab's permanentKey"
+    );
+    Assert.equal(
+      tokenToKey.get(shapedTab2.token),
+      tab2.permanentKey,
+      "Second token maps to the second tab's permanentKey"
     );
 
     Assert.equal(result.selectedTabs.length, 2, "toolResult has both tabs");
@@ -185,10 +215,11 @@ add_task(async function test_closeTabsAction_direct_close_path() {
     const { selectedTabs: uiTabs, operationId } =
       uiData.properties.confirmedData;
     Assert.equal(uiTabs.length, 1, "1 tab is returned to the UI");
+    Assert.ok(uiTabs[0].token, "UI tab carries a resolution token");
     Assert.deepEqual(
       uiTabs[0],
       {
-        linkedPanel: "panel-1",
+        token: uiTabs[0].token,
         url,
         title: sanitizeUntrustedContent("Example"),
         userContextId: undefined,
@@ -235,9 +266,7 @@ add_task(async function test_closeTabsAction_marks_failed_tabs() {
     sb.stub(ToolUI, "closeSelectedTabs").resolves({
       operationId: "op-1",
       closedTabs: [],
-      failedTabs: [
-        { tab: { linkedPanel: "panel-b" }, reason: "already-closing" },
-      ],
+      failedTabs: [{ tab: failedTab, reason: "already-closing" }],
     });
 
     const { toolResult: result } = await closeTabsAction(
