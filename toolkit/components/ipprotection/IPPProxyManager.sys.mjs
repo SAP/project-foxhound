@@ -802,7 +802,7 @@ class IPPProxyManagerSingleton extends EventTarget {
   #setErrorState(error) {
     this.#rotation?.controller.abort();
 
-    this.#errorType = error;
+    this.#errorType = typeof error === "string" ? error : ERRORS.GENERIC;
     if (this.#state === IPPProxyStates.ACTIVE) {
       // If the proxy is active, switch to the error state.
       // Stop will need to be called to move out of the error state.
