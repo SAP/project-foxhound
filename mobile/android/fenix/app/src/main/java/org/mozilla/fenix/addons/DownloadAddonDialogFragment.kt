@@ -43,6 +43,7 @@ import androidx.core.graphics.drawable.toDrawable
 import androidx.fragment.compose.content
 import androidx.navigation.fragment.navArgs
 import mozilla.components.compose.base.button.TextButton
+import mozilla.components.support.base.android.NoObscuredTouchesDialogFragment
 import org.mozilla.fenix.compose.Favicon
 import org.mozilla.fenix.theme.FirefoxTheme
 import org.mozilla.fenix.theme.PreviewThemeProvider
@@ -60,7 +61,7 @@ import mozilla.components.ui.icons.R as iconsR
  *
  * @see [DownloadAddonDialogFragmentArgs].
  */
-class DownloadAddonDialogFragment : AppCompatDialogFragment() {
+class DownloadAddonDialogFragment : NoObscuredTouchesDialogFragment() {
     private val args by navArgs<DownloadAddonDialogFragmentArgs>()
 
     /**
