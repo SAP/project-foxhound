@@ -12,19 +12,24 @@ const { EnterprisePolicyTesting } = ChromeUtils.importESModule(
 
 AddonTestUtils.initMochitest(this);
 
-async function verifyBlockedToggleUI(id, policy) {
+async function loadPolicyExtension(id, policy) {
   await EnterprisePolicyTesting.setupPolicyEngineWithJson(policy);
 
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
       browser_specific_settings: { gecko: { id } },
-      name: "Policy blocked toggle test",
+      name: "Policy toggle test",
       optional_permissions: ["history", "tabs"],
     },
     useAddonManager: "permanent",
   });
   await extension.startup();
+  return extension;
+}
 
+// Opens the add-on's permissions view and returns its optional-permission
+// toggles keyed by permission name, plus the view and permissions section.
+async function openOptionalPermissionToggles(id) {
   let view = await loadInitialView("extension");
   let card = getAddonCard(view, id);
 
@@ -42,25 +47,33 @@ async function verifyBlockedToggleUI(id, policy) {
   await permsShown;
 
   let permsSection = card.querySelector("addon-permissions-list");
-  let toggles = permsSection.querySelectorAll(
+  let toggles = {};
+  for (let toggle of permsSection.querySelectorAll(
     '.addon-permissions-optional moz-toggle[permission-type="permission"]'
-  );
+  )) {
+    toggles[toggle.getAttribute("permission-key")] = toggle;
+  }
+  return { view, permsSection, toggles };
+}
 
-  let historyToggle = Array.from(toggles).find(
-    t => t.getAttribute("permission-key") === "history"
-  );
-  let tabsToggle = Array.from(toggles).find(
-    t => t.getAttribute("permission-key") === "tabs"
-  );
+async function cleanup(view, extension) {
+  await closeView(view);
+  await extension.unload();
+  await EnterprisePolicyTesting.setupPolicyEngineWithJson("");
+}
 
-  ok(historyToggle, "history toggle exists");
-  ok(tabsToggle, "tabs toggle exists");
+async function verifyBlockedToggleUI(id, policy) {
+  let extension = await loadPolicyExtension(id, policy);
+  let { view, permsSection, toggles } = await openOptionalPermissionToggles(id);
+
+  ok(toggles.history, "history toggle exists");
+  ok(toggles.tabs, "tabs toggle exists");
   ok(
-    historyToggle.disabled,
+    toggles.history.disabled,
     "Blocked permission toggle should be disabled by policy"
   );
   ok(
-    !tabsToggle.disabled,
+    !toggles.tabs.disabled,
     "Non-blocked permission toggle should remain enabled"
   );
 
@@ -72,9 +85,7 @@ async function verifyBlockedToggleUI(id, policy) {
     "Banner link points to the managed-browser SUMO page"
   );
 
-  await closeView(view);
-  await extension.unload();
-  await EnterprisePolicyTesting.setupPolicyEngineWithJson("");
+  await cleanup(view, extension);
 }
 
 add_task(async function test_blocked_permission_toggle_global() {
@@ -92,4 +103,42 @@ add_task(async function test_blocked_permission_toggle_per_id() {
       ExtensionSettings: { [id]: { blocked_permissions: ["history"] } },
     },
   });
+});
+
+add_task(async function test_allowed_permission_toggle_is_not_disabled() {
+  const id = "policy-allowed-toggle@mochi.test";
+
+  // Per-id carve-out: blocked_permissions minus allowed_permissions leaves tabs
+  // blocked and history un-blocked. ("*"-level allowed_permissions is inert, so
+  // this must be a per-id entry.)
+  let extension = await loadPolicyExtension(id, {
+    policies: {
+      ExtensionSettings: {
+        [id]: {
+          blocked_permissions: ["history", "tabs"],
+          allowed_permissions: ["history"],
+        },
+      },
+    },
+  });
+  let { view, permsSection, toggles } = await openOptionalPermissionToggles(id);
+
+  ok(toggles.history, "history toggle exists");
+  ok(toggles.tabs, "tabs toggle exists");
+  ok(
+    !toggles.history.disabled,
+    "Allowed permission toggle should NOT be disabled"
+  );
+  ok(
+    toggles.tabs.disabled,
+    "Blocked-but-not-allowed permission toggle should be disabled"
+  );
+
+  // tabs is still blocked, so the policy banner should still render.
+  ok(
+    permsSection.querySelector(".addon-permissions-policy-banner"),
+    "Policy banner still renders for the remaining blocked permission"
+  );
+
+  await cleanup(view, extension);
 });

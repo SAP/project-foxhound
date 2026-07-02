@@ -441,6 +441,9 @@ EnterprisePoliciesManager.prototype = {
     // Copies the input rather than mutating the caller's object.
     // toolkit/components/extensions/test/xpcshell/test_ext_permissions.js
     // asserts every API permission name matches this regex.
+    // allowed_permissions needs no filtering: it only ever subtracts from the
+    // already-filtered blocked_permissions, so an out-of-shape entry can never
+    // match and has no effect.
     const VALID_PERM = /^[a-z][a-zA-Z0-9._]*$/;
     const sanitized = {};
     for (const [key, entry] of Object.entries(extensionSettings)) {
@@ -470,20 +473,27 @@ EnterprisePoliciesManager.prototype = {
     if (!ExtensionSettings) {
       return null;
     }
-    if (extensionID in ExtensionSettings) {
-      const settings = ExtensionSettings[extensionID];
-      if (
-        settings.installation_mode === "force_installed" &&
-        !("updates_disabled" in settings)
-      ) {
-        return { ...settings, updates_disabled: false };
-      }
-      return settings;
+    const perIdEntry =
+      extensionID in ExtensionSettings ? ExtensionSettings[extensionID] : null;
+    let settings = perIdEntry ?? ExtensionSettings["*"];
+    if (!settings) {
+      return null;
     }
-    if ("*" in ExtensionSettings) {
-      return ExtensionSettings["*"];
+    if (
+      perIdEntry &&
+      settings.installation_mode === "force_installed" &&
+      !("updates_disabled" in settings)
+    ) {
+      settings = { ...settings, updates_disabled: false };
     }
-    return null;
+    // Resolve the effective blocked_permissions. Per-id replaces "*";
+    // per-id allowed_permissions unblocks its own; "*"-level is inert.
+    let blocked = settings.blocked_permissions ?? [];
+    if (perIdEntry && Array.isArray(perIdEntry.allowed_permissions)) {
+      const allowedSet = new Set(perIdEntry.allowed_permissions);
+      blocked = blocked.filter(perm => !allowedSet.has(perm));
+    }
+    return { ...settings, blocked_permissions: blocked };
   },
 
   isAddonRequiredByPolicy(addonID) {
@@ -503,15 +513,12 @@ EnterprisePoliciesManager.prototype = {
     if (!ExtensionSettings) {
       return true;
     }
-    // blocked_permissions takes precedence over installation_mode. Per Chrome,
-    // any per-id entry shadows "*" entirely; "*" only applies when there is no
-    // per-id entry. Host patterns and optional permissions are out of scope
-    // (host patterns are stripped in setExtensionSettings and optional perms
-    // are gated at permissions.request time).
+    // blocked_permissions takes precedence over installation_mode; the
+    // effective list (which accounts for allowed_permissions) is resolved by
+    // getExtensionSettings. Optional permissions are gated at
+    // permissions.request time instead.
     let blockedPerms =
-      (addon.id in ExtensionSettings
-        ? ExtensionSettings[addon.id].blocked_permissions
-        : ExtensionSettings["*"]?.blocked_permissions) ?? [];
+      this.getExtensionSettings(addon.id)?.blocked_permissions ?? [];
     if (
       blockedPerms.some(perm =>
         addon.userPermissions?.permissions?.includes(perm)

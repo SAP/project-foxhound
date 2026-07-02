@@ -152,6 +152,8 @@ this.permissions = class extends ExtensionAPIPersistent {
           // Chrome throws "Permissions are blocked by enterprise policy" when
           // any requested permission is blocked, so we match that contract
           // (extensions can distinguish admin-block from user-deny in catch).
+          // getExtensionSettings returns the effective blocked list, which
+          // already accounts for allowed_permissions.
           if (
             Services.policies
               ?.getExtensionSettings(extension.id)

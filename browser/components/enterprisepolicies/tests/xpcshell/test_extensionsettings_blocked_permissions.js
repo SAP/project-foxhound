@@ -477,3 +477,182 @@ add_task(async function test_post_install_block_revokes_granted_optional() {
   );
   await addon.uninstall();
 });
+
+// allowed_permissions tests -----------------------------------------------
+//
+// One consistent model on both the install path (mayInstallAddon, required
+// permissions) and the optional-permission path (permissions.request and the
+// about:addons toggle UI): a per-id entry replaces "*" entirely (it does not
+// inherit "*"'s blocked_permissions), and a per-id allowed_permissions
+// un-blocks its own blocked_permissions. "*"-level allowed_permissions is
+// inert.
+
+add_task(async function test_star_allowed_permissions_is_inert() {
+  let id = "starallowedinert@tests.mozilla.org";
+  await setupPolicyEngineWithJson({
+    policies: {
+      ExtensionSettings: {
+        "*": {
+          blocked_permissions: ["history"],
+          allowed_permissions: ["history"],
+        },
+      },
+    },
+  });
+
+  let xpi = AddonTestUtils.createTempWebExtensionFile({
+    manifest: {
+      browser_specific_settings: { gecko: { id } },
+      name: "Star allowed inert",
+      version: "1.0",
+      permissions: ["history"],
+    },
+  });
+  let install = await AddonManager.getInstallForFile(xpi);
+  await install.install();
+  equal(
+    install.addon.appDisabled,
+    true,
+    "*-level allowed_permissions is inert; blocked required permission disables"
+  );
+  await install.addon.uninstall();
+});
+
+add_task(async function test_per_id_allowed_unblocks_required_permission() {
+  let id = "peridallowedinstall@tests.mozilla.org";
+  await setupPolicyEngineWithJson({
+    policies: {
+      ExtensionSettings: {
+        [id]: {
+          blocked_permissions: ["history"],
+          allowed_permissions: ["history"],
+        },
+      },
+    },
+  });
+
+  let xpi = AddonTestUtils.createTempWebExtensionFile({
+    manifest: {
+      browser_specific_settings: { gecko: { id } },
+      name: "Per-id allowed install",
+      version: "1.0",
+      permissions: ["history"],
+    },
+  });
+  let install = await AddonManager.getInstallForFile(xpi);
+  await install.install();
+  equal(
+    install.addon.appDisabled,
+    false,
+    "Per-id allowed_permissions un-blocks its own blocked required permission"
+  );
+  await install.addon.uninstall();
+});
+
+add_task(
+  {
+    pref_set: [
+      ["extensions.webextOptionalPermissionPrompts", false],
+      [
+        "security.turn_off_all_security_so_that_viruses_can_take_over_this_computer",
+        true,
+      ],
+    ],
+  },
+  async function test_per_id_allowed_carveout_for_request() {
+    let id = "peridallowedreq@tests.mozilla.org";
+    await setupPolicyEngineWithJson({
+      policies: {
+        ExtensionSettings: {
+          [id]: {
+            blocked_permissions: ["cookies", "tabs"],
+            allowed_permissions: ["cookies"],
+          },
+        },
+      },
+    });
+
+    let extension = ExtensionTestUtils.loadExtension({
+      manifest: {
+        browser_specific_settings: { gecko: { id } },
+        optional_permissions: ["cookies", "tabs"],
+      },
+      useAddonManager: "temporary",
+      async background() {
+        let allowedResult;
+        browser.test.withHandlingUserInput(() => {
+          allowedResult = browser.permissions.request({
+            permissions: ["cookies"],
+          });
+        });
+        browser.test.assertTrue(
+          await allowedResult,
+          "allowed_permissions un-blocks the listed permission"
+        );
+
+        let blockedResult;
+        browser.test.withHandlingUserInput(() => {
+          blockedResult = browser.permissions.request({
+            permissions: ["tabs"],
+          });
+        });
+        await browser.test.assertRejects(
+          blockedResult,
+          /Permissions are blocked by enterprise policy/,
+          "blocked-but-not-allowed permission stays blocked"
+        );
+        browser.test.sendMessage("done");
+      },
+    });
+
+    await extension.startup();
+    await extension.awaitMessage("done");
+    await extension.unload();
+  }
+);
+
+add_task(
+  {
+    pref_set: [
+      ["extensions.webextOptionalPermissionPrompts", false],
+      [
+        "security.turn_off_all_security_so_that_viruses_can_take_over_this_computer",
+        true,
+      ],
+    ],
+  },
+  async function test_per_id_allowed_does_not_inherit_global() {
+    let id = "peridnoinherit@tests.mozilla.org";
+    await setupPolicyEngineWithJson({
+      policies: {
+        ExtensionSettings: {
+          "*": { blocked_permissions: ["cookies"] },
+          [id]: { allowed_permissions: ["tabs"] },
+        },
+      },
+    });
+
+    let extension = ExtensionTestUtils.loadExtension({
+      manifest: {
+        browser_specific_settings: { gecko: { id } },
+        optional_permissions: ["cookies"],
+      },
+      useAddonManager: "temporary",
+      async background() {
+        let result;
+        browser.test.withHandlingUserInput(() => {
+          result = browser.permissions.request({ permissions: ["cookies"] });
+        });
+        browser.test.assertTrue(
+          await result,
+          "per-id entry replaces *: the *-blocked permission is not inherited"
+        );
+        browser.test.sendMessage("done");
+      },
+    });
+
+    await extension.startup();
+    await extension.awaitMessage("done");
+    await extension.unload();
+  }
+);

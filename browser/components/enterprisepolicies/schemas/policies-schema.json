@@ -893,6 +893,12 @@
               "items": {
                 "type": "string"
               }
+            },
+            "allowed_permissions": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
             }
           }
         }
@@ -945,6 +951,12 @@
               "type": "boolean"
             },
             "blocked_permissions": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "allowed_permissions": {
               "type": "array",
               "items": {
                 "type": "string"

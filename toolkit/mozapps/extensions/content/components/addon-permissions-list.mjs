@@ -142,6 +142,8 @@ class AddonPermissionsList extends AboutAddonsHTMLElement {
         : []
     );
 
+    // getExtensionSettings returns the effective blocked list, which already
+    // accounts for allowed_permissions.
     let policyBlockedPerms =
       Services.policies?.getExtensionSettings(this.addon.id)
         ?.blocked_permissions ?? [];
