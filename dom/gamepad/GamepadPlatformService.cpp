@@ -5,6 +5,7 @@
 #include "mozilla/dom/GamepadPlatformService.h"
 
 #include "mozilla/Mutex.h"
+#include "mozilla/StaticMutex.h"
 #include "mozilla/dom/GamepadEventChannelParent.h"
 #include "mozilla/dom/GamepadMonitoring.h"
 #include "mozilla/dom/GamepadTestChannelParent.h"
@@ -18,9 +19,12 @@ namespace mozilla::dom {
 
 namespace {
 
+StaticMutex gGamepadPlatformServiceMutex;
+
 // This is the singleton instance of GamepadPlatformService, can be called
 // by both background and monitor thread.
-StaticRefPtr<GamepadPlatformService> gGamepadPlatformServiceSingleton;
+StaticRefPtr<GamepadPlatformService> gGamepadPlatformServiceSingleton
+    MOZ_GUARDED_BY(gGamepadPlatformServiceMutex);
 
 }  // namespace
 
@@ -86,6 +90,7 @@ already_AddRefed<GamepadPlatformService>
 GamepadPlatformService::GetParentService() {
   // GamepadPlatformService can only be accessed in parent process
   MOZ_ASSERT(XRE_IsParentProcess());
+  StaticMutexAutoLock lock(gGamepadPlatformServiceMutex);
   if (!gGamepadPlatformServiceSingleton) {
     // Only Background Thread can create new GamepadPlatformService instance.
     if (IsOnBackgroundThread()) {
@@ -320,10 +325,13 @@ void GamepadPlatformService::MaybeShutdown() {
     MutexAutoLock autoLock(mMutex);
     isChannelParentEmpty = mChannelParents.IsEmpty();
     if (isChannelParentEmpty) {
-      kungFuDeathGrip = gGamepadPlatformServiceSingleton;
-      gGamepadPlatformServiceSingleton = nullptr;
       mGamepadAdded.clear();
     }
+  }
+  if (isChannelParentEmpty) {
+    StaticMutexAutoLock lock(gGamepadPlatformServiceMutex);
+    kungFuDeathGrip = gGamepadPlatformServiceSingleton;
+    gGamepadPlatformServiceSingleton = nullptr;
   }
 }
 
