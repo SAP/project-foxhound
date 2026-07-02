@@ -69,19 +69,19 @@ slot[name="actions-start"] {
 }
 
 .handle {
-  --box-item-handle-icon-color: var(--text-color);
-
   width: var(--button-size-icon);
   height: var(--button-size-icon);
   cursor: grab;
   background-image: url("chrome://global/skin/icons/move-16.svg");
+  background-color: var(--button-background-color-ghost);
   background-position: center;
   background-repeat: no-repeat;
   border-radius: var(--button-border-radius);
   -moz-context-properties: fill;
   /** Override the text color set by description-deemphasized for the handle.
       This cannot be disabled, hence the color should remain the default. */
-  fill: var(--box-item-handle-icon-color);
+  color: var(--button-text-color-ghost);
+  fill: var(--button-icon-fill);
   flex-shrink: 0;
 }
 
