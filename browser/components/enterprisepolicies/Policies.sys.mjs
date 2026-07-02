@@ -1742,6 +1742,13 @@ export var Policies = {
           param.Weather,
           param.Locked
         );
+        // The Nova layout (enabled by default) binds the weather toggle to a
+        // different pref, so set it too.
+        PoliciesUtils.setDefaultPref(
+          "browser.newtabpage.activity-stream.widgets.weather.enabled",
+          param.Weather,
+          param.Locked
+        );
       }
       if ("TopSites" in param) {
         PoliciesUtils.setDefaultPref(
@@ -1766,22 +1773,12 @@ export var Policies = {
       }
       if ("Pocket" in param) {
         PoliciesUtils.setDefaultPref(
-          "browser.newtabpage.activity-stream.feeds.system.topstories",
-          param.Pocket,
-          param.Locked
-        );
-        PoliciesUtils.setDefaultPref(
           "browser.newtabpage.activity-stream.feeds.section.topstories",
           param.Pocket,
           param.Locked
         );
       }
       if ("Stories" in param) {
-        PoliciesUtils.setDefaultPref(
-          "browser.newtabpage.activity-stream.feeds.system.topstories",
-          param.Stories,
-          param.Locked
-        );
         PoliciesUtils.setDefaultPref(
           "browser.newtabpage.activity-stream.feeds.section.topstories",
           param.Stories,
@@ -1799,6 +1796,20 @@ export var Policies = {
         PoliciesUtils.setDefaultPref(
           "browser.newtabpage.activity-stream.showSponsored",
           param.SponsoredStories,
+          param.Locked
+        );
+      }
+      // The "Support Firefox" toggle in the settings UI is a parent control for
+      // the two sponsored child settings. When both are locked by policy, lock
+      // it to their combined value so it can't be toggled to no effect.
+      if (
+        param.Locked &&
+        "SponsoredTopSites" in param &&
+        "SponsoredStories" in param
+      ) {
+        PoliciesUtils.setDefaultPref(
+          "browser.newtabpage.activity-stream.showSponsoredCheckboxes",
+          param.SponsoredTopSites || param.SponsoredStories,
           param.Locked
         );
       }

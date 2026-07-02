@@ -631,9 +631,37 @@ const POLICIES_TESTS = [
       },
     },
     lockedPrefs: {
-      "browser.newtabpage.activity-stream.feeds.system.topstories": false,
       "browser.newtabpage.activity-stream.feeds.section.topstories": false,
       "browser.newtabpage.activity-stream.showSponsored": false,
+    },
+  },
+
+  // POLICY: FirefoxHome (Weather sets both the legacy and Nova prefs)
+  {
+    policies: {
+      FirefoxHome: {
+        Weather: false,
+        Locked: true,
+      },
+    },
+    lockedPrefs: {
+      "browser.newtabpage.activity-stream.showWeather": false,
+      "browser.newtabpage.activity-stream.widgets.weather.enabled": false,
+    },
+  },
+
+  // POLICY: FirefoxHome (locking both sponsored settings locks the parent
+  // "Support Firefox" toggle to their combined value)
+  {
+    policies: {
+      FirefoxHome: {
+        SponsoredTopSites: false,
+        SponsoredStories: false,
+        Locked: true,
+      },
+    },
+    lockedPrefs: {
+      "browser.newtabpage.activity-stream.showSponsoredCheckboxes": false,
     },
   },
 

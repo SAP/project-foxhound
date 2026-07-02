@@ -193,3 +193,44 @@ add_task(async function test_firefoxhome_preferences_set() {
   });
   await SpecialPowers.popPrefEnv();
 });
+
+add_task(async function test_firefoxhome_support_firefox_sponsored_locked() {
+  // The supportFirefox setting only exists in the Settings Redesign UI.
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.settings-redesign.enabled", true]],
+  });
+
+  await setupPolicyEngineWithJson({
+    policies: {
+      FirefoxHome: {
+        SponsoredTopSites: false,
+        SponsoredStories: false,
+        Locked: true,
+      },
+    },
+  });
+
+  await BrowserTestUtils.withNewTab("about:preferences#home", async browser => {
+    let doc = browser.contentDocument;
+    let control = await TestUtils.waitForCondition(() =>
+      doc.getElementById("setting-control-supportFirefox")
+    );
+    await control.updateComplete;
+    let toggle = control.querySelector("moz-toggle");
+    ok(
+      toggle.disabled,
+      "Support Firefox toggle is disabled when both sponsored prefs are locked"
+    );
+    ok(
+      !toggle.pressed,
+      "Support Firefox toggle is off when both sponsored prefs are locked off"
+    );
+  });
+
+  await setupPolicyEngineWithJson({
+    policies: {
+      FirefoxHome: {},
+    },
+  });
+  await SpecialPowers.popPrefEnv();
+});
