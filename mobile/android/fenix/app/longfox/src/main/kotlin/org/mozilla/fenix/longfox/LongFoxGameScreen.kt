@@ -7,8 +7,6 @@
 package org.mozilla.fenix.longfox
 
 import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
@@ -20,6 +18,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -37,6 +37,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalContext
@@ -200,15 +201,13 @@ fun LongFoxGameScreen() {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             val onBackPressedDispatcher = LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher
-            Image(
-                painter = painterResource(id = R.drawable.outline_arrow_back_24),
-                modifier = Modifier
-                    .padding(top = 12.dp, bottom = 12.dp, end = 12.dp)
-                    .clickable {
-                        onBackPressedDispatcher?.onBackPressed()
-                    },
-                contentDescription = stringResource(R.string.back)
-            )
+            IconButton(onClick = { onBackPressedDispatcher?.onBackPressed() }) {
+                Icon(
+                    painter = painterResource(id = R.drawable.outline_arrow_back_24),
+                    contentDescription = stringResource(R.string.back),
+                    tint = Color.White
+                )
+            }
             if (gameState.score > 0) {
                 ScoreContainer(gameState.score)
             }
