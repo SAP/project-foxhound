@@ -238,9 +238,9 @@ nsCOMPtr<nsISerialEventTarget> RemoteMediaManagerChild::GetManagerThread() {
 }
 
 /* static */
-bool RemoteMediaManagerChild::Supports(RemoteMediaIn aLocation,
-                                       const SupportDecoderParams& aParams,
-                                       DecoderDoctorDiagnostics* aDiagnostics) {
+media::DecodeSupportSet RemoteMediaManagerChild::Supports(
+    RemoteMediaIn aLocation, const SupportDecoderParams& aParams,
+    DecoderDoctorDiagnostics* aDiagnostics) {
   Maybe<media::MediaCodecsSupported> supported;
   switch (aLocation) {
     case RemoteMediaIn::GpuProcess:
@@ -254,7 +254,7 @@ bool RemoteMediaManagerChild::Supports(RemoteMediaIn aLocation,
       break;
     }
     default:
-      return false;
+      return {};
   }
   if (!supported) {
     // We haven't received the correct information yet from either the GPU or
@@ -272,7 +272,8 @@ bool RemoteMediaManagerChild::Supports(RemoteMediaIn aLocation,
     }
 
     // Assume the format is supported to prevent false negative, if the remote
-    // process supports that specific track type.
+    // process supports that specific track type. HW support is unknown until
+    // the process reports in, so conservatively report SW-only.
     const bool isVideo = aParams.mConfig.IsVideo();
     const bool isAudio = aParams.mConfig.IsAudio();
     const auto trackSupport = GetTrackSupport(aLocation);
@@ -282,29 +283,39 @@ bool RemoteMediaManagerChild::Supports(RemoteMediaIn aLocation,
       // to report support for it arbitrarily.
       if (MP4Decoder::IsHEVC(aParams.mConfig.mMimeType)) {
         if (!StaticPrefs::media_hevc_enabled()) {
-          return false;
+          return {};
         }
 #if defined(XP_WIN)
-        return aLocation == RemoteMediaIn::UtilityProcess_MFMediaEngineCDM ||
-               aLocation == RemoteMediaIn::GpuProcess;
+        if (aLocation == RemoteMediaIn::UtilityProcess_MFMediaEngineCDM ||
+            aLocation == RemoteMediaIn::GpuProcess) {
+          // No software support in most cases for HEVC so guess hardware.
+          return {media::DecodeSupport::HardwareDecode};
+        }
+        return {};
 #else
-        return trackSupport.contains(TrackSupport::DecodeVideo);
+        return trackSupport.contains(TrackSupport::DecodeVideo)
+                   ? media::
+                         DecodeSupportSet{media::DecodeSupport::SoftwareDecode}
+                   : media::DecodeSupportSet{};
 #endif
       }
-      return trackSupport.contains(TrackSupport::DecodeVideo);
+      return trackSupport.contains(TrackSupport::DecodeVideo)
+                 ? media::DecodeSupportSet{media::DecodeSupport::SoftwareDecode}
+                 : media::DecodeSupportSet{};
     }
     if (isAudio) {
-      return trackSupport.contains(TrackSupport::DecodeAudio);
+      return trackSupport.contains(TrackSupport::DecodeAudio)
+                 ? media::DecodeSupportSet{media::DecodeSupport::SoftwareDecode}
+                 : media::DecodeSupportSet{};
     }
     MOZ_ASSERT_UNREACHABLE("Not audio and video?!");
-    return false;
+    return {};
   }
 
   // We can ignore the SupportDecoderParams argument for now as creation of the
   // decoder will actually fail later and fallback PDMs will be tested on later.
-  return !PDMFactory::SupportsMimeType(aParams.MimeType(), *supported,
-                                       aLocation)
-              .isEmpty();
+  return PDMFactory::SupportsMimeType(aParams.MimeType(), *supported,
+                                      aLocation);
 }
 
 /* static */

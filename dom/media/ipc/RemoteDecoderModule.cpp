@@ -61,32 +61,27 @@ media::DecodeSupportSet RemoteDecoderModule::SupportsMimeType(
 media::DecodeSupportSet RemoteDecoderModule::Supports(
     const SupportDecoderParams& aParams,
     DecoderDoctorDiagnostics* aDiagnostics) const {
-  bool supports =
+  media::DecodeSupportSet support =
       RemoteMediaManagerChild::Supports(mLocation, aParams, aDiagnostics);
 #ifdef MOZ_WMF_CDM
   // This should only be supported by mf media engine cdm process.
   if (aParams.mMediaEngineId &&
       mLocation != RemoteMediaIn::UtilityProcess_MFMediaEngineCDM) {
-    supports = false;
+    support = {};
   }
 #endif
 #ifdef ANDROID
   if ((aParams.mCDM && mLocation != RemoteMediaIn::RddProcess) ||
       (!aParams.mCDM && aParams.mConfig.IsAudio() &&
        mLocation != RemoteMediaIn::UtilityProcess_Generic)) {
-    supports = false;
+    support = {};
   }
 #endif
-  MOZ_LOG_FMT(sPDMLog, LogLevel::Debug,
-              "Sandbox {} decoder {} requested type {}",
-              RemoteMediaInToStr(mLocation), supports ? "supports" : "rejects",
-              aParams.MimeType().get());
-  if (supports) {
-    // TODO: Note that we do not yet distinguish between SW/HW decode support.
-    //       Will be done in bug 1754239.
-    return media::DecodeSupport::SoftwareDecode;
-  }
-  return media::DecodeSupportSet{};
+  MOZ_LOG_FMT(
+      sPDMLog, LogLevel::Debug, "Sandbox {} decoder {} requested type {}",
+      RemoteMediaInToStr(mLocation), support.isEmpty() ? "rejects" : "supports",
+      aParams.MimeType().get());
+  return support;
 }
 
 RefPtr<RemoteDecoderModule::CreateDecoderPromise>

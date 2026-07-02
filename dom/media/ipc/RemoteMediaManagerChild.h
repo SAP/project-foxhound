@@ -63,9 +63,9 @@ class RemoteMediaManagerChild final
                            const media::MediaCodecsSupported& aSupported);
 
   // Can be called from any thread.
-  static bool Supports(RemoteMediaIn aLocation,
-                       const SupportDecoderParams& aParams,
-                       DecoderDoctorDiagnostics* aDiagnostics);
+  static media::DecodeSupportSet Supports(
+      RemoteMediaIn aLocation, const SupportDecoderParams& aParams,
+      DecoderDoctorDiagnostics* aDiagnostics);
   static RefPtr<PlatformDecoderModule::CreateDecoderPromise> CreateAudioDecoder(
       const CreateDecoderParams& aParams, RemoteMediaIn aLocation);
   static RefPtr<PlatformDecoderModule::CreateDecoderPromise> CreateVideoDecoder(
