@@ -243,7 +243,7 @@ nsresult EncryptingOutputStream<CipherStrategy>::FlushToBaseStream() {
   // XXX Do we need to know the actual encrypted size?
   nsresult rv = mCipherStrategy.Cipher(
       mEncryptedBlock->MutableCipherPrefix(),
-      mozilla::Span(reinterpret_cast<uint8_t*>(mBuffer.Elements()),
+      mozilla::Span(mBuffer.Elements(),
                     ((mNextByte + (CipherStrategy::BasicBlockSize - 1)) /
                      CipherStrategy::BasicBlockSize) *
                         CipherStrategy::BasicBlockSize),
