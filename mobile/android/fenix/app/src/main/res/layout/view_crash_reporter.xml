@@ -44,7 +44,6 @@
         android:paddingTop="6dp"
         android:paddingBottom="6dp"
         android:layout_marginBottom="8dp"
-        android:buttonTint="?accentHighContrast"
         android:checked="true"
         android:text="@string/tab_crash_send_report"
         android:textColor="?attr/colorOnSurface"
