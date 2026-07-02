@@ -30,7 +30,7 @@ const { MockRegistry } = ChromeUtils.importESModule(
   "resource://testing-common/MockRegistry.sys.mjs"
 );
 
-const CATEGORY_NAME = "browser-before-ui-startup";
+const CATEGORY_NAME = "browser-idle-startup";
 const MODULE_URI = "resource:///modules/DefaultWindowsLaunchOnLogin.sys.mjs";
 
 NimbusTestUtils.init(this);
@@ -97,12 +97,12 @@ async function runWith(isFirstRun, isOfficialBuild, approved, prefValue) {
   }
 }
 
-add_task(async function test_is_registered_in_before_ui_startup() {
+add_task(async function test_is_registered_in_idle_startup() {
   const entry = Services.catMan.getCategoryEntry(CATEGORY_NAME, MODULE_URI);
   Assert.equal(
     entry,
     "DefaultWindowsLaunchOnLogin.maybeEnableOnFirstRun",
-    "Entry should point to `maybeEnableOnFirstRun` in `browser-before-ui-startup`"
+    "Entry should point to `maybeEnableOnFirstRun` in `browser-idle-startup`"
   );
 });
 
