@@ -213,6 +213,10 @@ void HttpChannelParent::TryInvokeAsyncOpen(nsresult aRv) {
   InvokeAsyncOpen(aRv);
 }
 
+dom::ContentParentId HttpChannelParent::GetContentParentId() const {
+  return static_cast<ContentParent*>(Manager()->Manager())->ChildID();
+}
+
 void HttpChannelParent::OnBackgroundParentReady(
     HttpBackgroundChannelParent* aBgParent) {
   LOG(("HttpChannelParent::OnBackgroundParentReady [this=%p bgParent=%p]\n",

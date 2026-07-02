@@ -79,11 +79,14 @@ HttpBackgroundChannelParent::~HttpBackgroundChannelParent() {
   MOZ_ASSERT(!mIPCOpened);
 }
 
-nsresult HttpBackgroundChannelParent::Init(const uint64_t& aChannelId) {
+nsresult HttpBackgroundChannelParent::Init(const dom::ContentParentId& aCpId,
+                                           const uint64_t& aChannelId) {
   LOG(("HttpBackgroundChannelParent::Init [this=%p channelId=%" PRIu64 "]\n",
        this, aChannelId));
   AssertIsInMainProcess();
   AssertIsOnBackgroundThread();
+
+  mContentParentId = aCpId;
 
   RefPtr<ContinueAsyncOpenRunnable> runnable =
       new ContinueAsyncOpenRunnable(this, aChannelId);

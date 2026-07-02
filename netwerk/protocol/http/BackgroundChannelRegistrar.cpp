@@ -48,6 +48,13 @@ void BackgroundChannelRegistrar::NotifyChannelLinked(
   MOZ_ASSERT(aChannelParent);
   MOZ_ASSERT(aBgParent);
 
+  // Only link the two actors when they originate from the same content
+  // process, since the channel Id used as the key is supplied by
+  // the content process.
+  if (aChannelParent->GetContentParentId() != aBgParent->GetContentParentId()) {
+    return;
+  }
+
   aBgParent->LinkToChannel(aChannelParent);
   aChannelParent->OnBackgroundParentReady(aBgParent);
 }

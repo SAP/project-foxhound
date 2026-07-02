@@ -102,6 +102,11 @@ class HttpChannelParent final : public nsIInterfaceRequestor,
                                 const nsACString& aPromptAction,
                                 const nsACString& aTopLevelSite);
 
+  // The content process this channel parent belongs to. Used by
+  // BackgroundChannelRegistrar to ensure a background channel is only linked
+  // to a channel from the same process.
+  dom::ContentParentId GetContentParentId() const;
+
   // Callback while background channel is ready.
   void OnBackgroundParentReady(HttpBackgroundChannelParent* aBgParent);
   // Callback while background channel is destroyed.
