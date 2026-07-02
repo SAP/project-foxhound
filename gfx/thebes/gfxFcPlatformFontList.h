@@ -161,18 +161,17 @@ class gfxFontconfigFontEntry final : public gfxFT2FontEntryBase {
     already_AddRefed<mozilla::gfx::UnscaledFontFontconfig> Lookup(
         const std::string& aFile, uint32_t aIndex);
 
-    void Add(
-        const RefPtr<mozilla::gfx::UnscaledFontFontconfig>& aUnscaledFont) {
-      mUnscaledFonts[kNumEntries - 1] = aUnscaledFont;
-      MoveToFront(kNumEntries - 1);
-    }
+    void Add(const RefPtr<mozilla::gfx::UnscaledFontFontconfig>& aUnscaledFont);
 
    private:
-    void MoveToFront(size_t aIndex);
-
+    // Each mUnscaledFonts entry has a corresponding mGenerations entry. Every
+    // time mUnscaledFonts is either modified or read, mLastGeneration is
+    // incremented and the last modified or read font generation is set to this.
     static const size_t kNumEntries = 3;
     mozilla::ThreadSafeWeakPtr<mozilla::gfx::UnscaledFontFontconfig>
         mUnscaledFonts[kNumEntries];
+    mozilla::Atomic<int32_t> mGenerations[kNumEntries];
+    mozilla::Atomic<int32_t> mLastGeneration{0};
   };
 
   UnscaledFontCache mUnscaledFontCache;

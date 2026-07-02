@@ -861,15 +861,21 @@ static void PreparePattern(FcPattern* aPattern, bool aIsPrinterFont) {
   FcDefaultSubstitute(aPattern);
 }
 
-void gfxFontconfigFontEntry::UnscaledFontCache::MoveToFront(size_t aIndex) {
-  if (aIndex > 0) {
-    ThreadSafeWeakPtr<UnscaledFontFontconfig> front =
-        std::move(mUnscaledFonts[aIndex]);
-    for (size_t i = aIndex; i > 0; i--) {
-      mUnscaledFonts[i] = std::move(mUnscaledFonts[i - 1]);
+void gfxFontconfigFontEntry::UnscaledFontCache::Add(
+    const RefPtr<UnscaledFontFontconfig>& aUnscaledFont) {
+  // Find the oldest entry and replace that with the new font.
+  size_t oldestIdx = 0;
+  int32_t lastGen = mLastGeneration;
+  int32_t oldestAge = lastGen - mGenerations[0];
+  for (size_t i = 1; i < kNumEntries; i++) {
+    int32_t age = lastGen - mGenerations[i];
+    if (age > oldestAge) {
+      oldestIdx = i;
+      oldestAge = age;
     }
-    mUnscaledFonts[0] = std::move(front);
   }
+  mUnscaledFonts[oldestIdx] = aUnscaledFont;
+  mGenerations[oldestIdx] = ++mLastGeneration;
 }
 
 already_AddRefed<UnscaledFontFontconfig>
@@ -878,7 +884,7 @@ gfxFontconfigFontEntry::UnscaledFontCache::Lookup(const std::string& aFile,
   for (size_t i = 0; i < kNumEntries; i++) {
     RefPtr<UnscaledFontFontconfig> entry(mUnscaledFonts[i]);
     if (entry && entry->GetFile() == aFile && entry->GetIndex() == aIndex) {
-      MoveToFront(i);
+      mGenerations[i] = ++mLastGeneration;
       return entry.forget();
     }
   }
