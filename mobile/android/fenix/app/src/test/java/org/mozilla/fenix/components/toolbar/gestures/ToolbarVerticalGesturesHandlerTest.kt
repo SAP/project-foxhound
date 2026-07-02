@@ -38,6 +38,7 @@ import org.mozilla.fenix.helpers.FenixGleanTestRule
 import org.mozilla.fenix.tabstray.redux.state.Page
 import org.mozilla.fenix.tabstray.ui.AccessPoint
 import org.robolectric.ParameterizedRobolectricTestRunner
+import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import org.mozilla.fenix.components.toolbar.gestures.ToolbarVerticalGesturesHandlerTest.ToolbarVerticalGesturesHandlerTestScenario as Scenario
 import org.mozilla.fenix.components.toolbar.gestures.ToolbarVerticalGesturesHandlerTest.ToolbarVerticalGesturesHandlerTestSwipe as Swipe
@@ -112,7 +113,7 @@ class ToolbarVerticalGesturesHandlerTest(private val scenario: Scenario) {
         val expectedTabsTrayNavigations = if (scenario.shouldOpenTabsTray) 1 else 0
         val expectedTabsTrayPage = if (scenario.browsingMode.isPrivate) { Page.PrivateTabs } else { Page.NormalTabs }
 
-        gesturesHandler.onSwipeStarted(
+        val initialSwipeClaimed = gesturesHandler.onSwipeStarted(
             start = scenario.initialSwipe.start,
             next = scenario.initialSwipe.end,
         )
@@ -122,6 +123,10 @@ class ToolbarVerticalGesturesHandlerTest(private val scenario: Scenario) {
                 start = it.start,
                 next = it.end,
             )
+        }
+
+        scenario.shouldClaimInitialSwipe?.let {
+            assertEquals(it, initialSwipeClaimed)
         }
 
         if (expectedTabsTrayNavigations > 0) {
@@ -558,6 +563,37 @@ class ToolbarVerticalGesturesHandlerTest(private val scenario: Scenario) {
                 browsingMode = Private,
                 shouldOpenTabsTray = true,
             ),
+            // ///////////////////////////////////////////////////////////////////////////////////////
+            // Scenarios where a predominantly horizontal swipe over the toolbar must not be claimed //
+            // by the handler so that horizontally scrollable content like the tab strip - which is  //
+            // rendered inside the toolbar layout - can receive and handle it instead.               //
+            // ///////////////////////////////////////////////////////////////////////////////////////
+            // Horizontal swipe with a slight valid vertical component (down) on the top toolbar.
+            TopToolbarSwipe.copy(
+                initialSwipe = swipeRight(fromScreenTop = true),
+                shouldOpenTabsTray = false,
+                shouldClaimInitialSwipe = false,
+            ),
+            // Horizontal swipe with a slight valid vertical component (up) on the bottom toolbar.
+            BottomToolbarSwipe.copy(
+                initialSwipe = swipeLeft(fromScreenTop = false),
+                isNavbarShown = false,
+                shouldOpenTabsTray = false,
+                shouldClaimInitialSwipe = false,
+            ),
+            // A predominantly vertical swipe that has not yet reached the threshold is still claimed
+            // so the in-progress gesture keeps being tracked toward opening the tabs tray.
+            TopToolbarSwipe.copy(
+                initialSwipe = swipeDown(fromScreenTop = true, swipeDistance = 10),
+                shouldOpenTabsTray = false,
+                shouldClaimInitialSwipe = true,
+            ),
+            BottomToolbarSwipe.copy(
+                initialSwipe = swipeUp(fromScreenTop = false, swipeDistance = 10),
+                isNavbarShown = false,
+                shouldOpenTabsTray = false,
+                shouldClaimInitialSwipe = true,
+            ),
         )
 
         private val TopToolbarSwipe = Scenario(
@@ -666,6 +702,7 @@ class ToolbarVerticalGesturesHandlerTest(private val scenario: Scenario) {
         val systemGestureInsetBottom: Int = 0,
         val isSearchActive: Boolean = false,
         val shouldOpenTabsTray: Boolean,
+        val shouldClaimInitialSwipe: Boolean? = null,
     )
 
     data class ToolbarVerticalGesturesHandlerTestSwipe(
