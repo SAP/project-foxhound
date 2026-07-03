@@ -184,6 +184,45 @@ add_task(async function test_old_data_ignored() {
   await TrackingDBService.clearAll();
 });
 
+add_task(async function test_getTodayStats_empty() {
+  info("Test that getTodayStats returns empty stats for new users");
+
+  const stats = await PrivacyMetricsService.getTodayStats();
+
+  Assert.equal(stats.total, 0, "Total should be 0 for new users");
+  Assert.equal(stats.trackers, 0, "Trackers should be 0");
+  Assert.greater(stats.lastUpdated, 0, "Should have a timestamp");
+});
+
+add_task(async function test_getTodayStats_excludes_other_days() {
+  info("Test that getTodayStats only counts today's events");
+
+  const db = await Sqlite.openConnection({ path: DB_PATH });
+  const now = Date.now();
+  const today = new Date().toISOString();
+  const yesterday = new Date(now - 24 * 60 * 60 * 1000).toISOString();
+
+  await db.execute(SQL.insertCustomTimeEvent, {
+    type: TrackingDBService.TRACKERS_ID,
+    count: 8,
+    timestamp: today,
+  });
+  await db.execute(SQL.insertCustomTimeEvent, {
+    type: TrackingDBService.TRACKERS_ID,
+    count: 7,
+    timestamp: yesterday,
+  });
+
+  await db.close();
+
+  const stats = await PrivacyMetricsService.getTodayStats();
+
+  Assert.equal(stats.trackers, 8, "Should only count today's trackers");
+  Assert.equal(stats.total, 8, "Total should equal today's events only");
+
+  await TrackingDBService.clearAll();
+});
+
 add_task(async function test_exactly_7_days_boundary() {
   info("Test 7-day boundary precisely - 6 days ago included, 8 days excluded");
 
