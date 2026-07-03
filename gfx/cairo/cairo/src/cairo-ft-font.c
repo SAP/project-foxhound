@@ -1330,12 +1330,21 @@ _get_bitmap_surface (FT_Bitmap		     *bitmap,
 	    } else {
 		int i;
 		unsigned char *source, *dest;
+		/* bitmap->pitch might exceed our computed row stride.
+		 * Copy only the (width+7)/8 payload bytes of each row,
+		 * which always fit in both buffers. */
+		int row_bytes = (width + 7) >> 3;
+
+		if (bitmap->pitch < row_bytes) {
+		    free (data);
+		    return _cairo_error (CAIRO_STATUS_INVALID_FORMAT);
+		}
 
 		source = bitmap->buffer;
 		dest = data;
 		for (i = height; i; i--) {
-		    memcpy (dest, source, bitmap->pitch);
-		    memset (dest + bitmap->pitch, '\0', stride - bitmap->pitch);
+		    memcpy (dest, source, row_bytes);
+		    memset (dest + row_bytes, '\0', stride - row_bytes);
 
 		    source += bitmap->pitch;
 		    dest += stride;
