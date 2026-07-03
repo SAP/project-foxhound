@@ -84,7 +84,7 @@ class ToolbarVerticalGesturesHandler(
         if (!isCurrentDestinationValid ||
             appStore.state.searchState.isSearchActive ||
             startTouchPoint.isInSystemGestureInset() ||
-            !startTouchPoint.isSwipeValid(currentSwipeYDistance)
+            !startTouchPoint.isSwipeValid(currentSwipeXDistance, currentSwipeYDistance)
         ) {
             return false
         }
@@ -119,13 +119,16 @@ class ToolbarVerticalGesturesHandler(
 
         return abs(currentSwipeYDistance) >= minimumSwipeDistance &&
             abs(currentSwipeXDistance) < minimumSwipeDistance &&
-            startTouchPoint.isSwipeValid(currentSwipeYDistance)
+            startTouchPoint.isSwipeValid(currentSwipeXDistance, currentSwipeYDistance)
     }
 
     /**
      * Check if the swipe originated from the toolbar or navigation bar.
      */
-    private fun PointF.isSwipeValid(distanceY: Float): Boolean {
+    private fun PointF.isSwipeValid(distanceX: Float, distanceY: Float): Boolean {
+        val isHorizontalSwipe = abs(distanceX) > abs(distanceY)
+        if (isHorizontalSwipe) return false
+
         val isSwipeUpOverNavbar = distanceY.isSwipeUp && isInTarget(navBarLayout)
         if (isSwipeUpOverNavbar) return true
 
