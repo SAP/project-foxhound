@@ -3717,6 +3717,7 @@ bool nsStandardURL::Deserialize(const URIParams& aParams) {
   // which must be a sub-range of mPath.
   auto isSubSegment = [](const URLSegment& inner, const URLSegment& outer) {
     if (inner.mLen == -1) return true;
+    if (outer.mLen == -1) return false;
     return inner.mPos >= outer.mPos &&
            inner.mPos + inner.mLen <= outer.mPos + outer.mLen;
   };
@@ -3730,8 +3731,16 @@ bool nsStandardURL::Deserialize(const URIParams& aParams) {
   NS_ENSURE_TRUE(isSubSegment(mQuery, mPath), false);
   NS_ENSURE_TRUE(isSubSegment(mRef, mPath), false);
 
-  if (mAuthority.mLen >= 0 && mPath.mLen >= 0) {
-    NS_ENSURE_TRUE(mPath.mPos == mAuthority.mPos + mAuthority.mLen, false);
+  // mPath must immediately follow mAuthority. If mAuthority is absent, that is
+  // only valid for URLTYPE_NO_AUTHORITY (e.g. file: URLs parsed without an
+  // authority component); for all other URL types a missing authority while
+  // mPath is present indicates a malformed or crafted URL.
+  if (mPath.mLen >= 0) {
+    if (mAuthority.mLen >= 0) {
+      NS_ENSURE_TRUE(mPath.mPos == mAuthority.mPos + mAuthority.mLen, false);
+    } else {
+      NS_ENSURE_TRUE(mURLType == URLTYPE_NO_AUTHORITY, false);
+    }
   }
 
   if (!IsValid()) {
