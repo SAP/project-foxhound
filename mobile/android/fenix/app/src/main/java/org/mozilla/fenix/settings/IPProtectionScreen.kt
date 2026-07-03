@@ -40,6 +40,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.paneTitle
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextDecoration
@@ -104,7 +107,10 @@ fun IPProtectionScreen(
     onDebugActionClick: () -> Unit = {},
     onNavigateBack: () -> Unit,
 ) {
+    val screenTitle = stringResource(R.string.ip_protection_title)
+
     Scaffold(
+        modifier = Modifier.semantics { paneTitle = screenTitle },
         topBar = {
             IPProtectionTopAppBar(
                 showDebugAction = showDebugAction,
@@ -175,6 +181,7 @@ private fun IPProtectionTopAppBar(
             Text(
                 text = stringResource(R.string.ip_protection_title),
                 style = FirefoxTheme.typography.headline5,
+                modifier = Modifier.semantics { heading() },
             )
         },
         navigationIcon = {
