@@ -478,6 +478,17 @@ features:
         type: Boolean
         default: false
 
+  default-expanded-toolbar:
+    description: Default expanded (bottom navigation) toolbar state for new users.
+    variables:
+      enabled:
+        description: >
+          Whether to default the expanded toolbar (bottom navigation bar with
+          back/forward/share/bookmark/menu) to enabled. Only takes visible effect
+          on tall, non-wide windows.
+        type: Boolean
+        default: false
+
   homescreen-edge-to-edge-background:
     description: >
       Feature that sets an edge to edge background on the Home Screen if the user hasn't selected
