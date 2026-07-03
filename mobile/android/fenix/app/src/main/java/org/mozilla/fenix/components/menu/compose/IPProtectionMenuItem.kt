@@ -29,7 +29,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
@@ -70,46 +74,11 @@ internal fun IPProtectionMenuItem(
                 .defaultMinSize(minHeight = MENU_ITEM_MIN_HEIGHT),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .clickable(role = Role.Button) { onToggle() }
-                    .padding(horizontal = FirefoxTheme.layout.space.dynamic200),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(FirefoxTheme.layout.space.static200),
-            ) {
-                Icon(
-                    painter = painterResource(iconsR.drawable.mozac_ic_globe_24),
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurface,
-                )
-
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = stringResource(R.string.ip_protection_toggle_label),
-                        color = MaterialTheme.colorScheme.onSurface,
-                        style = FirefoxTheme.typography.subtitle1,
-                        overflow = TextOverflow.Ellipsis,
-                        maxLines = 1,
-                    )
-
-                    if (state.status == IPProtectionMenuStatus.DataLimitReached && state.dataLimitGb > 0) {
-                        Text(
-                            text = stringResource(R.string.ip_protection_menu_limit_reached, state.dataLimitGb),
-                            color = MaterialTheme.colorScheme.error,
-                            style = FirefoxTheme.typography.caption,
-                            overflow = TextOverflow.Ellipsis,
-                            maxLines = 1,
-                        )
-                    }
-                }
-
-                Badge(
-                    badgeText = badgeText(state.status),
-                    state = badgeState(state.status),
-                )
-            }
+            IPProtectionToggle(
+                state = state,
+                onToggle = onToggle,
+                modifier = Modifier.weight(1f),
+            )
 
             VerticalDivider(
                 modifier = Modifier
@@ -133,6 +102,59 @@ internal fun IPProtectionMenuItem(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun IPProtectionToggle(
+    state: IPProtectionMenuState,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val statusDescription = badgeText(state.status)
+
+    Row(
+        modifier = modifier
+            .fillMaxHeight()
+            .clickable(role = Role.Button) { onToggle() }
+            .semantics {
+                stateDescription = statusDescription
+                liveRegion = LiveRegionMode.Polite
+            }
+            .padding(horizontal = FirefoxTheme.layout.space.dynamic200),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(FirefoxTheme.layout.space.static200),
+    ) {
+        Icon(
+            painter = painterResource(iconsR.drawable.mozac_ic_globe_24),
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurface,
+        )
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.ip_protection_toggle_label),
+                color = MaterialTheme.colorScheme.onSurface,
+                style = FirefoxTheme.typography.subtitle1,
+                overflow = TextOverflow.Ellipsis,
+                maxLines = 1,
+            )
+
+            if (state.status == IPProtectionMenuStatus.DataLimitReached && state.dataLimitGb > 0) {
+                Text(
+                    text = stringResource(R.string.ip_protection_menu_limit_reached, state.dataLimitGb),
+                    color = MaterialTheme.colorScheme.error,
+                    style = FirefoxTheme.typography.caption,
+                    overflow = TextOverflow.Ellipsis,
+                    maxLines = 1,
+                )
+            }
+        }
+
+        Badge(
+            badgeText = statusDescription,
+            state = badgeState(state.status),
+        )
     }
 }
 
