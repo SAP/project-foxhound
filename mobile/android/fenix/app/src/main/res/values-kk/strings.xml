@@ -628,12 +628,12 @@
   <!-- Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded. -->
   <string name="nova_onboarding_marketing_body_2" tools:ignore="BrandUsage">Firefox-ты өзіңіз үшін қалай ашқаныңызды және оны қалай пайдаланғаныңызды Mozilla маркетинг серіктестерімен бөлісіңіз. Бұл деректер ешқашан сатылмайды.</string>
   <!-- Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded. -->
-  <string name="nova_onboarding_marketing_body_3" tools:ignore="BrandUsage">Mozilla-ға Firefox-ты насихаттайтын арналарға сіздің Firefox пайдаланушысы екеніңізді хабарлауға рұқсат беру арқылы бізге көбірек адамға жетуге көмектесе аласыз.</string>
+  <string name="nova_onboarding_marketing_body_3" tools:ignore="BrandUsage,UnusedResources">Mozilla-ға Firefox-ты насихаттайтын арналарға сіздің Firefox пайдаланушысы екеніңізді хабарлауға рұқсат беру арқылы бізге көбірек адамға жетуге көмектесе аласыз.</string>
   <!--
     Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
     “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
   -->
-  <string name="nova_onboarding_marketing_body_4" tools:ignore="BrandUsage">Mozilla-ға сіздің Firefox пайдаланушысы екеніңізді сіз келген платформаға хабарлауға рұқсат беру арқылы бізге көбірек адамға жетуге көмектесе аласыз.</string>
+  <string name="nova_onboarding_marketing_body_4" tools:ignore="BrandUsage,UnusedResources">Mozilla-ға сіздің Firefox пайдаланушысы екеніңізді сіз келген платформаға хабарлауға рұқсат беру арқылы бізге көбірек адамға жетуге көмектесе аласыз.</string>
   <!--
     Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
     “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
@@ -663,7 +663,7 @@
   <!-- Marketing onboarding body link text. -->
   <string name="nova_onboarding_marketing_body_link_text_1">Көбірек білу</string>
   <!-- Marketing onboarding primary button text. 'Firefox' is intentionally hardcoded. -->
-  <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage">Firefox-қа көмектесу</string>
+  <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage,UnusedResources">Firefox-қа көмектесу</string>
   <!-- Marketing onboarding primary button text. -->
   <string name="nova_onboarding_marketing_primary_button_text_2">Рұқсат ету және жалғастыру</string>
   <!-- Marketing onboarding secondary button text. -->
@@ -1967,6 +1967,8 @@
   <string name="webcompat_reporter_label_whats_broken_3">Не жұмыс істемейді?</string>
   <!-- Content description for the icon button that clears the selected broken site reason in the WebCompat Reporter. -->
   <string name="webcompat_reporter_clear_reason_content_description">Таңдалған себепті тазалау</string>
+  <!-- The error message of the description when the user selects "Something else" as the reason, but left the description empty or too short. -->
+  <string name="webcompat_reporter_description_error">Кемінде 10 таңба енгізіңіз</string>
   <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_label_whats_broken_2">Не сынған?</string>
   <!-- The placeholder text for the dropdown where a user selects a high-level reason why the site is broken. -->
@@ -4709,6 +4711,8 @@
   <string name="firefox_labs_feature_enable_dialog_message">Бұл мүмкіндікті іске қосу үшін %s қайта іске қосыңыз.</string>
   <!-- The description text that is displayed in the confirmation dialog on the Firefox Labs screen for toggling "off" experimental features. %s is the name of the app (for example "Firefox Nightly") -->
   <string name="firefox_labs_feature_disable_dialog_message">Бұл мүмкіндікті сөндіру үшін %s қайта іске қосыңыз.</string>
+  <!-- Helper text shown beneath a Firefox Labs item when it is blocked from being turned on. -->
+  <string name="firefox_labs_feature_conflict">Бұл функцияны қолданып көру үшін қолжетімсіз.</string>
   <!-- Text displayed on the Firefox Labs screen when there are no Labs experimental features present. -->
   <string name="firefox_labs_no_labs_available_description">Қазір сынап көруге болатын эксперименттік мүмкіндіктер жоқ</string>
 </resources>

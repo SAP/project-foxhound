@@ -628,12 +628,12 @@
   <!-- Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded. -->
   <string name="nova_onboarding_marketing_body_2" tools:ignore="BrandUsage">Dajśo marketingowym partnarjam Mozilla k wěsći, kak sćo namakał Firefox a až jen wužywaśo. Tos te daty se nigda njepśedawaju.</string>
   <!-- Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded. -->
-  <string name="nova_onboarding_marketing_body_3" tools:ignore="BrandUsage">Dowólśo Mozilla kanale informěrowaś, źož Firefox spěchujomy, až sćo wužywaŕ Firefox, aby my mógli wěcej luźi dostaś.</string>
+  <string name="nova_onboarding_marketing_body_3" tools:ignore="BrandUsage,UnusedResources">Dowólśo Mozilla kanale informěrowaś, źož Firefox spěchujomy, až sćo wužywaŕ Firefox, aby my mógli wěcej luźi dostaś.</string>
   <!--
     Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
     “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
   -->
-  <string name="nova_onboarding_marketing_body_4" tools:ignore="BrandUsage">Dowólśo Mozilla platformu informěrowaś, wót kótarejž sćo pśišeł, až Firefox wužywaśo, aby my mógli wěcej luźi dostaś.</string>
+  <string name="nova_onboarding_marketing_body_4" tools:ignore="BrandUsage,UnusedResources">Dowólśo Mozilla platformu informěrowaś, wót kótarejž sćo pśišeł, až Firefox wužywaśo, aby my mógli wěcej luźi dostaś.</string>
   <!--
     Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
     “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
@@ -663,7 +663,7 @@
   <!-- Marketing onboarding body link text. -->
   <string name="nova_onboarding_marketing_body_link_text_1">Dalšne informacije</string>
   <!-- Marketing onboarding primary button text. 'Firefox' is intentionally hardcoded. -->
-  <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage">Pomoc Firefox</string>
+  <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage,UnusedResources">Pomoc Firefox</string>
   <!-- Marketing onboarding primary button text. -->
   <string name="nova_onboarding_marketing_primary_button_text_2">Dowóliś a pókšacowaś</string>
   <!-- Marketing onboarding secondary button text. -->
@@ -1981,6 +1981,8 @@
   <string name="webcompat_reporter_label_whats_broken_3">Co njefunkcioněrujo?</string>
   <!-- Content description for the icon button that clears the selected broken site reason in the WebCompat Reporter. -->
   <string name="webcompat_reporter_clear_reason_content_description">Wubranu pśicynu lašowaś</string>
+  <!-- The error message of the description when the user selects "Something else" as the reason, but left the description empty or too short. -->
+  <string name="webcompat_reporter_description_error">Pšosym zapódajśo nanejmjenjej 10 znamuškow</string>
   <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_label_whats_broken_2">Co jo wobškóźone?</string>
   <!-- The placeholder text for the dropdown where a user selects a high-level reason why the site is broken. -->
@@ -4743,6 +4745,8 @@
   <string name="firefox_labs_feature_enable_dialog_message">Aby toś tu funkciju zmóžnił, startujśo %s znowego.</string>
   <!-- The description text that is displayed in the confirmation dialog on the Firefox Labs screen for toggling "off" experimental features. %s is the name of the app (for example "Firefox Nightly") -->
   <string name="firefox_labs_feature_disable_dialog_message">Aby toś tu funkciju zmjemóžnił, startujśo %s znowego.</string>
+  <!-- Helper text shown beneath a Firefox Labs item when it is blocked from being turned on. -->
+  <string name="firefox_labs_feature_conflict">Funkcija njedajo se tuchylu wopytaś.</string>
   <!-- Text displayed on the Firefox Labs screen when there are no Labs experimental features present. -->
   <string name="firefox_labs_no_labs_available_description">Tuchylu njedajo eksperimentalne funkcije za testowanje</string>
 </resources>

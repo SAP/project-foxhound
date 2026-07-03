@@ -470,7 +470,7 @@
   <!-- Theme selection onboarding "dark" option label. -->
   <string name="nova_onboarding_theme_selection_dark_label" tools:ignore="UnusedResources">Escur</string>
   <!-- Marketing onboarding primary button text. 'Firefox' is intentionally hardcoded. -->
-  <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage">Ajudar Firefox</string>
+  <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage,UnusedResources">Ajudar Firefox</string>
   <!-- Notifications onboarding button. -->
   <string name="nova_onboarding_notifications_button">Activar las notificacions</string>
   <!-- ==== End of Project "Nova" onboarding strings ==== -->

@@ -622,12 +622,12 @@
   <!-- Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded. -->
   <string name="nova_onboarding_marketing_body_2" tools:ignore="BrandUsage">Nātà’ nan’ānj dàj gayī’ìt garâj sunt Firefox nī aràj sunt man ngà nej duguî’ ‘nïnj ra’a si marketin Mozzilla. Nitāj si ane’ nej nuguan’ nan.</string>
   <!-- Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded. -->
-  <string name="nova_onboarding_marketing_body_3" tools:ignore="BrandUsage">Gā’hue rūgûñu’ūnjt ñûnj da’ gīni’in doj guìi ñûnj sa gī’hiât huin sisī gānïnt gānatà’ Mozilla sisī arâj sunt Firefox.</string>
+  <string name="nova_onboarding_marketing_body_3" tools:ignore="BrandUsage,UnusedResources">Gā’hue rūgûñu’ūnjt ñûnj da’ gīni’in doj guìi ñûnj sa gī’hiât huin sisī gānïnt gānatà’ Mozilla sisī arâj sunt Firefox.</string>
   <!--
     Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
     “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
   -->
-  <string name="nova_onboarding_marketing_body_4" tools:ignore="BrandUsage">Gā’hue rūgûñu’ūnjt ñûnj da’ gīni’in doj guìi ñûnj sa gī’hiât huin sisī gānïnt gānatà’ Mozilla riña hìaj gini’hiājt sisī arâj sunt Firefox.</string>
+  <string name="nova_onboarding_marketing_body_4" tools:ignore="BrandUsage,UnusedResources">Gā’hue rūgûñu’ūnjt ñûnj da’ gīni’in doj guìi ñûnj sa gī’hiât huin sisī gānïnt gānatà’ Mozilla riña hìaj gini’hiājt sisī arâj sunt Firefox.</string>
   <!--
     Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
     “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
@@ -642,7 +642,7 @@
   <!-- Marketing onboarding body link text. -->
   <string name="nova_onboarding_marketing_body_link_text">Dàj arâj sun ñunj nej nuguan’an</string>
   <!-- Marketing onboarding primary button text. 'Firefox' is intentionally hardcoded. -->
-  <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage">Rūgûñu’ūnj Firefox</string>
+  <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage,UnusedResources">Rūgûñu’ūnj Firefox</string>
   <!-- Marketing onboarding secondary button text. -->
   <string name="nova_onboarding_marketing_secondary_button_text">Sī ga’hue, guruhuât</string>
   <!-- Notifications onboarding title. 'Firefox' is intentionally hardcoded. -->

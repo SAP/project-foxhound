@@ -626,12 +626,12 @@
   <!-- Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded. -->
   <string name="nova_onboarding_marketing_body_2" tools:ignore="BrandUsage">Ба шарикони технологияи бозоршиносии «Mozilla» хабар диҳед, ки шумо чӣ тавр браузери «Firefox»-ро пайдо кардед ва онро истифода мебаред. Ин маълумот ҳеҷ гоҳ фурӯхта намешавад.</string>
   <!-- Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded. -->
-  <string name="nova_onboarding_marketing_body_3" tools:ignore="BrandUsage">Шумо метавонед ба мо барои фаро гирифтани одамони бештар кумак кунед, агар иҷозат диҳед то «Mozilla» тавонад тавассути шабакаҳои таблиғотие, ки мо «Firefox»-ро таблиғ мекунем, хабар диҳад, ки шумо корбари «Firefox» ҳастед.</string>
+  <string name="nova_onboarding_marketing_body_3" tools:ignore="BrandUsage,UnusedResources">Шумо метавонед ба мо барои фаро гирифтани одамони бештар кумак кунед, агар иҷозат диҳед то «Mozilla» тавонад тавассути шабакаҳои таблиғотие, ки мо «Firefox»-ро таблиғ мекунем, хабар диҳад, ки шумо корбари «Firefox» ҳастед.</string>
   <!--
     Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
     “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
   -->
-  <string name="nova_onboarding_marketing_body_4" tools:ignore="BrandUsage">Шумо метавонед ба мо барои фаро гирифтани одамони бештар кумак кунед, агар иҷозат диҳед то «Mozilla» тавонад ба платформае, ки шумо аз он омадаед, хабар диҳад, ки шумо «Firefox»-ро истифода мебаред.</string>
+  <string name="nova_onboarding_marketing_body_4" tools:ignore="BrandUsage,UnusedResources">Шумо метавонед ба мо барои фаро гирифтани одамони бештар кумак кунед, агар иҷозат диҳед то «Mozilla» тавонад ба платформае, ки шумо аз он омадаед, хабар диҳад, ки шумо «Firefox»-ро истифода мебаред.</string>
   <!--
     Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
     “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
@@ -661,7 +661,7 @@
   <!-- Marketing onboarding body link text. -->
   <string name="nova_onboarding_marketing_body_link_text_1">Маълумоти бештар</string>
   <!-- Marketing onboarding primary button text. 'Firefox' is intentionally hardcoded. -->
-  <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage">«Firefox»-ро дастгирӣ намоед</string>
+  <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage,UnusedResources">«Firefox»-ро дастгирӣ намоед</string>
   <!-- Marketing onboarding primary button text. -->
   <string name="nova_onboarding_marketing_primary_button_text_2">Иҷозат дода, идома диҳед</string>
   <!-- Marketing onboarding secondary button text. -->

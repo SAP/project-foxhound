@@ -626,12 +626,12 @@
   <!-- Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded. -->
   <string name="nova_onboarding_marketing_body_2" tools:ignore="BrandUsage">გაუზიარეთ Mozilla-ს მოკავშირე სამსახურებს გავრცელების საკითხებში, როგორ აღმოაჩინეთ Firefox და იყენებთ თუ არა. ეს მონაცემები არასდროს გაიყიდება.</string>
   <!-- Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded. -->
-  <string name="nova_onboarding_marketing_body_3" tools:ignore="BrandUsage">შეგიძლიათ დაგვეხმაროთ ხალხის მოზიდვაში და დაგვრთოთ ნება, რითაც Mozilla განაცხადებს Firefox-ის გავრცელების არხებზე, რომ ხართ Firefox-ის მომხმარებელი.</string>
+  <string name="nova_onboarding_marketing_body_3" tools:ignore="BrandUsage,UnusedResources">შეგიძლიათ დაგვეხმაროთ ხალხის მოზიდვაში და დაგვრთოთ ნება, რითაც Mozilla განაცხადებს Firefox-ის გავრცელების არხებზე, რომ ხართ Firefox-ის მომხმარებელი.</string>
   <!--
     Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
     “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
   -->
-  <string name="nova_onboarding_marketing_body_4" tools:ignore="BrandUsage">შეგიძლიათ დაგვეხმაროთ ხალხის მოზიდვაში და დაგვრთოთ ნება, რითაც Mozilla განაცხადებს იმ პლატფორმაზე, რომლიდანაც გადმოხვედით, რომ ხართ Firefox-ის მომხმარებელი.</string>
+  <string name="nova_onboarding_marketing_body_4" tools:ignore="BrandUsage,UnusedResources">შეგიძლიათ დაგვეხმაროთ ხალხის მოზიდვაში და დაგვრთოთ ნება, რითაც Mozilla განაცხადებს იმ პლატფორმაზე, რომლიდანაც გადმოხვედით, რომ ხართ Firefox-ის მომხმარებელი.</string>
   <!--
     Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
     “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
@@ -661,7 +661,7 @@
   <!-- Marketing onboarding body link text. -->
   <string name="nova_onboarding_marketing_body_link_text_1">ვრცლად</string>
   <!-- Marketing onboarding primary button text. 'Firefox' is intentionally hardcoded. -->
-  <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage">დაეხმარეთ Firefox-ს</string>
+  <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage,UnusedResources">დაეხმარეთ Firefox-ს</string>
   <!-- Marketing onboarding primary button text. -->
   <string name="nova_onboarding_marketing_primary_button_text_2">თანხმობა და გაგრძელება</string>
   <!-- Marketing onboarding secondary button text. -->

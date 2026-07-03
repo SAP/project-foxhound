@@ -149,6 +149,8 @@
   <string name="home_screen_shortcut_open_new_private_tab_2">Նոր գաղտնի ներդիր</string>
   <!-- Shortcut action to open Passwords screen -->
   <string name="home_screen_shortcut_passwords">Գաղտնաբառեր</string>
+  <!-- Shortcut action to open uninstall survey -->
+  <string name="home_screen_shortcut_uninstall_survey">Ապատեղադրե՞լ, ինչո՞ւ:</string>
   <!--
     Recent Tabs
 
@@ -626,12 +628,12 @@
   <!-- Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded. -->
   <string name="nova_onboarding_marketing_body_2" tools:ignore="BrandUsage">Կիսվեք Mozilla-ի մարքեթինգային գործընկերների հետ, թե ինչպես եք հայտնաբերել Firefox-ը և որ օգտագործում եք այն։ Այս տվյալները երբեք չեն վաճառվում։</string>
   <!-- Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded. -->
-  <string name="nova_onboarding_marketing_body_3" tools:ignore="BrandUsage">Դուք կարող եք օգնել մեզ հասնել ավելի շատ մարդկանց՝ թույլ տալով Mozilla-ին տեղեկացնել այն ալիքներին, որտեղ մենք գովազդում ենք Firefox-ը, որ դուք Firefox-ի օգտատեր եք։</string>
+  <string name="nova_onboarding_marketing_body_3" tools:ignore="BrandUsage,UnusedResources">Դուք կարող եք օգնել մեզ հասնել ավելի շատ մարդկանց՝ թույլ տալով Mozilla-ին տեղեկացնել այն ալիքներին, որտեղ մենք գովազդում ենք Firefox-ը, որ դուք Firefox-ի օգտատեր եք։</string>
   <!--
     Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
     “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
   -->
-  <string name="nova_onboarding_marketing_body_4" tools:ignore="BrandUsage">Դուք կարող եք օգնել մեզ հասնել ավելի շատ մարդկանց՝ թույլ տալով Mozilla-ին տեղեկացնել ձեր մուտք գործած հարթակին, որ դուք օգտագործում եք Firefox:</string>
+  <string name="nova_onboarding_marketing_body_4" tools:ignore="BrandUsage,UnusedResources">Դուք կարող եք օգնել մեզ հասնել ավելի շատ մարդկանց՝ թույլ տալով Mozilla-ին տեղեկացնել ձեր մուտք գործած հարթակին, որ դուք օգտագործում եք Firefox:</string>
   <!--
     Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
     “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
@@ -661,7 +663,7 @@
   <!-- Marketing onboarding body link text. -->
   <string name="nova_onboarding_marketing_body_link_text_1">Իմանալ ավելին</string>
   <!-- Marketing onboarding primary button text. 'Firefox' is intentionally hardcoded. -->
-  <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage">Օգնեք Firefox-ին</string>
+  <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage,UnusedResources">Օգնեք Firefox-ին</string>
   <!-- Marketing onboarding primary button text. -->
   <string name="nova_onboarding_marketing_primary_button_text_2">Թույլատրել և շարունակել</string>
   <!-- Marketing onboarding secondary button text. -->
@@ -2447,6 +2449,8 @@
   <string name="preferences_take_survey">Անցեք հարցում</string>
   <!-- Preference for not taking the short survey. -->
   <string name="preferences_not_take_survey">Ոչ, շնորհակալ եմ</string>
+  <!-- Error message shown in a Toast when the system fails to trigger the device uninstallation prompt. -->
+  <string name="uninstall_survey_error_failed">Համակարգի ապատեղադրման հուշումը չհաջողվեց բացել, խնդրում ենք անմիջապես օգտագործել համակարգի ապատեղադրման գործողությունը։</string>
   <!--
     Snackbar
 
@@ -4066,6 +4070,8 @@
   <string name="microsurvey_sync_title" tools:ignore="BrandUsage,UnusedResources">Որքանո՞վ եք գոհ Firefox-ի համօգտագործման փորձից:</string>
   <!-- Text shown in the survey title for 'describe your experience so far' microsurvey. Note: The word "Firefox" should NOT be translated. -->
   <string name="microsurvey_describe_your_experience_title" tools:ignore="BrandUsage,UnusedResources">Օգնեք մեզ բարելավել Firefox-ը։ Ո՞րն է լավագույնս նկարագրում ձեր մինչ այժմ ունեցած փորձը։</string>
+  <!-- Uninstall Survey -->
+  <string name="uninstall_survey_button_label">Ուղարկել կարծիք և ապատեղադրել</string>
   <!--
     Accessibility
 

@@ -626,12 +626,12 @@
   <!-- Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded. -->
   <string name="nova_onboarding_marketing_body_2" tools:ignore="BrandUsage">แบ่งปันว่าคุณค้นพบ Firefox ได้อย่างไร และคุณใช้มันอย่างไรกับพันธมิตรด้านการตลาดของ Mozilla โดยข้อมูลนี้จะไม่ถูกนำไปขาย</string>
   <!-- Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded. -->
-  <string name="nova_onboarding_marketing_body_3" tools:ignore="BrandUsage">คุณสามารถช่วยเราเข้าถึงผู้คนได้มากขึ้นด้วยการอนุญาตให้ Mozilla แจ้งช่องทางต่าง ๆ ที่เราโปรโมต Firefox ว่าคุณคือผู้ใช้ Firefox</string>
+  <string name="nova_onboarding_marketing_body_3" tools:ignore="BrandUsage,UnusedResources">คุณสามารถช่วยเราเข้าถึงผู้คนได้มากขึ้นด้วยการอนุญาตให้ Mozilla แจ้งช่องทางต่าง ๆ ที่เราโปรโมต Firefox ว่าคุณคือผู้ใช้ Firefox</string>
   <!--
     Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
     “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
   -->
-  <string name="nova_onboarding_marketing_body_4" tools:ignore="BrandUsage">คุณสามารถช่วยเราเข้าถึงผู้คนได้มากขึ้นด้วยการอนุญาตให้ Mozilla แจ้งแพลตฟอร์มที่คุณเข้ามาว่าคุณใช้ Firefox</string>
+  <string name="nova_onboarding_marketing_body_4" tools:ignore="BrandUsage,UnusedResources">คุณสามารถช่วยเราเข้าถึงผู้คนได้มากขึ้นด้วยการอนุญาตให้ Mozilla แจ้งแพลตฟอร์มที่คุณเข้ามาว่าคุณใช้ Firefox</string>
   <!--
     Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
     “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
@@ -648,7 +648,7 @@
   <!-- Marketing onboarding body link text. -->
   <string name="nova_onboarding_marketing_body_link_text_1">เรียนรู้เพิ่มเติม</string>
   <!-- Marketing onboarding primary button text. 'Firefox' is intentionally hardcoded. -->
-  <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage">ช่วย Firefox</string>
+  <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage,UnusedResources">ช่วย Firefox</string>
   <!-- Marketing onboarding primary button text. -->
   <string name="nova_onboarding_marketing_primary_button_text_2">อนุญาตและดำเนินการต่อ</string>
   <!-- Marketing onboarding secondary button text. -->

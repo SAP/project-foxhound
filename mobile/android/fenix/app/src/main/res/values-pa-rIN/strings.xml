@@ -628,12 +628,12 @@
   <!-- Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded. -->
   <string name="nova_onboarding_marketing_body_2" tools:ignore="BrandUsage">ਤੁਸੀਂ Firefox ਨੂੰ ਕਿਵੇਂ ਲੱਭਿਆ ਅਤੇ ਇਸ ਨੂੰ ਕਿਵੇਂ ਵਰਤਦੇ ਹੋ, ਉਸ ਜਾਣਕਾਰੀ ਨੂੰ Mozilla ਦੇ ਮਾਰਕੀਟਿੰਗ ਹਿੱਸੇਦਾਰਾਂ ਨਾਲ ਸਾਂਝਾ ਕਰੋ। ਇਹ ਡਾਟੇ ਨੂੰ ਕਦੇ ਨਹੀਂ ਵੇਚਿਆ ਜਾਂਦਾ ਹੈ।</string>
   <!-- Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded. -->
-  <string name="nova_onboarding_marketing_body_3" tools:ignore="BrandUsage">ਤੁਸੀਂ Mozilla ਨੂੰ ਜਾਣਕਾਰੀ ਚੈਨਲਾਂ, ਜਿੱਥੇ ਅਸੀਂ Firefox ਲਈ ਪ੍ਰਚਾਰ ਕਰਦੇ ਹਾਂ ਕਿ ਤੁਸੀਂ ਇੱਕ Firefox ਵਰਤੋਂਕਾਰ ਹੈ, ਦੀ ਇਜਾਜ਼ਤ ਦੇ ਕੇ ਹੋਰ ਲੋਕਾਂ ਤੱਕ ਸਾਨੂੰ ਪਹੁੰਚਣ ਲਈ ਮਦਦ ਕਰ ਸਕਦੇ ਹੋ।</string>
+  <string name="nova_onboarding_marketing_body_3" tools:ignore="BrandUsage,UnusedResources">ਤੁਸੀਂ Mozilla ਨੂੰ ਜਾਣਕਾਰੀ ਚੈਨਲਾਂ, ਜਿੱਥੇ ਅਸੀਂ Firefox ਲਈ ਪ੍ਰਚਾਰ ਕਰਦੇ ਹਾਂ ਕਿ ਤੁਸੀਂ ਇੱਕ Firefox ਵਰਤੋਂਕਾਰ ਹੈ, ਦੀ ਇਜਾਜ਼ਤ ਦੇ ਕੇ ਹੋਰ ਲੋਕਾਂ ਤੱਕ ਸਾਨੂੰ ਪਹੁੰਚਣ ਲਈ ਮਦਦ ਕਰ ਸਕਦੇ ਹੋ।</string>
   <!--
     Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
     “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
   -->
-  <string name="nova_onboarding_marketing_body_4" tools:ignore="BrandUsage">ਤੁਸੀਂ Mozilla ਨੂੰ ਪਲੇਟਫਾਰਮ ਉੱਤੇ ਤੁਹਾਡੇ Firefox ਵਰਤਣ ਬਾਰੇ ਜਾਣਕਾਰੀ ਦੇ ਕੇ ਸਾਨੂੰ ਲੋਕਾਂ ਤੱਕ ਅੱਪੜਨ ਲਈ ਮਦਦ ਕਰ ਸਕਦੇ ਹੋ।</string>
+  <string name="nova_onboarding_marketing_body_4" tools:ignore="BrandUsage,UnusedResources">ਤੁਸੀਂ Mozilla ਨੂੰ ਪਲੇਟਫਾਰਮ ਉੱਤੇ ਤੁਹਾਡੇ Firefox ਵਰਤਣ ਬਾਰੇ ਜਾਣਕਾਰੀ ਦੇ ਕੇ ਸਾਨੂੰ ਲੋਕਾਂ ਤੱਕ ਅੱਪੜਨ ਲਈ ਮਦਦ ਕਰ ਸਕਦੇ ਹੋ।</string>
   <!--
     Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
     “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
@@ -663,7 +663,7 @@
   <!-- Marketing onboarding body link text. -->
   <string name="nova_onboarding_marketing_body_link_text_1">ਹੋਰ ਜਾਣੋ</string>
   <!-- Marketing onboarding primary button text. 'Firefox' is intentionally hardcoded. -->
-  <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage">Firefox ਦੀ ਮਦਦ ਕਰੋ</string>
+  <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage,UnusedResources">Firefox ਦੀ ਮਦਦ ਕਰੋ</string>
   <!-- Marketing onboarding primary button text. -->
   <string name="nova_onboarding_marketing_primary_button_text_2">ਸਹਿਮਤ ਅਤੇ ਜਾਰੀ ਰੱਖੋ</string>
   <!-- Marketing onboarding secondary button text. -->

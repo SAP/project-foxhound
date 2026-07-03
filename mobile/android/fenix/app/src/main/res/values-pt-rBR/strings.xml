@@ -149,6 +149,8 @@
   <string name="home_screen_shortcut_open_new_private_tab_2">Nova aba privativa</string>
   <!-- Shortcut action to open Passwords screen -->
   <string name="home_screen_shortcut_passwords">Senhas</string>
+  <!-- Shortcut action to open uninstall survey -->
+  <string name="home_screen_shortcut_uninstall_survey">Desinstalar, por quê?</string>
   <!--
     Recent Tabs
 
@@ -626,12 +628,12 @@
   <!-- Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded. -->
   <string name="nova_onboarding_marketing_body_2" tools:ignore="BrandUsage">Compartilhe que você usa o Firefox e como o descobriu, com parceiros de marketing da Mozilla. Esses dados nunca são vendidos.</string>
   <!-- Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded. -->
-  <string name="nova_onboarding_marketing_body_3" tools:ignore="BrandUsage">Você pode nos ajudar a alcançar mais pessoas ao permitir que a Mozilla informe aos canais onde promovemos o Firefox que você é um usuário do Firefox.</string>
+  <string name="nova_onboarding_marketing_body_3" tools:ignore="BrandUsage,UnusedResources">Você pode nos ajudar a alcançar mais pessoas ao permitir que a Mozilla informe aos canais onde promovemos o Firefox que você é um usuário do Firefox.</string>
   <!--
     Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
     “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
   -->
-  <string name="nova_onboarding_marketing_body_4" tools:ignore="BrandUsage">Você pode nos ajudar a alcançar mais pessoas ao permitir que a Mozilla informe à plataforma de onde você veio que você usa o Firefox.</string>
+  <string name="nova_onboarding_marketing_body_4" tools:ignore="BrandUsage,UnusedResources">Você pode nos ajudar a alcançar mais pessoas ao permitir que a Mozilla informe à plataforma de onde você veio que você usa o Firefox.</string>
   <!--
     Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
     “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
@@ -661,7 +663,7 @@
   <!-- Marketing onboarding body link text. -->
   <string name="nova_onboarding_marketing_body_link_text_1">Saiba mais</string>
   <!-- Marketing onboarding primary button text. 'Firefox' is intentionally hardcoded. -->
-  <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage">Ajude o Firefox</string>
+  <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage,UnusedResources">Ajude o Firefox</string>
   <!-- Marketing onboarding primary button text. -->
   <string name="nova_onboarding_marketing_primary_button_text_2">Permitir e continuar</string>
   <!-- Marketing onboarding secondary button text. -->
@@ -2447,6 +2449,8 @@
   <string name="preferences_take_survey">Participar da pesquisa de opinião</string>
   <!-- Preference for not taking the short survey. -->
   <string name="preferences_not_take_survey">Não, obrigado</string>
+  <!-- Error message shown in a Toast when the system fails to trigger the device uninstallation prompt. -->
+  <string name="uninstall_survey_error_failed">Falha ao abrir o pedido de desinstalar do sistema, use diretamente a ação de desinstalar do sistema.</string>
   <!--
     Snackbar
 
@@ -4066,6 +4070,8 @@
   <string name="microsurvey_sync_title" tools:ignore="BrandUsage,UnusedResources">Qual é seu nível de satisfação com a experiência de sincronização no Firefox?</string>
   <!-- Text shown in the survey title for 'describe your experience so far' microsurvey. Note: The word "Firefox" should NOT be translated. -->
   <string name="microsurvey_describe_your_experience_title" tools:ignore="BrandUsage,UnusedResources">Ajude-nos a melhorar o Firefox. Qual opção descreve melhor sua experiência até agora?</string>
+  <!-- Uninstall Survey -->
+  <string name="uninstall_survey_button_label">Enviar comentário e desinstalar</string>
   <!--
     Accessibility
 
