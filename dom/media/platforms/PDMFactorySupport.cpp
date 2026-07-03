@@ -14,6 +14,7 @@
 #include "mozilla/StaticPtr.h"
 #include "mozilla/SyncRunnable.h"
 #include "mozilla/gfx/gfxVars.h"
+#include "nsIXULRuntime.h"
 #include "nsThreadUtils.h"
 
 namespace mozilla {
@@ -115,24 +116,29 @@ media::DecodeSupportSet PDMFactorySupport::IsSupported(
 
 /* static */
 RefPtr<PDMFactorySupport> PDMFactorySupport::Instance() {
-  StaticMutexAutoLock lock(sInstanceMutex);
-
-  // Refuse to build (or return) an instance after shutdown begins.
+  // Refuse to build (or return) an instance once shutdown begins.
   if (AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdownConfirmed)) {
     return nullptr;
   }
 
-  // Install pref/`gfxVar` listeners before building the inner `PDMFactory`
-  // so any change during construction sets `sStale`.
-  EnsureInvalidationListenersRegistered(lock);
+  // Install pref/gfxVar listeners before building the inner PDMFactory
+  // so any change during construction sets sStale. Do this without holding
+  // sInstanceMutex since the setup involves main thread initialization.
+  if (!EnsureInvalidationListenersRegistered()) {
+    return nullptr;
+  }
 
-  // A change during construction sets `sStale`; this caller's `RefPtr`
-  // keeps the just-built snapshot, and the next `Instance()` caller drains
-  // `sStale` and rebuilds.
-  if (sStale.exchange(false) && sInstance) {
+  StaticMutexAutoLock lock(sInstanceMutex);
+  // The registration hop above can cross into shutdown.
+  if (AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdownConfirmed)) {
+    return nullptr;
+  }
+  // A pref or gfxVar change since the last build marks the snapshot stale.
+  if (sStale.exchange(false)) {
     sInstance = nullptr;
   }
   if (!sInstance) {
+    MOZ_ASSERT(gfx::gfxVars::IsInitialized());
     sInstance = new PDMFactorySupport();
 
     // Register `ClearOnShutdown` exactly once per process.
@@ -174,58 +180,77 @@ void PDMFactorySupport::OnInvalidatingPrefChanged(const char* /* aPref */,
 void PDMFactorySupport::OnInvalidatingGfxVarChanged() { Invalidate(); }
 
 /* static */
-void PDMFactorySupport::EnsureInvalidationListenersRegistered(
-    const StaticMutexAutoLock& /* aProofOfLock */) {
-  // Registration runs at most once across the process. `std::call_once`
-  // serialises concurrent first calls and provides the once-only guarantee.
+bool PDMFactorySupport::EnsureInvalidationListenersRegistered() {
+  static Atomic<bool> sListenersRegisteredComplete{false};
+  if (sListenersRegisteredComplete) {
+    return true;
+  }
+
   static std::once_flag sListenersRegistered;
-  std::call_once(sListenersRegistered, []() {
-    auto registerOnMain = []() {
-      MOZ_ASSERT(NS_IsMainThread());
-      Preferences::RegisterCallbacks(OnInvalidatingPrefChanged,
-                                     kInvalidatingPrefs_CrossPlatform);
+
+  auto registerOnMain = []() {
+    MOZ_ASSERT(NS_IsMainThread());
+
+    // Shutdown may have begun before this ran on the main thread.
+    if (AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdownConfirmed)) {
+      return;
+    }
+
+    // Keep this synced with PDMFactory::EnsureInit(). Initialize gfxVars before
+    // taking sInstanceMutex, so constructing the PDMFactory won't dispatch to
+    // the main thread while the mutex is held.
+    if (!gfx::gfxVars::IsInitialized()) {
+      gfx::gfxVars::Initialize();
+      (void)BrowserTabsRemoteAutostart();
+    }
+
+    Preferences::RegisterCallbacks(OnInvalidatingPrefChanged,
+                                   kInvalidatingPrefs_CrossPlatform);
 #ifdef MOZ_WMF
-      Preferences::RegisterCallbacks(OnInvalidatingPrefChanged,
-                                     kInvalidatingPrefs_WMF);
+    Preferences::RegisterCallbacks(OnInvalidatingPrefChanged,
+                                   kInvalidatingPrefs_WMF);
 #endif
 #ifdef MOZ_APPLEMEDIA
-      Preferences::RegisterCallbacks(OnInvalidatingPrefChanged,
-                                     kInvalidatingPrefs_AppleMedia);
+    Preferences::RegisterCallbacks(OnInvalidatingPrefChanged,
+                                   kInvalidatingPrefs_AppleMedia);
 #endif
 #ifdef ANDROID
-      Preferences::RegisterCallbacks(OnInvalidatingPrefChanged,
-                                     kInvalidatingPrefs_Android);
+    Preferences::RegisterCallbacks(OnInvalidatingPrefChanged,
+                                   kInvalidatingPrefs_Android);
 #endif
 #ifdef MOZ_FFMPEG
-      Preferences::RegisterCallbacks(OnInvalidatingPrefChanged,
-                                     kInvalidatingPrefs_FFmpeg);
+    Preferences::RegisterCallbacks(OnInvalidatingPrefChanged,
+                                   kInvalidatingPrefs_FFmpeg);
 #endif
-      // `gfxVars::Set*Listener` requires `gfxVars::IsInitialized()`. Bootstrap
-      // it here on the main thread.
-      if (!gfx::gfxVars::IsInitialized()) {
-        gfx::gfxVars::Initialize();
-      }
-      gfx::gfxVars::SetCanUseHardwareVideoDecodingListener(
-          OnInvalidatingGfxVarChanged);
-      gfx::gfxVars::SetUseAV1HwDecodeListener(OnInvalidatingGfxVarChanged);
-      gfx::gfxVars::SetUseVP8HwDecodeListener(OnInvalidatingGfxVarChanged);
-      gfx::gfxVars::SetUseVP9HwDecodeListener(OnInvalidatingGfxVarChanged);
-      // `UseH264HwDecode` / `UseHEVCHwDecode` are only set on Linux/Android/
-      // Windows today; registering elsewhere is a harmless no-op.
-      gfx::gfxVars::SetUseH264HwDecodeListener(OnInvalidatingGfxVarChanged);
-      gfx::gfxVars::SetUseHEVCHwDecodeListener(OnInvalidatingGfxVarChanged);
-    };
+    gfx::gfxVars::SetCanUseHardwareVideoDecodingListener(
+        OnInvalidatingGfxVarChanged);
+    gfx::gfxVars::SetUseAV1HwDecodeListener(OnInvalidatingGfxVarChanged);
+    gfx::gfxVars::SetUseVP8HwDecodeListener(OnInvalidatingGfxVarChanged);
+    gfx::gfxVars::SetUseVP9HwDecodeListener(OnInvalidatingGfxVarChanged);
+    // `UseH264HwDecode` / `UseHEVCHwDecode` are only set on Linux/Android/
+    // Windows today; registering elsewhere is a harmless no-op.
+    gfx::gfxVars::SetUseH264HwDecodeListener(OnInvalidatingGfxVarChanged);
+    gfx::gfxVars::SetUseHEVCHwDecodeListener(OnInvalidatingGfxVarChanged);
 
-    if (NS_IsMainThread()) {
-      registerOnMain();
-    } else {
-      nsCOMPtr<nsIEventTarget> mainTarget = GetMainThreadSerialEventTarget();
-      nsCOMPtr<nsIRunnable> runnable = NS_NewRunnableFunction(
-          "PDMFactorySupport::EnsureInvalidationListenersRegistered",
-          std::move(registerOnMain));
-      SyncRunnable::DispatchToThread(mainTarget, runnable);
-    }
-  });
+    sListenersRegisteredComplete = true;
+  };
+
+  if (NS_IsMainThread()) {
+    std::call_once(sListenersRegistered, registerOnMain);
+    return sListenersRegisteredComplete;
+  }
+
+  nsCOMPtr<nsIEventTarget> mainTarget = GetMainThreadSerialEventTarget();
+  if (!mainTarget) {
+    return sListenersRegisteredComplete;
+  }
+  nsCOMPtr<nsIRunnable> runnable = NS_NewRunnableFunction(
+      "PDMFactorySupport::EnsureInvalidationListenersRegistered",
+      [registerOnMain]() {
+        std::call_once(sListenersRegistered, registerOnMain);
+      });
+  SyncRunnable::DispatchToThread(mainTarget, runnable);
+  return sListenersRegisteredComplete;
 }
 
 }  // namespace mozilla
