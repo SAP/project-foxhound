@@ -114,30 +114,21 @@ class DefaultDownloadFileUtils(
         directoryPath: String,
         downloadContentType: String?,
     ): Intent {
-        val initialUri = findDownloadFileUri(
-            fileName = fileName,
-            directoryPath = directoryPath,
-        )
+        val shareableUri = findShareableDownloadFileUri(fileName, directoryPath)
 
-        initialUri?.let { uri ->
-            val shareableUri = if (uri.scheme == SCHEME_FILE) {
-                getFilePathUri(uri.path ?: "")
-            } else {
-                getShareableUriForTree(uri, fileName)
-            }
-
-            return Intent(Intent.ACTION_VIEW).apply {
+        return if (shareableUri != null) {
+            Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(
                     shareableUri,
                     getSafeContentType(fileName, downloadContentType, shareableUri),
                 )
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
             }
-        }
-
-        // Fallback to opening the downloads manager if the file URI could not be determined.
-        return Intent(DownloadManager.ACTION_VIEW_DOWNLOADS).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        } else {
+            // Fallback to opening the downloads manager if the file URI could not be determined.
+            Intent(DownloadManager.ACTION_VIEW_DOWNLOADS).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
         }
     }
 
@@ -159,6 +150,19 @@ class DefaultDownloadFileUtils(
         } catch (e: IllegalStateException) {
             logger.error("State error finding download file URI for '$fileName': ${e.message}")
             null
+        }
+    }
+
+    override fun findShareableDownloadFileUri(fileName: String?, directoryPath: String): Uri? {
+        val initialUri = findDownloadFileUri(
+            fileName = fileName,
+            directoryPath = directoryPath,
+        ) ?: return null
+
+        return if (initialUri.scheme == SCHEME_FILE) {
+            getFilePathUri(initialUri.path ?: "")
+        } else {
+            getShareableUriForTree(initialUri, fileName)
         }
     }
 
