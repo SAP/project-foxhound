@@ -10,6 +10,45 @@ const { ToolUI } = ChromeUtils.importESModule(
 const { ChatConversation } = ChromeUtils.importESModule(
   "moz-src:///browser/components/aiwindow/ui/modules/ChatConversation.sys.mjs"
 );
+const { tabManagementService } = ChromeUtils.importESModule(
+  "moz-src:///browser/components/aiwindow/ui/modules/TabManagementService.sys.mjs"
+);
+
+let gPermanentKeySeq = 0;
+
+// Build a mock tab with a unique permanentKey (the identity the resolver uses).
+function makeTab(url, { userContextId = 0, label = "Tab" } = {}) {
+  return {
+    userContextId,
+    label,
+    permanentKey: { id: ++gPermanentKeySeq },
+    linkedBrowser: {
+      currentURI: { spec: url },
+    },
+  };
+}
+
+function makeWindow(tabs, selectedTab = null) {
+  return { closed: false, gBrowser: { tabs, selectedTab } };
+}
+
+// Build a token-bearing selection for the given mock tabs and register the
+// token -> permanentKey map under toolCallId
+function registerSelection(toolCallId, tabs) {
+  const tokenToKey = new Map();
+  const selectedTabs = tabs.map(tab => {
+    const token = `tok-${tab.permanentKey.id}`;
+    tokenToKey.set(token, tab.permanentKey);
+    return {
+      token,
+      url: tab.linkedBrowser.currentURI.spec,
+      title: tab.label,
+      userContextId: tab.userContextId,
+    };
+  });
+  ToolUI.registerTabKeys(toolCallId, tokenToKey);
+  return { selectedTabs, tokenToKey };
+}
 
 /**
  * Test that ToolUI.handleUpdate returns false when missing required data
@@ -153,45 +192,17 @@ add_task(async function test_handleUpdate_confirmation_success() {
   };
 
   // Mock the tabManagementService for this test
-  const { tabManagementService } = ChromeUtils.importESModule(
-    "moz-src:///browser/components/aiwindow/ui/modules/TabManagementService.sys.mjs"
-  );
-
   const originalCloseTabs = tabManagementService.closeTabs;
   tabManagementService.closeTabs = async function () {
     return { operationId: "mock-operation-123" };
   };
 
-  // Create mock tabs that match what we're trying to close
-  const mockTab = {
-    linkedPanel: "panel-1",
-    linkedBrowser: {
-      currentURI: {
-        spec: "https://example.com",
-      },
-    },
-  };
+  // Create a mock tab and register its token -> permanentKey selection.
+  const mockTab = makeTab("https://example.com", { label: "Test Tab" });
+  const mockWindow = makeWindow([mockTab]);
 
-  const updateData = {
-    selectedTabs: [
-      {
-        linkedPanel: "panel-1",
-        url: "https://example.com",
-        title: "Test Tab",
-      },
-    ],
-  };
-
-  const mockWindow = {
-    gBrowser: {
-      tabs: [],
-      selectedTab: null,
-    },
-  };
-  mockWindow.gBrowser.tabs = [mockTab];
-  mockWindow.gBrowser.tabs.find = function (predicate) {
-    return this.filter(predicate)[0];
-  };
+  const { selectedTabs } = registerSelection(originalToolCallId, [mockTab]);
+  const updateData = { selectedTabs };
 
   const result = await ToolUI.handleUpdate(
     {
@@ -263,40 +274,22 @@ add_task(async function test_handleUpdate_confirmation_resolves_tool_action() {
 
   const toolMessage = conversation.messages.at(-1);
 
-  const { tabManagementService } = ChromeUtils.importESModule(
-    "moz-src:///browser/components/aiwindow/ui/modules/TabManagementService.sys.mjs"
-  );
-
   const originalCloseTabs = tabManagementService.closeTabs;
   tabManagementService.closeTabs = async function () {
     return { operationId: "mock-operation-789" };
   };
 
-  const mockTab = {
-    linkedPanel: "panel-1",
-    linkedBrowser: { currentURI: { spec: "https://example.com" } },
-  };
-  const mockWindow = {
-    gBrowser: { tabs: [mockTab], selectedTab: null },
-  };
-  mockWindow.gBrowser.tabs.find = function (predicate) {
-    return this.filter(predicate)[0];
-  };
+  const mockTab = makeTab("https://example.com", { label: "Test Tab" });
+  const mockWindow = makeWindow([mockTab]);
+
+  const { selectedTabs } = registerSelection(originalToolCallId, [mockTab]);
 
   const result = await ToolUI.handleUpdate(
     {
       messageId: assistantMessage.id,
       toolCallId: originalToolCallId,
       updateType: "confirmation-tab-selection",
-      updateData: {
-        selectedTabs: [
-          {
-            linkedPanel: "panel-1",
-            url: "https://example.com",
-            title: "Test Tab",
-          },
-        ],
-      },
+      updateData: { selectedTabs },
     },
     conversation,
     mockWindow
@@ -445,10 +438,6 @@ add_task(async function test_handleUpdate_undo_tab_close_success() {
   };
 
   // Mock the tabManagementService for undo
-  const { tabManagementService } = ChromeUtils.importESModule(
-    "moz-src:///browser/components/aiwindow/ui/modules/TabManagementService.sys.mjs"
-  );
-
   const originalRestoreTabs = tabManagementService.restoreTabs;
   tabManagementService.restoreTabs = async function () {
     return {
@@ -575,170 +564,6 @@ add_task(async function test_handleUpdate_unknown_updateType() {
 });
 
 /**
- * Test that tabs with mismatched URLs are not closed
- */
-add_task(async function test_verifyTabMatch_url_mismatch() {
-  const conversation = new ChatConversation({});
-  conversation.addUserMessage("Test prompt", {});
-  conversation.addAssistantMessage("text", "Test response");
-
-  const assistantMessage = conversation.messages.find(
-    m => m.role === 1 && m.content?.type === "text"
-  );
-
-  assistantMessage.toolUIData = {
-    toolCallId: "test-tool-123",
-    uiType: "website-confirmation",
-    properties: {
-      tabs: [],
-    },
-  };
-
-  const { tabManagementService } = ChromeUtils.importESModule(
-    "moz-src:///browser/components/aiwindow/ui/modules/TabManagementService.sys.mjs"
-  );
-
-  const originalCloseTabs = tabManagementService.closeTabs;
-  let closeTabsCalled = false;
-  tabManagementService.closeTabs = async function () {
-    closeTabsCalled = true;
-    return { operationId: "mock-operation-123" };
-  };
-
-  // Mock tab with different URL than expected
-  const mockTab = {
-    linkedPanel: "panel-1",
-    linkedBrowser: {
-      currentURI: {
-        spec: "https://different.com", // Different URL
-      },
-    },
-  };
-
-  const mockWindow = {
-    gBrowser: {
-      tabs: [mockTab],
-      selectedTab: null,
-    },
-  };
-  mockWindow.gBrowser.tabs.find = function (predicate) {
-    return this.filter(predicate)[0];
-  };
-
-  const result = await ToolUI.handleUpdate(
-    {
-      messageId: assistantMessage.id,
-      toolCallId: "test-tool-123",
-      updateType: "confirmation-tab-selection",
-      updateData: {
-        selectedTabs: [
-          {
-            linkedPanel: "panel-1",
-            url: "https://example.com", // Expected URL doesn't match
-            title: "Test Tab",
-          },
-        ],
-      },
-    },
-    conversation,
-    mockWindow
-  );
-
-  tabManagementService.closeTabs = originalCloseTabs;
-
-  Assert.equal(result, false, "Should return false when tab URL doesn't match");
-  Assert.equal(
-    closeTabsCalled,
-    false,
-    "closeTabs should not be called when URLs mismatch"
-  );
-});
-
-/**
- * Test that tabs with mismatched linkedPanel are rejected
- */
-add_task(async function test_verifyTabMatch_linkedPanel_mismatch() {
-  const conversation = new ChatConversation({});
-  conversation.addUserMessage("Test prompt", {});
-  conversation.addAssistantMessage("text", "Test response");
-
-  const assistantMessage = conversation.messages.find(
-    m => m.role === 1 && m.content?.type === "text"
-  );
-
-  assistantMessage.toolUIData = {
-    toolCallId: "test-tool-123",
-    uiType: "website-confirmation",
-    properties: {
-      tabs: [],
-    },
-  };
-
-  const { tabManagementService } = ChromeUtils.importESModule(
-    "moz-src:///browser/components/aiwindow/ui/modules/TabManagementService.sys.mjs"
-  );
-
-  const originalCloseTabs = tabManagementService.closeTabs;
-  let closeTabsCalled = false;
-  tabManagementService.closeTabs = async function () {
-    closeTabsCalled = true;
-    return { operationId: "mock-operation-123" };
-  };
-
-  // Mock tab with different linkedPanel
-  const mockTab = {
-    linkedPanel: "panel-2", // Different panel
-    linkedBrowser: {
-      currentURI: {
-        spec: "https://example.com",
-      },
-    },
-  };
-
-  const mockWindow = {
-    gBrowser: {
-      tabs: [mockTab],
-      selectedTab: null,
-    },
-  };
-  mockWindow.gBrowser.tabs.find = function (predicate) {
-    return this.filter(predicate)[0];
-  };
-
-  const result = await ToolUI.handleUpdate(
-    {
-      messageId: assistantMessage.id,
-      toolCallId: "test-tool-123",
-      updateType: "confirmation-tab-selection",
-      updateData: {
-        selectedTabs: [
-          {
-            linkedPanel: "panel-1", // Expected panel doesn't match
-            url: "https://example.com",
-            title: "Test Tab",
-          },
-        ],
-      },
-    },
-    conversation,
-    mockWindow
-  );
-
-  tabManagementService.closeTabs = originalCloseTabs;
-
-  Assert.equal(
-    result,
-    false,
-    "Should return false when linkedPanel doesn't match"
-  );
-  Assert.equal(
-    closeTabsCalled,
-    false,
-    "closeTabs should not be called when panels mismatch"
-  );
-});
-
-/**
  * Test closing tabs when only some tabs match verification
  */
 add_task(async function test_closeSelectedTabs_partial_match() {
@@ -758,10 +583,6 @@ add_task(async function test_closeSelectedTabs_partial_match() {
     },
   };
 
-  const { tabManagementService } = ChromeUtils.importESModule(
-    "moz-src:///browser/components/aiwindow/ui/modules/TabManagementService.sys.mjs"
-  );
-
   const originalCloseTabs = tabManagementService.closeTabs;
   let closedTabs = null;
   tabManagementService.closeTabs = async function ({ tabs }) {
@@ -769,35 +590,15 @@ add_task(async function test_closeSelectedTabs_partial_match() {
     return { operationId: "mock-operation-123" };
   };
 
-  // Mock tabs - one matching, one not matching
-  const mockTabs = [
-    {
-      linkedPanel: "panel-1",
-      linkedBrowser: {
-        currentURI: {
-          spec: "https://example.com",
-        },
-      },
-    },
-    {
-      linkedPanel: "panel-2",
-      linkedBrowser: {
-        currentURI: {
-          spec: "https://different.com", // Wrong URL
-        },
-      },
-    },
-  ];
+  // One selection resolves to a live tab
+  // the other's token points at a tab that is no longer open
+  const liveTab = makeTab("https://example.com", { label: "Test Tab 1" });
+  const mockWindow = makeWindow([liveTab]);
 
-  const mockWindow = {
-    gBrowser: {
-      tabs: mockTabs,
-      selectedTab: null,
-    },
-  };
-  mockWindow.gBrowser.tabs.find = function (predicate) {
-    return this.filter(predicate)[0];
-  };
+  const tokenToKey = new Map();
+  tokenToKey.set("tok-live", liveTab.permanentKey);
+  tokenToKey.set("tok-stale", { id: "gone" });
+  ToolUI.registerTabKeys("test-tool-123", tokenToKey);
 
   const result = await ToolUI.handleUpdate(
     {
@@ -807,13 +608,13 @@ add_task(async function test_closeSelectedTabs_partial_match() {
       updateData: {
         selectedTabs: [
           {
-            linkedPanel: "panel-1",
+            token: "tok-live",
             url: "https://example.com",
             title: "Test Tab 1",
           },
           {
-            linkedPanel: "panel-2",
-            url: "https://mozilla.org", // Expected URL doesn't match actual
+            token: "tok-stale",
+            url: "https://mozilla.org",
             title: "Test Tab 2",
           },
         ],
@@ -830,13 +631,186 @@ add_task(async function test_closeSelectedTabs_partial_match() {
     true,
     "Should return true when at least one tab matches"
   );
-  Assert.equal(closedTabs.length, 1, "Should only close the matching tab");
+  Assert.equal(closedTabs.length, 1, "Should only close the resolvable tab");
   Assert.equal(
-    closedTabs[0].linkedPanel,
-    "panel-1",
+    closedTabs[0].linkedBrowser.currentURI.spec,
+    "https://example.com",
     "Should close the correct tab"
   );
 });
+
+/**
+ * Test that unloaded/lazy tabs still resolve and close
+ */
+add_task(async function test_closeSelectedTabs_unloaded_tabs() {
+  const conversation = new ChatConversation({});
+  conversation.addUserMessage("Test prompt", {});
+  conversation.addAssistantMessage("text", "Test response");
+
+  const assistantMessage = conversation.messages.find(
+    m => m.role === 1 && m.content?.type === "text"
+  );
+
+  assistantMessage.toolUIData = {
+    toolCallId: "test-tool-123",
+    uiType: "website-confirmation",
+    properties: {
+      tabs: [],
+    },
+  };
+
+  const originalCloseTabs = tabManagementService.closeTabs;
+  let closedTabs = null;
+  tabManagementService.closeTabs = async function ({ tabs }) {
+    closedTabs = tabs;
+    return { operationId: "mock-operation-123" };
+  };
+
+  // Unloaded/lazy tabs still retain a linkedBrowser with a permanentKey.
+  const tabA = makeTab("https://example.com", { label: "Example" });
+  const tabB = makeTab("https://mozilla.org", { label: "Mozilla" });
+  const mockWindow = makeWindow([tabA, tabB]);
+
+  const { selectedTabs } = registerSelection("test-tool-123", [tabA, tabB]);
+
+  const result = await ToolUI.handleUpdate(
+    {
+      messageId: assistantMessage.id,
+      toolCallId: "test-tool-123",
+      updateType: "confirmation-tab-selection",
+      updateData: { selectedTabs },
+    },
+    conversation,
+    mockWindow
+  );
+
+  tabManagementService.closeTabs = originalCloseTabs;
+
+  Assert.equal(result, true, "Should succeed closing unloaded tabs");
+  Assert.equal(closedTabs.length, 2, "Both unloaded tabs should resolve");
+  Assert.deepEqual(
+    closedTabs.map(t => t.linkedBrowser.currentURI.spec).sort(),
+    ["https://example.com", "https://mozilla.org"],
+    "Each selection resolves to its own unloaded tab"
+  );
+});
+
+/**
+ * Test that two unloaded tabs sharing the same URL and container each resolve
+ * to a distinct tab
+ */
+add_task(async function test_closeSelectedTabs_duplicate_unloaded_tabs() {
+  const conversation = new ChatConversation({});
+  conversation.addUserMessage("Test prompt", {});
+  conversation.addAssistantMessage("text", "Test response");
+
+  const assistantMessage = conversation.messages.find(
+    m => m.role === 1 && m.content?.type === "text"
+  );
+
+  assistantMessage.toolUIData = {
+    toolCallId: "test-tool-123",
+    uiType: "website-confirmation",
+    properties: {
+      tabs: [],
+    },
+  };
+
+  const originalCloseTabs = tabManagementService.closeTabs;
+  let closedTabs = null;
+  tabManagementService.closeTabs = async function ({ tabs }) {
+    closedTabs = tabs;
+    return { operationId: "mock-operation-123" };
+  };
+
+  // Two tabs at the same URL and container, distinguished only by permanentKey.
+  const tab1 = makeTab("https://example.com", { label: "Example" });
+  const tab2 = makeTab("https://example.com", { label: "Example" });
+  const mockWindow = makeWindow([tab1, tab2]);
+
+  const { selectedTabs } = registerSelection("test-tool-123", [tab1, tab2]);
+
+  const result = await ToolUI.handleUpdate(
+    {
+      messageId: assistantMessage.id,
+      toolCallId: "test-tool-123",
+      updateType: "confirmation-tab-selection",
+      updateData: { selectedTabs },
+    },
+    conversation,
+    mockWindow
+  );
+
+  tabManagementService.closeTabs = originalCloseTabs;
+
+  Assert.equal(result, true, "Should succeed closing duplicate unloaded tabs");
+  Assert.equal(closedTabs.length, 2, "Both duplicate tabs should resolve");
+  Assert.notStrictEqual(
+    closedTabs[0],
+    closedTabs[1],
+    "The two selections resolve to distinct tab objects"
+  );
+});
+
+/**
+ * Test that a selection for an unloaded tab does not match a loaded tab that
+ * happens to share the same URL
+ */
+add_task(
+  async function test_closeSelectedTabs_unloaded_does_not_steal_loaded() {
+    const conversation = new ChatConversation({});
+    conversation.addUserMessage("Test prompt", {});
+    conversation.addAssistantMessage("text", "Test response");
+
+    const assistantMessage = conversation.messages.find(
+      m => m.role === 1 && m.content?.type === "text"
+    );
+
+    assistantMessage.toolUIData = {
+      toolCallId: "test-tool-123",
+      uiType: "website-confirmation",
+      properties: {
+        tabs: [],
+      },
+    };
+
+    const originalCloseTabs = tabManagementService.closeTabs;
+    let closedTabs = null;
+    tabManagementService.closeTabs = async function ({ tabs }) {
+      closedTabs = tabs;
+      return { operationId: "mock-operation-123" };
+    };
+
+    // Two tabs share the same URL.
+    // selecting one by its token must resolve to exactly that tab (permanentKey)
+    const otherTab = makeTab("https://example.com", { label: "Example" });
+    const targetTab = makeTab("https://example.com", { label: "Example" });
+    const mockWindow = makeWindow([otherTab, targetTab]);
+
+    const { selectedTabs } = registerSelection("test-tool-123", [targetTab]);
+
+    const result = await ToolUI.handleUpdate(
+      {
+        messageId: assistantMessage.id,
+        toolCallId: "test-tool-123",
+        updateType: "confirmation-tab-selection",
+        updateData: { selectedTabs },
+      },
+      conversation,
+      mockWindow
+    );
+
+    tabManagementService.closeTabs = originalCloseTabs;
+
+    Assert.equal(result, true, "Should succeed closing the selected tab");
+    Assert.equal(closedTabs.length, 1, "Only one tab should resolve");
+    Assert.strictEqual(
+      closedTabs[0],
+      targetTab,
+      "Should resolve exactly the selected tab, not the same-URL sibling"
+    );
+  }
+);
 
 /**
  * Test when no tabs pass verification
@@ -857,10 +831,6 @@ add_task(async function test_closeSelectedTabs_no_matches() {
       tabs: [],
     },
   };
-
-  const { tabManagementService } = ChromeUtils.importESModule(
-    "moz-src:///browser/components/aiwindow/ui/modules/TabManagementService.sys.mjs"
-  );
 
   const originalCloseTabs = tabManagementService.closeTabs;
   let closeTabsCalled = false;
@@ -931,10 +901,6 @@ add_task(async function test_undo_with_failed_restoration() {
     },
   };
 
-  const { tabManagementService } = ChromeUtils.importESModule(
-    "moz-src:///browser/components/aiwindow/ui/modules/TabManagementService.sys.mjs"
-  );
-
   const originalRestoreTabs = tabManagementService.restoreTabs;
   tabManagementService.restoreTabs = async function () {
     throw new Error("Failed to restore tabs");
@@ -972,10 +938,6 @@ add_task(async function test_undo_with_failed_restoration() {
 add_task(async function test_closeSelectedTabs_public_method() {
   // Mock the tabManagementService since closeSelectedTabs calls it internally
   // and we need to control its behavior in the test environment
-  const { tabManagementService } = ChromeUtils.importESModule(
-    "moz-src:///browser/components/aiwindow/ui/modules/TabManagementService.sys.mjs"
-  );
-
   const originalCloseTabs = tabManagementService.closeTabs;
   let passedTabs = null;
   // Mock closeTabs to capture what tabs are passed and return a controlled result
@@ -988,48 +950,22 @@ add_task(async function test_closeSelectedTabs_public_method() {
     };
   };
 
-  const mockTabs = [
-    {
-      linkedPanel: "panel-1",
-      linkedBrowser: {
-        currentURI: {
-          spec: "https://example.com",
-        },
-      },
-    },
-    {
-      linkedPanel: "panel-2",
-      linkedBrowser: {
-        currentURI: {
-          spec: "https://mozilla.org",
-        },
-      },
-    },
-  ];
+  const tabA = makeTab("https://example.com", { label: "Example Tab" });
+  const tabB = makeTab("https://mozilla.org", { label: "Mozilla Tab" });
+  const mockWindow = makeWindow([tabA, tabB]);
 
-  const mockWindow = {
-    gBrowser: {
-      tabs: mockTabs,
-      selectedTab: null,
-    },
-  };
-
-  const selectedTabsData = [
-    {
-      linkedPanel: "panel-1",
-      url: "https://example.com",
-      title: "Example Tab",
-    },
-    {
-      linkedPanel: "panel-2",
-      url: "https://mozilla.org",
-      title: "Mozilla Tab",
-    },
-  ];
+  const { selectedTabs, tokenToKey } = registerSelection("public-method", [
+    tabA,
+    tabB,
+  ]);
 
   let result;
   try {
-    result = await ToolUI.closeSelectedTabs(selectedTabsData, mockWindow);
+    result = await ToolUI.closeSelectedTabs(
+      selectedTabs,
+      tokenToKey,
+      mockWindow
+    );
   } finally {
     // Restore original function even if test throws
     tabManagementService.closeTabs = originalCloseTabs;
@@ -1042,21 +978,16 @@ add_task(async function test_closeSelectedTabs_public_method() {
     "test-operation-456",
     "Should return correct operationId"
   );
-  // Verify that only verified tabs were passed to the service
+  // Verify that only resolved tabs were passed to the service
   Assert.equal(
     passedTabs.length,
     2,
-    "Should pass 2 verified tabs to tabManagementService"
+    "Should pass 2 resolved tabs to tabManagementService"
   );
-  Assert.equal(
-    passedTabs[0].linkedPanel,
-    "panel-1",
-    "Should pass correct first tab"
-  );
-  Assert.equal(
-    passedTabs[1].linkedPanel,
-    "panel-2",
-    "Should pass correct second tab"
+  Assert.deepEqual(
+    passedTabs.map(t => t.linkedBrowser.currentURI.spec),
+    ["https://example.com", "https://mozilla.org"],
+    "Should pass the resolved tabs in selection order"
   );
 });
 
@@ -1072,7 +1003,7 @@ add_task(async function test_closeSelectedTabs_no_window() {
     },
   ];
 
-  const result = await ToolUI.closeSelectedTabs(selectedTabsData, null);
+  const result = await ToolUI.closeSelectedTabs(selectedTabsData, null, null);
 
   Assert.equal(result, null, "Should return null when no window provided");
 });
@@ -1081,22 +1012,18 @@ add_task(async function test_closeSelectedTabs_no_window() {
  * Test ToolUI.closeSelectedTabs returns null when no valid tabs to close
  */
 add_task(async function test_closeSelectedTabs_no_valid_tabs() {
-  const mockWindow = {
-    gBrowser: {
-      tabs: [],
-      selectedTab: null,
-    },
-  };
+  // Window has no tabs, so the selection's token resolves to nothing.
+  const mockWindow = makeWindow([]);
+  const missingTab = makeTab("https://example.com", { label: "Example Tab" });
+  const { selectedTabs, tokenToKey } = registerSelection("no-valid", [
+    missingTab,
+  ]);
 
-  const selectedTabsData = [
-    {
-      linkedPanel: "panel-nonexistent",
-      url: "https://example.com",
-      title: "Example Tab",
-    },
-  ];
-
-  const result = await ToolUI.closeSelectedTabs(selectedTabsData, mockWindow);
+  const result = await ToolUI.closeSelectedTabs(
+    selectedTabs,
+    tokenToKey,
+    mockWindow
+  );
 
   Assert.equal(result, null, "Should return null when no valid tabs found");
 });
@@ -1136,10 +1063,6 @@ add_task(async function test_undo_updates_ui_correctly() {
       },
     },
   };
-
-  const { tabManagementService } = ChromeUtils.importESModule(
-    "moz-src:///browser/components/aiwindow/ui/modules/TabManagementService.sys.mjs"
-  );
 
   const originalRestoreTabs = tabManagementService.restoreTabs;
   tabManagementService.restoreTabs = async function () {
@@ -1695,46 +1618,22 @@ add_task(async function test_isRestored_flag_preserved() {
  * smartWindowActionSource when it is among the verified tabs.
  */
 add_task(async function test_closeSelectedTabs_tags_active_tab_source() {
-  const { tabManagementService } = ChromeUtils.importESModule(
-    "moz-src:///browser/components/aiwindow/ui/modules/TabManagementService.sys.mjs"
-  );
-
   const originalCloseTabs = tabManagementService.closeTabs;
   tabManagementService.closeTabs = async function () {
     return { operationId: "op-active" };
   };
 
-  const activeTab = {
-    linkedPanel: "panel-1",
-    linkedBrowser: { currentURI: { spec: "https://example.com" } },
-  };
-  const otherTab = {
-    linkedPanel: "panel-2",
-    linkedBrowser: { currentURI: { spec: "https://mozilla.org" } },
-  };
+  const activeTab = makeTab("https://example.com", { label: "Active" });
+  const otherTab = makeTab("https://mozilla.org", { label: "Other" });
+  const mockWindow = makeWindow([activeTab, otherTab], activeTab);
 
-  const mockWindow = {
-    gBrowser: {
-      tabs: [activeTab, otherTab],
-      selectedTab: activeTab,
-    },
-  };
-
-  const selectedTabsData = [
-    {
-      linkedPanel: "panel-1",
-      url: "https://example.com",
-      title: "Active",
-    },
-    {
-      linkedPanel: "panel-2",
-      url: "https://mozilla.org",
-      title: "Other",
-    },
-  ];
+  const { selectedTabs, tokenToKey } = registerSelection("tags-active", [
+    activeTab,
+    otherTab,
+  ]);
 
   try {
-    await ToolUI.closeSelectedTabs(selectedTabsData, mockWindow);
+    await ToolUI.closeSelectedTabs(selectedTabs, tokenToKey, mockWindow);
   } finally {
     tabManagementService.closeTabs = originalCloseTabs;
   }

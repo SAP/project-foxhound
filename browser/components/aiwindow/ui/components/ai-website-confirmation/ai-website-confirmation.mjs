@@ -40,11 +40,11 @@ export class AIWebsiteConfirmation extends MozLitElement {
    */
   handleSelectChange(event) {
     event.stopPropagation();
-    const { linkedPanel, checked } = event.detail;
+    const { token, checked } = event.detail;
 
-    // Update the tabs array with new selection state
+    // Use key rows by token because linkedPanel is empty for unloaded tabs
     this.tabs = this.tabs.map(tab =>
-      tab.linkedPanel === linkedPanel ? { ...tab, checked } : tab
+      tab.token === token ? { ...tab, checked } : tab
     );
 
     this.dispatchSelectionEvent();
@@ -166,6 +166,7 @@ export class AIWebsiteConfirmation extends MozLitElement {
               ${this.tabs.map(
                 tab => html`
                   <ai-website-select
+                    .token=${tab.token}
                     .linkedPanel=${tab.linkedPanel}
                     .label=${tab.title}
                     .iconSrc=${tab.iconSrc}

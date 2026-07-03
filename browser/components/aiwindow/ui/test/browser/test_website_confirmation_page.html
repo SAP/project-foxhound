@@ -23,6 +23,7 @@
         const mixedConfirmation = document.getElementById("test-confirmation-mixed");
         mixedConfirmation.tabs = [
           {
+            token: "tab-1",
             linkedPanel: "tab-1",
             title: "Mozilla Developer Network",
             iconSrc: "chrome://branding/content/icon16.png",
@@ -30,6 +31,7 @@
             checked: true,
           },
           {
+            token: "tab-2",
             linkedPanel: "tab-2",
             title: "Stack Overflow",
             iconSrc: "chrome://global/skin/icons/defaultFavicon.svg",
@@ -37,6 +39,7 @@
             checked: false,
           },
           {
+            token: "tab-3",
             linkedPanel: "tab-3",
             title: "GitHub",
             iconSrc: "chrome://branding/content/about-logo.svg",
@@ -44,6 +47,7 @@
             checked: true,
           },
           {
+            token: "tab-4",
             linkedPanel: "tab-4",
             title: "Example Site",
             iconSrc: "chrome://global/skin/icons/defaultFavicon.svg",
@@ -55,6 +59,7 @@
         const allCheckedConfirmation = document.getElementById("test-confirmation-all-checked");
         allCheckedConfirmation.tabs = [
           {
+            token: "checked-1",
             linkedPanel: "checked-1",
             title: "Site One",
             iconSrc: "chrome://branding/content/icon16.png",
@@ -62,6 +67,7 @@
             checked: true,
           },
           {
+            token: "checked-2",
             linkedPanel: "checked-2",
             title: "Site Two",
             iconSrc: "chrome://branding/content/icon16.png",

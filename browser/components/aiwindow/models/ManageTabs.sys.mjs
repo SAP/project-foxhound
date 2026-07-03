@@ -95,7 +95,7 @@ function shouldRequireUserConfirmation(tabs, topAIWin, securityProperties) {
  * @returns {Promise<object>}
  */
 export async function closeTabsAction(
-  { validUrls, ask_confirmation, mode = "", model = "" },
+  { validUrls, ask_confirmation, mode = "", model = "", toolCallId = "" },
   conversation
 ) {
   const baseTelemetryInfo = {
@@ -123,16 +123,22 @@ export async function closeTabsAction(
     };
   }
 
-  const tabs = matchedTabs.map(({ tab, win, url, linkedPanel }) => ({
-    linkedPanel,
-    url,
-    title: sanitizeUntrustedContent(tab.label),
-    userContextId: tab.userContextId,
-    pinned: tab.pinned,
-    selected: win.gBrowser.selectedTab === tab,
-    iconSrc: url ? `page-icon:${url}` : "",
-    checked: true,
-  }));
+  // Identify each tab by its browser's permanentKey
+  const tabKeyByToken = new Map();
+  const tabs = matchedTabs.map(({ tab, win, url }) => {
+    const token = Services.uuid.generateUUID().toString();
+    tabKeyByToken.set(token, tab.permanentKey);
+    return {
+      token,
+      url,
+      title: sanitizeUntrustedContent(tab.label),
+      userContextId: tab.userContextId,
+      pinned: tab.pinned,
+      selected: win.gBrowser.selectedTab === tab,
+      iconSrc: url ? `page-icon:${url}` : "",
+      checked: true,
+    };
+  });
 
   const summarizedTabInfo = tabs.map(({ url, title, checked }) => ({
     url,
@@ -148,6 +154,10 @@ export async function closeTabsAction(
       conversation.securityProperties
     )
   ) {
+    // Keep token -> permanentKey on the chrome side until the user confirms;
+    // the map can't ride through the confirmation actor round-trip.
+    lazy.ToolUI.registerTabKeys(toolCallId, tabKeyByToken);
+
     return {
       toolResult: {
         description:
@@ -163,7 +173,11 @@ export async function closeTabsAction(
     };
   }
 
-  const result = await lazy.ToolUI.closeSelectedTabs(tabs, topAIWin);
+  const result = await lazy.ToolUI.closeSelectedTabs(
+    tabs,
+    tabKeyByToken,
+    topAIWin
+  );
   if (!result || !result.operationId) {
     lazy.ToolUITelemetry.recordBrowserActionComplete({
       ...baseTelemetryInfo,
@@ -175,15 +189,15 @@ export async function closeTabsAction(
     return { toolResult: "Error: Failed to close tabs.", uiData: null };
   }
 
-  const failedPanels = new Set(
+  const failedKeys = new Set(
     (result.failedTabs ?? [])
-      .map(failedTab => failedTab.tab?.linkedPanel)
+      .map(failedTab => failedTab.tab?.permanentKey)
       .filter(Boolean)
   );
-  const closedTabs = tabs.map(({ url, title, linkedPanel }) => ({
+  const closedTabs = tabs.map(({ url, title, token }) => ({
     url,
     title,
-    closed: !failedPanels.has(linkedPanel),
+    closed: !failedKeys.has(tabKeyByToken.get(token)),
   }));
 
   const closedCount = closedTabs.filter(tab => tab.closed).length;
@@ -217,6 +231,7 @@ export async function closeTabsAction(
           selectedTabs: tabs,
           operationId: result.operationId,
           actionTimestamp: Date.now(),
+          actionType: "close_tabs",
         },
       },
     },
