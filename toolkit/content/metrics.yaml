@@ -393,12 +393,16 @@ security.ui.neterror:
       recorded in the value extra key.
     bugs:
       - https://bugzil.la/2022590
+      - https://bugzil.la/2048027
     data_reviews:
       - https://bugzil.la/2022590
+      - https://bugzil.la/2048027
     notification_emails:
       - jaws@mozilla.com
       - seceng-telemetry@mozilla.com
     expires: never
+    data_sensitivity:
+      - technical
     extra_keys:
       value:
         description: >
@@ -413,6 +417,21 @@ security.ui.neterror:
         description: >
           The status of the failed channel, as an nsresult.
         type: quantity
+      no_connectivity:
+        description: >
+          Whether Firefox considers the device offline (OS link bit is down).
+          Only true for dnsNotFound when RPMHasConnectivity() returns false.
+        type: boolean
+      captive_portal_state:
+        description: >
+          The captive portal service state at page load time: unknown,
+          not_captive, unlocked_portal, or locked_portal. not_captive is
+          the only value that confirms the user is actually online.
+        type: string
+      trr_only:
+        description: >
+          Whether this is a TRR-only (DoH strict mode) DNS failure.
+        type: boolean
 
 findbar:
   shown:

@@ -13,6 +13,7 @@ import {
 //   d - error description
 //   captive - "true" to indicate we're behind a captive portal.
 //             Any other value is ignored.
+//   captivePortalState - the captive portal service state string
 
 // Note that this file uses document.documentURI to get
 // the URL (with the format from above). This is because
@@ -188,6 +189,12 @@ export async function recordSecurityUITelemetry(category, name, errorInfo) {
         console.error("error parsing issuer certificate:", e);
       }
     }
+  }
+  if (category == "securityUiNeterror" && name == "loadAboutneterror") {
+    extraKeys.no_connectivity = gNoConnectivity;
+    extraKeys.trr_only = gErrorCode == "dnsNotFound" && RPMIsTRROnlyFailure();
+    extraKeys.captive_portal_state =
+      searchParams.get("captivePortalState") ?? "";
   }
   RPMRecordGleanEvent(category, name, extraKeys);
 }
