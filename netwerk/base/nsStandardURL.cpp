@@ -1524,8 +1524,9 @@ nsresult nsStandardURL::SetScheme(const nsACString& input) {
   } else if (Scheme() == "https"_ns || Scheme() == "wss"_ns) {
     mDefaultPort = 443;
   }
-  if (mPort == mDefaultPort) {
-    MOZ_ALWAYS_SUCCEEDS(SetPort(-1));
+  if (mPort == mDefaultPort && mAuthority.mLen >= 0) {
+    nsresult rv = SetPort(-1);
+    NS_ENSURE_SUCCESS(rv, rv);
   }
 
   return NS_OK;
@@ -1998,6 +1999,10 @@ nsresult nsStandardURL::SetPort(int32_t port) {
   if (mURLType == URLTYPE_NO_AUTHORITY) {
     NS_WARNING("cannot set port on no-auth url");
     return NS_ERROR_UNEXPECTED;
+  }
+  if (mAuthority.mLen < 0) {
+    NS_WARNING("uninitialized");
+    return NS_ERROR_NOT_INITIALIZED;
   }
   if (mAuthority.mLen == 0) {
     // If the URL doesn't have a hostname then setting the port to
@@ -3742,6 +3747,8 @@ bool nsStandardURL::Deserialize(const URIParams& aParams) {
       NS_ENSURE_TRUE(mURLType == URLTYPE_NO_AUTHORITY, false);
     }
   }
+
+  NS_ENSURE_TRUE(mAuthority.mLen >= 0 || mPort == -1, false);
 
   if (!IsValid()) {
     return false;
