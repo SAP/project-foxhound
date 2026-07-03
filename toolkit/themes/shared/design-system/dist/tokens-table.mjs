@@ -255,6 +255,8 @@ export const tokensTable = {
       value: {
         default: "transparent",
         brand: { forcedColors: "var(--button-background-color)" },
+        nativeTheme: "transparent",
+        platform: { default: "transparent", browserTheme: {} },
       },
       name: "--button-background-color-ghost",
     },
@@ -1438,13 +1440,10 @@ export const tokensTable = {
     { value: "oklch(0 0 0 / 90%)", name: "--color-black-alpha-90" },
     {
       value: {
-        forcedColors: "ButtonText",
-        brand: {
-          light: "var(--color-blue-60)",
-          dark: "var(--color-cyan-30)",
-          default: "light-dark(var(--color-blue-60), var(--color-cyan-30))",
-        },
+        light: "var(--color-blue-60)",
+        dark: "var(--color-cyan-30)",
         nativeTheme: "AccentColor",
+        forcedColors: "ButtonText",
         platform: {
           default: "AccentColor",
           browserTheme: {
@@ -1453,56 +1452,71 @@ export const tokensTable = {
             default: "light-dark(var(--color-blue-60), var(--color-cyan-30))",
           },
         },
+        default: "light-dark(var(--color-blue-60), var(--color-cyan-30))",
       },
       name: "--color-accent-primary",
     },
     {
       value: {
         forcedColors: "SelectedItem",
-        brand: {
-          light: "var(--color-blue-70)",
-          dark: "var(--color-cyan-20)",
-          default: "light-dark(var(--color-blue-70), var(--color-cyan-20))",
-        },
+        light: "var(--color-blue-70)",
+        dark: "var(--color-cyan-20)",
+        nativeTheme:
+          "color-mix(in srgb, black 10%, var(--color-accent-primary))",
         platform: {
           default: "color-mix(in srgb, black 10%, var(--color-accent-primary))",
+          browserTheme: {
+            light: "var(--color-blue-70)",
+            dark: "var(--color-cyan-20)",
+            default: "light-dark(var(--color-blue-70), var(--color-cyan-20))",
+          },
         },
+        default: "light-dark(var(--color-blue-70), var(--color-cyan-20))",
       },
       name: "--color-accent-primary-hover",
     },
     {
       value: {
         forcedColors: "var(--color-accent-primary-hover)",
-        brand: {
-          light: "var(--color-blue-80)",
-          dark: "var(--color-cyan-10)",
-          default: "light-dark(var(--color-blue-80), var(--color-cyan-10))",
-        },
+        light: "var(--color-blue-80)",
+        dark: "var(--color-cyan-10)",
+        nativeTheme:
+          "color-mix(in srgb, black 20%, var(--color-accent-primary))",
         platform: {
           default: "color-mix(in srgb, black 20%, var(--color-accent-primary))",
+          browserTheme: {
+            light: "var(--color-blue-80)",
+            dark: "var(--color-cyan-10)",
+            default: "light-dark(var(--color-blue-80), var(--color-cyan-10))",
+          },
         },
+        default: "light-dark(var(--color-blue-80), var(--color-cyan-10))",
       },
       name: "--color-accent-primary-active",
     },
     {
       value: {
         forcedColors: "SelectedItem",
-        brand: {
-          light: "var(--color-blue-60)",
-          dark: "var(--color-cyan-30)",
-          default: "light-dark(var(--color-blue-60), var(--color-cyan-30))",
+        light: "var(--color-blue-60)",
+        dark: "var(--color-cyan-30)",
+        nativeTheme: "SelectedItem",
+        platform: {
+          default: "SelectedItem",
+          browserTheme: {
+            light: "var(--color-blue-60)",
+            dark: "var(--color-cyan-30)",
+            default: "light-dark(var(--color-blue-60), var(--color-cyan-30))",
+          },
         },
-        platform: { default: "SelectedItem" },
+        default: "light-dark(var(--color-blue-60), var(--color-cyan-30))",
       },
       name: "--color-accent-primary-selected",
     },
     {
       value: {
-        brand: {
-          light: "#2ac3a2",
-          dark: "#54ffbd",
-          default: "light-dark(#2ac3a2, #54ffbd)",
-        },
+        prefersContrast: "AccentColor",
+        light: "#2ac3a2",
+        dark: "#54ffbd",
         nativeTheme: "AccentColor",
         platform: {
           default: "AccentColor",
@@ -1512,7 +1526,7 @@ export const tokensTable = {
             default: "light-dark(#2ac3a2, #54ffbd)",
           },
         },
-        prefersContrast: "AccentColor",
+        default: "light-dark(#2ac3a2, #54ffbd)",
       },
       name: "--color-accent-attention",
     },
@@ -3405,13 +3419,10 @@ export const variableLookupTable = {
   "color-black-alpha-80": "oklch(0 0 0 / 80%)",
   "color-black-alpha-90": "oklch(0 0 0 / 90%)",
   "color-accent-primary": {
-    forcedColors: "ButtonText",
-    brand: {
-      light: "var(--color-blue-60)",
-      dark: "var(--color-cyan-30)",
-      default: "light-dark(var(--color-blue-60), var(--color-cyan-30))",
-    },
+    light: "var(--color-blue-60)",
+    dark: "var(--color-cyan-30)",
     nativeTheme: "AccentColor",
+    forcedColors: "ButtonText",
     platform: {
       default: "AccentColor",
       browserTheme: {
@@ -3420,44 +3431,57 @@ export const variableLookupTable = {
         default: "light-dark(var(--color-blue-60), var(--color-cyan-30))",
       },
     },
+    default: "light-dark(var(--color-blue-60), var(--color-cyan-30))",
   },
   "color-accent-primary-hover": {
     forcedColors: "SelectedItem",
-    brand: {
-      light: "var(--color-blue-70)",
-      dark: "var(--color-cyan-20)",
-      default: "light-dark(var(--color-blue-70), var(--color-cyan-20))",
-    },
+    light: "var(--color-blue-70)",
+    dark: "var(--color-cyan-20)",
+    nativeTheme: "color-mix(in srgb, black 10%, var(--color-accent-primary))",
     platform: {
       default: "color-mix(in srgb, black 10%, var(--color-accent-primary))",
+      browserTheme: {
+        light: "var(--color-blue-70)",
+        dark: "var(--color-cyan-20)",
+        default: "light-dark(var(--color-blue-70), var(--color-cyan-20))",
+      },
     },
+    default: "light-dark(var(--color-blue-70), var(--color-cyan-20))",
   },
   "color-accent-primary-active": {
     forcedColors: "var(--color-accent-primary-hover)",
-    brand: {
-      light: "var(--color-blue-80)",
-      dark: "var(--color-cyan-10)",
-      default: "light-dark(var(--color-blue-80), var(--color-cyan-10))",
-    },
+    light: "var(--color-blue-80)",
+    dark: "var(--color-cyan-10)",
+    nativeTheme: "color-mix(in srgb, black 20%, var(--color-accent-primary))",
     platform: {
       default: "color-mix(in srgb, black 20%, var(--color-accent-primary))",
+      browserTheme: {
+        light: "var(--color-blue-80)",
+        dark: "var(--color-cyan-10)",
+        default: "light-dark(var(--color-blue-80), var(--color-cyan-10))",
+      },
     },
+    default: "light-dark(var(--color-blue-80), var(--color-cyan-10))",
   },
   "color-accent-primary-selected": {
     forcedColors: "SelectedItem",
-    brand: {
-      light: "var(--color-blue-60)",
-      dark: "var(--color-cyan-30)",
-      default: "light-dark(var(--color-blue-60), var(--color-cyan-30))",
+    light: "var(--color-blue-60)",
+    dark: "var(--color-cyan-30)",
+    nativeTheme: "SelectedItem",
+    platform: {
+      default: "SelectedItem",
+      browserTheme: {
+        light: "var(--color-blue-60)",
+        dark: "var(--color-cyan-30)",
+        default: "light-dark(var(--color-blue-60), var(--color-cyan-30))",
+      },
     },
-    platform: { default: "SelectedItem" },
+    default: "light-dark(var(--color-blue-60), var(--color-cyan-30))",
   },
   "color-accent-attention": {
-    brand: {
-      light: "#2ac3a2",
-      dark: "#54ffbd",
-      default: "light-dark(#2ac3a2, #54ffbd)",
-    },
+    prefersContrast: "AccentColor",
+    light: "#2ac3a2",
+    dark: "#54ffbd",
     nativeTheme: "AccentColor",
     platform: {
       default: "AccentColor",
@@ -3467,7 +3491,7 @@ export const variableLookupTable = {
         default: "light-dark(#2ac3a2, #54ffbd)",
       },
     },
-    prefersContrast: "AccentColor",
+    default: "light-dark(#2ac3a2, #54ffbd)",
   },
   "dimension-2": "2px",
   "dimension-4": "4px",
@@ -3692,6 +3716,8 @@ export const variableLookupTable = {
   "button-background-color-ghost": {
     default: "transparent",
     brand: { forcedColors: "var(--button-background-color)" },
+    nativeTheme: "transparent",
+    platform: { default: "transparent", browserTheme: {} },
   },
   "button-background-color-ghost-active":
     "var(--button-background-color-active)",

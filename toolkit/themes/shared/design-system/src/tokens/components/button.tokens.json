@@ -105,7 +105,8 @@
             "default": "transparent",
             "brand": {
               "forcedColors": "{button.background.color.@base}"
-            }
+            },
+            "nativeTheme": "transparent"
           }
         },
         "active": {
@@ -191,6 +192,12 @@
           "default": "transparent",
           "prefersContrast": "{button.text.color.@base}",
           "forcedColors": "{border.color.interactive.@base}"
+        }
+      },
+      "nova-@base": {
+        "comment": "This looks weird with AccentColor when the background is a color-mix() (can't override the background in nativeTheme from Figma currently)",
+        "value": {
+          "nativeTheme": "transparent"
         }
       },
       "active": {

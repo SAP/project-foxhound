@@ -62,7 +62,10 @@
       },
       "ghost": {
         "@base": {
-          "value": "{button.background.color.@base}"
+          "value": {
+            "nativeTheme": "transparent",
+            "default": "{button.background.color.@base}"
+          }
         },
         "disabled": {
           "value": {

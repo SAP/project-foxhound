@@ -28,13 +28,6 @@
     --button-text-color: light-dark(var(--color-gray-100), var(--color-gray-0));
     --button-text-color-primary: light-dark(var(--color-white), var(--color-gray-100));
 
-    /** color **/
-    --color-accent-attention: light-dark(#2ac3a2, #54ffbd);
-    --color-accent-primary: light-dark(var(--color-blue-60), var(--color-cyan-30));
-    --color-accent-primary-hover: light-dark(var(--color-blue-70), var(--color-cyan-20));
-    --color-accent-primary-active: light-dark(var(--color-blue-80), var(--color-cyan-10));
-    --color-accent-primary-selected: light-dark(var(--color-blue-60), var(--color-cyan-30));
-
     /** font-size **/
     --font-size-root: 15px;
     /* 11px / Note this token is to be used in rare cases because its hard to read. Please consult with the Design Systems and A11y teams for case-by-case feedback. */

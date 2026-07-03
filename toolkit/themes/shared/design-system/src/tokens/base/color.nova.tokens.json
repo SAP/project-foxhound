@@ -387,6 +387,7 @@
       },
       "hover": {
         "value": {
+          "nativeTheme": "color-mix(in srgb, black 10%, {color.accent.primary.@base})",
           "light": "{color.violet.60}",
           "dark": "{color.violet.20}",
           "forcedColors": "SelectedItem"
@@ -394,6 +395,7 @@
       },
       "active": {
         "value": {
+          "nativeTheme": "color-mix(in srgb, black 20%, {color.accent.primary.@base})",
           "light": "{color.violet.70}",
           "dark": "{color.violet.10}",
           "forcedColors": "{color.accent.primary.hover}"
@@ -401,6 +403,7 @@
       },
       "selected": {
         "value": {
+          "nativeTheme": "SelectedItem",
           "default": "{button.background.color.primary.active}",
           "forcedColors": "SelectedItem"
         }

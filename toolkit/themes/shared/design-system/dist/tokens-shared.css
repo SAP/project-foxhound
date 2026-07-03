@@ -181,6 +181,11 @@
     --checkbox-size: var(--size-item-small);
 
     /** color **/
+    --color-accent-attention: light-dark(#2ac3a2, #54ffbd);
+    --color-accent-primary: light-dark(var(--color-blue-60), var(--color-cyan-30));
+    --color-accent-primary-hover: light-dark(var(--color-blue-70), var(--color-cyan-20));
+    --color-accent-primary-active: light-dark(var(--color-blue-80), var(--color-cyan-10));
+    --color-accent-primary-selected: light-dark(var(--color-blue-60), var(--color-cyan-30));
     --color-black: #000000;
     --color-black-alpha-10: oklch(0 0 0 / 10%);
     --color-black-alpha-20: oklch(0 0 0 / 20%);

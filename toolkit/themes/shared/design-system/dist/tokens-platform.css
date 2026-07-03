@@ -27,6 +27,7 @@
     --button-background-color: color-mix(in srgb, currentColor 13%, transparent);
     --button-background-color-hover: color-mix(in srgb, currentColor 17%, transparent);
     --button-background-color-active: color-mix(in srgb, currentColor 30%, transparent);
+    --button-background-color-ghost: transparent;
     --button-text-color: currentColor;
     --button-text-color-primary: AccentColorText;
 
@@ -115,6 +116,9 @@
       /** color **/
       --color-accent-attention: light-dark(#2ac3a2, #54ffbd);
       --color-accent-primary: light-dark(var(--color-blue-60), var(--color-cyan-30));
+      --color-accent-primary-hover: light-dark(var(--color-blue-70), var(--color-cyan-20));
+      --color-accent-primary-active: light-dark(var(--color-blue-80), var(--color-cyan-10));
+      --color-accent-primary-selected: light-dark(var(--color-blue-60), var(--color-cyan-30));
 
       /** input **/
       --input-text-background-color: light-dark(var(--color-white), #42414d);
@@ -163,12 +167,18 @@
       --button-background-color: color-mix(in srgb, currentColor 13%, transparent);
       --button-background-color-hover: color-mix(in srgb, currentColor 17%, transparent);
       --button-background-color-active: color-mix(in srgb, currentColor 30%, transparent);
+      --button-background-color-ghost: transparent;
+      /* This looks weird with AccentColor when the background is a color-mix() (can't override the background in nativeTheme from Figma currently) */
+      --button-border-color: transparent;
       --button-text-color: currentColor;
       --button-text-color-primary: AccentColorText;
 
       /** color **/
       --color-accent-attention: AccentColor;
       --color-accent-primary: AccentColor;
+      --color-accent-primary-hover: color-mix(in srgb, black 10%, var(--color-accent-primary));
+      --color-accent-primary-active: color-mix(in srgb, black 20%, var(--color-accent-primary));
+      --color-accent-primary-selected: SelectedItem;
 
       /** link **/
       --link-color: LinkText;
@@ -206,12 +216,16 @@
         --button-background-color: transparent;
         --button-background-color-hover: light-dark(var(--color-violet-desaturated-20), var(--color-violet-desaturated-50));
         --button-background-color-active: light-dark(var(--color-violet-desaturated-30), var(--color-violet-desaturated-40));
+        --button-background-color-ghost: var(--button-background-color);
         --button-text-color: light-dark(var(--color-violet-90), var(--color-gray-0));
         --button-text-color-primary: light-dark(var(--color-white), var(--color-gray-70));
 
         /** color **/
         --color-accent-attention: light-dark(var(--color-green-40), var(--color-green-30));
         --color-accent-primary: light-dark(var(--color-violet-50), var(--color-violet-30));
+        --color-accent-primary-hover: light-dark(var(--color-violet-60), var(--color-violet-20));
+        --color-accent-primary-active: light-dark(var(--color-violet-70), var(--color-violet-10));
+        --color-accent-primary-selected: var(--button-background-color-primary-active);
 
         /** link **/
         --link-color: var(--color-accent-primary);

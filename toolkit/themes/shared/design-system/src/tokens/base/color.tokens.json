@@ -524,67 +524,43 @@
     "primary": {
       "@base": {
         "value": {
-          "forcedColors": "ButtonText",
-          "brand": {
-            "light": "{color.blue.60}",
-            "dark": "{color.cyan.30}"
-          },
+          "light": "{color.blue.60}",
+          "dark": "{color.cyan.30}",
           "nativeTheme": "AccentColor",
-          "platform": {
-            "light": "{color.blue.60}",
-            "dark": "{color.cyan.30}"
-          }
+          "forcedColors": "ButtonText"
         }
       },
       "hover": {
         "value": {
           "forcedColors": "SelectedItem",
-          "brand": {
-            "light": "{color.blue.70}",
-            "dark": "{color.cyan.20}"
-          },
-          "platform": {
-            "default": "color-mix(in srgb, black 10%, {color.accent.primary.@base})"
-          }
+          "light": "{color.blue.70}",
+          "dark": "{color.cyan.20}",
+          "nativeTheme": "color-mix(in srgb, black 10%, {color.accent.primary.@base})"
         }
       },
       "active": {
         "value": {
           "forcedColors": "{color.accent.primary.hover}",
-          "brand": {
-            "light": "{color.blue.80}",
-            "dark": "{color.cyan.10}"
-          },
-          "platform": {
-            "default": "color-mix(in srgb, black 20%, {color.accent.primary.@base})"
-          }
+          "light": "{color.blue.80}",
+          "dark": "{color.cyan.10}",
+          "nativeTheme": "color-mix(in srgb, black 20%, {color.accent.primary.@base})"
         }
       },
       "selected": {
         "value": {
           "forcedColors": "SelectedItem",
-          "brand": {
-            "light": "{color.blue.60}",
-            "dark": "{color.cyan.30}"
-          },
-          "platform": {
-            "default": "SelectedItem"
-          }
+          "light": "{color.blue.60}",
+          "dark": "{color.cyan.30}",
+          "nativeTheme": "SelectedItem"
         }
       }
     },
     "attention": {
       "value": {
-        "brand": {
-          "light": "#2ac3a2",
-          "dark": "#54ffbd"
-        },
-        "nativeTheme": "AccentColor",
-        "platform": {
-          "light": "#2ac3a2",
-          "dark": "#54ffbd"
-        },
-        "prefersContrast": "AccentColor"
+        "prefersContrast": "AccentColor",
+        "light": "#2ac3a2",
+        "dark": "#54ffbd",
+        "nativeTheme": "AccentColor"
       }
     }
   }
