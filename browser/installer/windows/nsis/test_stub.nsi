@@ -21,6 +21,7 @@ OutFile "test_stub_installer.exe"
 Var Stdout
 Var FailureMessage
 Var TestBreakpointNumber
+Var ExpectedLegacyUninstallKey
 
 ; For building the test exectuable, this version of the IsTestBreakpointSet macro
 ; checks the value of the TestBreakpointNumber. For real installer executables,
@@ -333,8 +334,26 @@ FunctionEnd
 
 !include postupdate_helper.nsh
 
+Function GetExpectedLegacyUninstallKey
+  Push $0
+  Push $1
+  StrCpy $0 "Software\Microsoft\Windows\CurrentVersion\Uninstall\${BrandFullNameInternal} ${AppVersion}"
+  ${WordFind} "${UpdateChannel}" "esr" "E#" $1
+  ${IfNot} ${Errors}
+    StrCpy $0 "$0 ESR"
+  ${EndIf}
+  StrCpy $0 "$0 (${ARCH} ${AB_CD})"
+  ClearErrors
+  Pop $1
+  Exch $0
+FunctionEnd
+
 Function TestUninstallRegKey
     Call CommonOnInit
+
+    Call GetExpectedLegacyUninstallKey
+    Pop $ExpectedLegacyUninstallKey
+
     Push $R0 ; We will locally use $R0, ensuring that we can restore it later.
 
     Call findUninstallKey
@@ -348,8 +367,7 @@ Function TestUninstallRegKey
 
     Call getLegacyUninstallKey
     Pop $R0
-    !insertmacro AssertEqual R0 \
-        "Software\Microsoft\Windows\CurrentVersion\Uninstall\${BrandFullNameInternal} ${AppVersion} (${ARCH} ${AB_CD})"
+    !insertmacro AssertEqual R0 "$ExpectedLegacyUninstallKey"
 
     ; Ensure that the getDefaultInstallDir function does not modify the
     ; contents of $1.
@@ -384,8 +402,7 @@ Function TestUninstallRegKey
     Push ${buildNumWin10}
     Call getUninstallKey
     Pop $INSTDIR ; reuse INSTDIR for the return value
-    !insertmacro AssertEqual INSTDIR \
-        "Software\Microsoft\Windows\CurrentVersion\Uninstall\${BrandFullNameInternal} ${AppVersion} (${ARCH} ${AB_CD})"
+    !insertmacro AssertEqual INSTDIR "$ExpectedLegacyUninstallKey"
     ClearErrors
 
     ; ----
@@ -394,8 +411,7 @@ Function TestUninstallRegKey
     Push ${buildNumWin10}
     Call getUninstallKey
     Pop $INSTDIR ; reuse INSTDIR for the return value
-    !insertmacro AssertEqual INSTDIR \
-        "Software\Microsoft\Windows\CurrentVersion\Uninstall\${BrandFullNameInternal} ${AppVersion} (${ARCH} ${AB_CD})"
+    !insertmacro AssertEqual INSTDIR "$ExpectedLegacyUninstallKey"
     ClearErrors
 
     ; ----
@@ -404,8 +420,7 @@ Function TestUninstallRegKey
     Push ${buildNumWin10}
     Call getUninstallKey
     Pop $INSTDIR ; reuse INSTDIR for the return value
-    !insertmacro AssertEqual INSTDIR \
-        "Software\Microsoft\Windows\CurrentVersion\Uninstall\${BrandFullNameInternal} ${AppVersion} (${ARCH} ${AB_CD})"
+    !insertmacro AssertEqual INSTDIR "$ExpectedLegacyUninstallKey"
     ClearErrors
 
     ; ----
@@ -480,8 +495,7 @@ Function TestUninstallRegKey
     Push 10240 ; Simulate Windows 10
     Call getUninstallKey
     Pop $0
-    !insertmacro AssertEqual 0  \
-        "Software\Microsoft\Windows\CurrentVersion\Uninstall\${BrandFullNameInternal} ${AppVersion} (${ARCH} ${AB_CD})"
+    !insertmacro AssertEqual 0 "$ExpectedLegacyUninstallKey"
     ClearErrors
     Pop $0 ; restore $0
 
