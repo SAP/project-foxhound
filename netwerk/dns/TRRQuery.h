@@ -90,16 +90,16 @@ class TRRQuery : public AHostResolver {
   // called when this counter equals to 0.
   Atomic<uint32_t> mTRRRequestCounter{0};
 
-  uint8_t mTRRSuccess = 0;  // number of successful TRR responses
+  uint8_t mTRRSuccess MOZ_GUARDED_BY(mTrrLock) = 0;
   bool mCalledCompleteLookup = false;
 
   mozilla::TimeDuration mTrrDuration;
   mozilla::TimeStamp mTrrStart;
 
-  RefPtr<mozilla::net::AddrInfo> mAddrInfoA;
-  RefPtr<mozilla::net::AddrInfo> mAddrInfoAAAA;
-  nsresult mAResult = NS_OK;
-  nsresult mAAAAResult = NS_OK;
+  RefPtr<mozilla::net::AddrInfo> mAddrInfoA MOZ_GUARDED_BY(mTrrLock);
+  RefPtr<mozilla::net::AddrInfo> mAddrInfoAAAA MOZ_GUARDED_BY(mTrrLock);
+  nsresult mAResult MOZ_GUARDED_BY(mTrrLock) = NS_OK;
+  nsresult mAAAAResult MOZ_GUARDED_BY(mTrrLock) = NS_OK;
 };
 
 }  // namespace net

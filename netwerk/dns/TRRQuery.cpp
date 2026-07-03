@@ -238,23 +238,42 @@ AHostResolver::LookupStatus TRRQuery::CompleteLookup(
     return LOOKUP_OK;
   }
 
+  RefPtr<AddrInfo> addrInfoA;
+  RefPtr<AddrInfo> addrInfoAAAA;
+  TRRState trrAUsed;
+  TRRState trrAAAAUsed;
+  nsresult aResult;
+  nsresult aaaaResult;
+  uint8_t trrSuccess;
+  {
+    MutexAutoLock trrlock(mTrrLock);
+    addrInfoA = mAddrInfoA;
+    addrInfoAAAA = mAddrInfoAAAA;
+    trrAUsed = mTrrAUsed;
+    trrAAAAUsed = mTrrAAAAUsed;
+    aResult = mAResult;
+    aaaaResult = mAAAAResult;
+    trrSuccess = mTRRSuccess;
+  }
+
   if (mRecord->af == AF_UNSPEC) {
     // merge successful records
-    if (mTrrAUsed == OK) {
+    if (trrAUsed == OK) {
       LOG(("Have A response"));
-      newRRSet = mAddrInfoA;
-      status = mAResult;
-      if (mTrrAAAAUsed == OK) {
+      newRRSet = addrInfoA;
+      status = aResult;
+      if (trrAAAAUsed == OK) {
         LOG(("Merging A and AAAA responses"));
-        newRRSet = merge_rrset(newRRSet, mAddrInfoAAAA);
+        newRRSet = merge_rrset(newRRSet, addrInfoAAAA);
       }
     } else {
-      newRRSet = mAddrInfoAAAA;
-      status = mAAAAResult;
+      newRRSet = addrInfoAAAA;
+      status = aaaaResult;
     }
 
-    if (NS_FAILED(status) && (mAAAAResult == NS_ERROR_DEFINITIVE_UNKNOWN_HOST ||
-                              mAResult == NS_ERROR_DEFINITIVE_UNKNOWN_HOST)) {
+    if (NS_FAILED(status) &&
+        (aaaaResult == NS_ERROR_DEFINITIVE_UNKNOWN_HOST ||
+         aResult == NS_ERROR_DEFINITIVE_UNKNOWN_HOST)) {
       status = NS_ERROR_DEFINITIVE_UNKNOWN_HOST;
     }
   } else {
@@ -262,7 +281,7 @@ AHostResolver::LookupStatus TRRQuery::CompleteLookup(
     // then we should not fallback to Do53. Instead we also send a A request
     // and return NS_ERROR_DEFINITIVE_UNKNOWN_HOST if that succeeds.
     if (NS_FAILED(status) && status != NS_ERROR_DEFINITIVE_UNKNOWN_HOST &&
-        (mTrrAUsed == INIT || mTrrAAAAUsed == INIT)) {
+        (trrAUsed == INIT || trrAAAAUsed == INIT)) {
       if (newRRSet->TRRType() == TRRTYPE_A) {
         LOG(("A lookup failed. Checking if AAAA record exists"));
         nsTArray<RefPtr<TRR>> requestsToSend;
@@ -284,26 +303,27 @@ AHostResolver::LookupStatus TRRQuery::CompleteLookup(
       }
     }
     bool otherSucceeded =
-        mRecord->af == AF_INET6 ? mTrrAUsed == OK : mTrrAAAAUsed == OK;
+        mRecord->af == AF_INET6 ? trrAUsed == OK : trrAAAAUsed == OK;
     LOG(("TRRQuery::CompleteLookup other request succeeded"));
 
     if (mRecord->af == AF_INET) {
       // return only A record
-      newRRSet = mAddrInfoA;
-      status = mAResult;
+      newRRSet = addrInfoA;
+      status = aResult;
       if (NS_FAILED(status) &&
-          (otherSucceeded || mAAAAResult == NS_ERROR_DEFINITIVE_UNKNOWN_HOST)) {
+          (otherSucceeded ||
+           aaaaResult == NS_ERROR_DEFINITIVE_UNKNOWN_HOST)) {
         LOG(("status set to NS_ERROR_DEFINITIVE_UNKNOWN_HOST"));
         status = NS_ERROR_DEFINITIVE_UNKNOWN_HOST;
       }
 
     } else if (mRecord->af == AF_INET6) {
       // return only AAAA record
-      newRRSet = mAddrInfoAAAA;
-      status = mAAAAResult;
+      newRRSet = addrInfoAAAA;
+      status = aaaaResult;
 
       if (NS_FAILED(status) &&
-          (otherSucceeded || mAResult == NS_ERROR_DEFINITIVE_UNKNOWN_HOST)) {
+          (otherSucceeded || aResult == NS_ERROR_DEFINITIVE_UNKNOWN_HOST)) {
         LOG(("status set to NS_ERROR_DEFINITIVE_UNKNOWN_HOST"));
         status = NS_ERROR_DEFINITIVE_UNKNOWN_HOST;
       }
@@ -317,7 +337,7 @@ AHostResolver::LookupStatus TRRQuery::CompleteLookup(
     // we prevent fallback to the native resolver.
   }
 
-  if (mTRRSuccess && mHostResolver->GetNCS() &&
+  if (trrSuccess && mHostResolver->GetNCS() &&
       (mHostResolver->GetNCS()->GetNAT64() ==
        nsINetworkConnectivityService::OK) &&
       newRRSet) {
@@ -325,28 +345,31 @@ AHostResolver::LookupStatus TRRQuery::CompleteLookup(
   }
 
   if (resolverType == DNSResolverType::TRR) {
-    if (mTrrAUsed == OK) {
+    if (trrAUsed == OK) {
       glean::dns::lookup_disposition.Get(TRRService::ProviderKey(), "trrAOK"_ns)
           .Add();
-    } else if (mTrrAUsed == FAILED) {
+    } else if (trrAUsed == FAILED) {
       glean::dns::lookup_disposition
           .Get(TRRService::ProviderKey(), "trrAFail"_ns)
           .Add();
     }
 
-    if (mTrrAAAAUsed == OK) {
+    if (trrAAAAUsed == OK) {
       glean::dns::lookup_disposition
           .Get(TRRService::ProviderKey(), "trrAAAAOK"_ns)
           .Add();
-    } else if (mTrrAAAAUsed == FAILED) {
+    } else if (trrAAAAUsed == FAILED) {
       glean::dns::lookup_disposition
           .Get(TRRService::ProviderKey(), "trrAAAAFail"_ns)
           .Add();
     }
   }
 
-  mAddrInfoAAAA = nullptr;
-  mAddrInfoA = nullptr;
+  {
+    MutexAutoLock trrlock(mTrrLock);
+    mAddrInfoAAAA = nullptr;
+    mAddrInfoA = nullptr;
+  }
 
   MOZ_DIAGNOSTIC_ASSERT(!mCalledCompleteLookup,
                         "must not call CompleteLookup more than once");
