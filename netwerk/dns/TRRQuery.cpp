@@ -215,22 +215,21 @@ AHostResolver::LookupStatus TRRQuery::CompleteLookup(
     } else {
       MOZ_ASSERT(0);
     }
-  }
 
-  if (NS_SUCCEEDED(status)) {
-    mTRRSuccess++;
-    if (mTRRSuccess == 1) {
-      // Store the duration on first succesful TRR response.  We
-      // don't know that there will be a second response nor can we
-      // tell which of two has useful data.
-      mTrrDuration = TimeStamp::Now() - mTrrStart;
+    if (NS_SUCCEEDED(status)) {
+      mTRRSuccess++;
+      if (mTRRSuccess == 1) {
+        // Store the duration on first succesful TRR response.  We
+        // don't know that there will be a second response nor can we
+        // tell which of two has useful data.
+        mTrrDuration = TimeStamp::Now() - mTrrStart;
+      }
     }
   }
 
   bool pendingRequest = false;
   if (mTRRRequestCounter) {
-    mTRRRequestCounter--;
-    pendingRequest = (mTRRRequestCounter != 0);
+    pendingRequest = (--mTRRRequestCounter != 0);
   } else {
     MOZ_DIAGNOSTIC_CRASH("Request counter is messed up");
   }
