@@ -231,13 +231,13 @@
   /** page **/
   --page-main-content-width: 664px;
   /** panel **/
-  --panel-background-color: Field;
-  --panel-border-color: ThreeDShadow;
+  --panel-background-color: var(--background-color-box);
+  --panel-border-color: light-dark(var(--color-gray-10), var(--color-gray-60));
   --panel-border-radius: 16px;
   --panel-menuitem-border-radius: var(--border-radius-xxlarge);
   --panel-padding: var(--panel-padding-block);
   --panel-padding-block: 8px;
-  --panel-text-color: FieldText;
+  --panel-text-color: var(--text-color);
   /** size **/
   --size-item-xsmall: 12px;
   --size-item-small: 16px;
@@ -255,19 +255,19 @@
   --text-color-deemphasized: light-dark(rgba(24, 14, 48, 70%), rgba(242, 240, 248, 70%));
   --text-color-error: light-dark(var(--color-red-50), var(--color-red-20));
   /** toolbar **/
-  --toolbar-background-color: color-mix(in srgb, -moz-dialog 85%, var(--color-white));
+  --toolbar-background-color: var(--background-color-box);
   --toolbar-field-background-color: var(--toolbar-background-color);
-  --toolbar-field-background-color-focus: Field;
+  --toolbar-field-background-color-focus: var(--background-color-box);
   --toolbar-field-border-color: light-dark(var(--color-gray-20), var(--color-gray-60));
   --toolbar-field-border-color-focus: #FFF;
-  --toolbar-field-text-color: inherit;
-  --toolbar-field-text-color-focus: FieldText;
+  --toolbar-field-text-color: light-dark(var(--color-violet-desaturated-70), var(--color-violet-desaturated-10));
+  --toolbar-field-text-color-focus: var(--toolbar-field-text-color);
   --toolbar-padding-inline: 6px;
   /** toolbarbutton **/
   --toolbarbutton-background-color-hover: light-dark(rgba(117, 102, 159, 25%), rgba(182, 170, 217, 25%));
   --toolbarbutton-background-color-active: light-dark(rgba(117, 102, 159, 40%), rgba(182, 170, 217, 40%));
-  --toolbarbutton-icon-fill: currentColor;
-  --toolbarbutton-icon-fill-attention: AccentColor;
+  --toolbarbutton-icon-fill: light-dark(var(--color-violet-desaturated-50), var(--color-violet-desaturated-10));
+  --toolbarbutton-icon-fill-attention: var(--color-accent-primary);
   --toolbarbutton-opacity-disabled: 0.4;
   --toolbarbutton-outline-color: transparent;
   --toolbarbutton-outline-color-hover: transparent;
@@ -278,11 +278,11 @@
   /** toolbox **/
   --toolbox-background-color-gradient-leading: light-dark(var(--color-violet-10), var(--color-violet-desaturated-70));
   --toolbox-background-color-gradient-trailing: light-dark(var(--color-orange-10), var(--color-orange-70));
-  --toolbox-background-color-inactive: -moz-headerbarinactive;
+  --toolbox-background-color-inactive: transparent;
   /* This gradient is only used for Nova */
   --toolbox-background-gradient: linear-gradient(96deg, color-mix(var(--toolbox-background-color-gradient-leading) 50%, transparent) 39.84%, color-mix(var(--toolbox-background-color-gradient-trailing) 50%, transparent) 101.72%);
-  --toolbox-text-color: -moz-headerbartext;
-  --toolbox-text-color-inactive: -moz-headerbarinactivetext;
+  --toolbox-text-color: var(--text-color);
+  --toolbox-text-color-inactive: var(--text-color-deemphasized);
 }
 
 @media (forced-colors) {

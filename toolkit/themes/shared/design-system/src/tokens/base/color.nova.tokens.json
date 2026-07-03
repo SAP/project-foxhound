@@ -379,6 +379,7 @@
     "primary": {
       "@base": {
         "value": {
+          "nativeTheme": "AccentColor",
           "light": "{color.violet.50}",
           "dark": "{color.violet.30}",
           "forcedColors": "AccentColor"
@@ -407,6 +408,7 @@
     },
     "attention": {
       "value": {
+        "nativeTheme": "AccentColor",
         "light": "{color.green.40}",
         "dark": "{color.green.30}",
         "forcedColors": "AccentColor"

@@ -2,6 +2,7 @@
   "color": {
     "@base": {
       "value": {
+        "nativeTheme": "LinkText",
         "default": "{color.accent.primary.@base}",
         "forcedColors": "LinkText"
       }

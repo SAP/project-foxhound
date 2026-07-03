@@ -13,6 +13,8 @@
     /** background-color **/
     --background-color-box-info: color-mix(in srgb, currentColor 6%, transparent);
     --background-color-canvas: Canvas;
+    --background-color-dimmed: color-mix(in srgb, currentColor 17%, transparent);
+    --background-color-dimmed-further: color-mix(in srgb, currentColor 30%, transparent);
     --background-color-list-item-hover: color-mix(in srgb, currentColor 20%, transparent);
 
     /** border **/
@@ -44,10 +46,24 @@
     --font-size-xxlarge: unset;
     --font-size-xxxlarge: unset;
 
+    /** input **/
+    --input-text-background-color: Field;
+    --input-text-color: FieldText;
+
     /** link **/
     --link-color: LinkText;
     --link-color-hover: color-mix(in srgb, black 10%, var(--link-color));
     --link-color-active: color-mix(in srgb, black 20%, var(--link-color));
+
+    /** panel **/
+    --panel-background-color: Field;
+    --panel-border-color: ThreeDShadow;
+    --panel-text-color: FieldText;
+
+    /** sidebar **/
+    --sidebar-background-color: -moz-sidebar;
+    --sidebar-border-color: -moz-sidebarborder;
+    --sidebar-text-color: -moz-sidebartext;
 
     /** table **/
     --table-header-text-color: AccentColorText;
@@ -57,6 +73,24 @@
     /** text-color **/
     --text-color: currentColor;
     --text-color-accent-primary-selected: SelectedItemText;
+
+    /** toolbar **/
+    --toolbar-background-color: color-mix(in srgb, -moz-dialog 85%, var(--color-white));
+    --toolbar-field-background-color-focus: Field;
+    --toolbar-field-text-color: inherit;
+    --toolbar-field-text-color-focus: FieldText;
+    --toolbar-text-color: -moz-dialogtext;
+
+    /** toolbarbutton **/
+    --toolbarbutton-icon-fill: currentColor;
+    --toolbarbutton-icon-fill-attention: AccentColor;
+    --toolbarbutton-icon-fill-attention-text: AccentColorText;
+
+    /** toolbox **/
+    --toolbox-background-color: -moz-headerbar;
+    --toolbox-background-color-inactive: -moz-headerbarinactive;
+    --toolbox-text-color: -moz-headerbartext;
+    --toolbox-text-color-inactive: -moz-headerbarinactivetext;
   }
 }
 
@@ -66,6 +100,10 @@
   @media not ((forced-colors) or (-moz-native-theme)) {
     :root:not([lwtheme]),
     :host(.anonymous-content-host) {
+      /** background-color **/
+      --background-color-dimmed: light-dark(color-mix(in srgb, currentColor 12%, transparent), color-mix(in srgb, currentColor 17%, transparent));
+      --background-color-dimmed-further: light-dark(color-mix(in srgb, currentColor 20%, transparent), color-mix(in srgb, currentColor 14%, transparent));
+
       /** button **/
       /* TODO Bug 1821203 - Gray use needs to be consolidated */
       --button-background-color: light-dark(rgba(207, 207, 216, 0.33), rgba(0, 0, 0, 0.33));
@@ -84,6 +122,120 @@
 
       /** link **/
       --link-color: light-dark(var(--color-blue-60), var(--color-cyan-30));
+
+      /** panel **/
+      --panel-background-color: light-dark(var(--color-white), rgb(66, 65, 77));
+      --panel-border-color: light-dark(rgb(240, 240, 244), rgb(82, 82, 94));
+      --panel-text-color: light-dark(var(--color-black), rgb(251, 251, 254));
+
+      /** sidebar **/
+      --sidebar-background-color: light-dark(white, rgb(28, 27, 34));
+      --sidebar-border-color: var(--card-border-color);
+      --sidebar-text-color: light-dark(rgb(21, 20, 26), rgb(249, 249, 250));
+
+      /** toolbar **/
+      --toolbar-background-color: light-dark(#f9f9fb, rgb(43, 42, 51));
+      --toolbar-field-background-color-focus: light-dark(var(--color-white), rgb(66, 65, 77));
+      --toolbar-field-text-color: light-dark(var(--color-gray-100), var(--color-gray-0));
+      --toolbar-field-text-color-focus: light-dark(var(--color-black), var(--color-gray-0));
+      --toolbar-text-color: light-dark(var(--color-gray-100), var(--color-gray-0));
+
+      /** toolbarbutton **/
+      --toolbarbutton-icon-fill: light-dark(var(--color-gray-70), var(--color-gray-0));
+      --toolbarbutton-icon-fill-attention: light-dark(var(--color-blue-60), var(--color-cyan-30));
+      --toolbarbutton-icon-fill-attention-text: light-dark(var(--color-gray-20), var(--color-gray-90));
+
+      /** toolbox **/
+      --toolbox-background-color: light-dark(rgb(234, 234, 237), var(--color-gray-90));
+      --toolbox-background-color-inactive: var(--toolbox-background-color);
+      --toolbox-text-color: light-dark(var(--color-gray-100), var(--color-gray-0));
+      --toolbox-text-color-inactive: var(--toolbox-text-color);
+    }
+  }
+}
+
+@media -moz-pref("browser.nova.enabled") {
+  @layer tokens-foundation-nova {
+    :root,
+    :host(.anonymous-content-host) {
+      /** button **/
+      /* TODO Bug 1821203 - Gray use needs to be consolidated */
+      --button-background-color: color-mix(in srgb, currentColor 13%, transparent);
+      --button-background-color-hover: color-mix(in srgb, currentColor 17%, transparent);
+      --button-background-color-active: color-mix(in srgb, currentColor 30%, transparent);
+      --button-text-color: currentColor;
+      --button-text-color-primary: AccentColorText;
+
+      /** color **/
+      --color-accent-attention: AccentColor;
+      --color-accent-primary: AccentColor;
+
+      /** link **/
+      --link-color: LinkText;
+
+      /** panel **/
+      --panel-background-color: Field;
+      --panel-border-color: ThreeDShadow;
+      --panel-text-color: FieldText;
+
+      /** toolbar **/
+      --toolbar-background-color: color-mix(in srgb, -moz-dialog 85%, var(--color-white));
+      --toolbar-field-background-color-focus: Field;
+      --toolbar-field-text-color: inherit;
+      --toolbar-field-text-color-focus: FieldText;
+
+      /** toolbarbutton **/
+      --toolbarbutton-icon-fill: currentColor;
+      --toolbarbutton-icon-fill-attention: AccentColor;
+
+      /** toolbox **/
+      --toolbox-background-color-inactive: -moz-headerbarinactive;
+      --toolbox-text-color: -moz-headerbartext;
+      --toolbox-text-color-inactive: -moz-headerbarinactivetext;
+    }
+  }
+
+  /* Bug 1879900: Can't nest media queries inside of :host, :root selector
+   until Bug 1879349 lands */
+  @layer tokens-browser-theme-nova {
+    @media not ((forced-colors) or (-moz-native-theme)) {
+      :root:not([lwtheme]),
+      :host(.anonymous-content-host) {
+        /** button **/
+        /* TODO Bug 1821203 - Gray use needs to be consolidated */
+        --button-background-color: transparent;
+        --button-background-color-hover: light-dark(var(--color-violet-desaturated-20), var(--color-violet-desaturated-50));
+        --button-background-color-active: light-dark(var(--color-violet-desaturated-30), var(--color-violet-desaturated-40));
+        --button-text-color: light-dark(var(--color-violet-90), var(--color-gray-0));
+        --button-text-color-primary: light-dark(var(--color-white), var(--color-gray-70));
+
+        /** color **/
+        --color-accent-attention: light-dark(var(--color-green-40), var(--color-green-30));
+        --color-accent-primary: light-dark(var(--color-violet-50), var(--color-violet-30));
+
+        /** link **/
+        --link-color: var(--color-accent-primary);
+
+        /** panel **/
+        --panel-background-color: var(--background-color-box);
+        --panel-border-color: light-dark(var(--color-gray-10), var(--color-gray-60));
+        --panel-text-color: var(--text-color);
+
+        /** toolbar **/
+        --toolbar-background-color: var(--background-color-box);
+        --toolbar-field-background-color-focus: var(--background-color-box);
+        --toolbar-field-text-color: light-dark(var(--color-violet-desaturated-70), var(--color-violet-desaturated-10));
+        --toolbar-field-text-color-focus: var(--toolbar-field-text-color);
+
+        /** toolbarbutton **/
+        --toolbarbutton-icon-fill: light-dark(var(--color-violet-desaturated-50), var(--color-violet-desaturated-10));
+        --toolbarbutton-icon-fill-attention: var(--color-accent-primary);
+
+        /** toolbox **/
+        --toolbox-background-color-inactive: transparent;
+        --toolbox-text-color: var(--text-color);
+        --toolbox-text-color-inactive: var(--text-color-deemphasized);
+      }
     }
   }
 }

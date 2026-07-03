@@ -6,8 +6,8 @@
         "brand": {
           "default": "{color.accent.primary.@base}"
         },
+        "nativeTheme": "LinkText",
         "platform": {
-          "nativeTheme": "LinkText",
           "light": "{color.blue.60}",
           "dark": "{color.cyan.30}"
         }

@@ -285,7 +285,11 @@ const STATE_ORDER = [
 ];
 
 const getLayerString = () => {
-  const themeLayers = ["tokens-foundation", "tokens-browser-theme"];
+  const themeLayers = [
+    "tokens-foundation",
+    "tokens-browser-theme",
+    "tokens-foundation-brand",
+  ];
   const a11yLayers = ["tokens-prefers-contrast", "tokens-forced-colors"];
 
   const themeLayersWithOverrides = [
@@ -684,7 +688,8 @@ function formatTokens({
     componentName,
   });
 
-  let layer = `tokens-${mediaQuery ?? "foundation"}${overrideIdentifier ? `-${overrideIdentifier}` : ""}`;
+  let layer = `tokens-${mediaQuery ?? `foundation${surface == "brand" ? "-brand" : ""}`}${overrideIdentifier ? `-${overrideIdentifier}` : ""}`;
+
   // Weird spacing below is unfortunately necessary for formatting the built CSS.
   if (mediaQuery === "browser-theme") {
     return `
@@ -757,31 +762,11 @@ function getOriginalTokenValue(token, prop, surface) {
   if (!layer || typeof layer !== "object") {
     return undefined;
   }
-
-  // Tokens that define nativeTheme use it as the foundation value.
-  // Otherwise use default when defined.
-  // Otherwise, use light/dark pair if handling shared tokens.
-  if (prop === "default") {
-    return (
-      layer.nativeTheme ??
-      layer.default ??
-      (!surface ? getLightDarkPair(layer) : undefined)
-    );
+  let originalValue = layer[prop];
+  if (typeof originalValue === "object") {
+    return originalValue.default;
   }
-
-  // Only tokens with a nativeTheme override need a browser-theme value.
-  // nativeTheme override can exist on surface layer or root level.
-  if (prop === "browserTheme") {
-    const browserThemeValue = layer.default ?? getLightDarkPair(layer);
-    if (!browserThemeValue) {
-      return undefined;
-    }
-    return layer.nativeTheme || value.nativeTheme
-      ? browserThemeValue
-      : undefined;
-  }
-
-  return layer[prop];
+  return originalValue;
 }
 
 /**
@@ -816,6 +801,96 @@ function transformToken({ token, originalVal, dictionary, surface }) {
   return { ...token, value, comment: surfaceComment ?? token.comment };
 }
 
+const fileToComponentTypeMap = new Map();
+function isComponentToken({ filePath }) {
+  if (!fileToComponentTypeMap.has(filePath)) {
+    let componentInfo = COMPONENT_TOKEN_PATHS.find(info =>
+      filePath.startsWith(info.dir)
+    );
+    if (componentInfo) {
+      fileToComponentTypeMap.set(filePath, {
+        component: true,
+        global: !!componentInfo.isGlobal,
+      });
+    } else {
+      fileToComponentTypeMap.set(filePath, {
+        component: false,
+        global: true,
+      });
+    }
+  }
+  let info = fileToComponentTypeMap.get(filePath);
+  return info.component && !info.global;
+}
+
+/**
+ * Creates a browserTheme transform that works for a given surface. Maps the
+ * nativeTheme value to the correct browserTheme when necessary.
+ *
+ * @param {string} surface
+ *  The desktop surface we're generating CSS for, either "brand", "platform",
+ *  or "shared".
+ * @returns {string} Name of the transform that was registered.
+ */
+const createBrowserThemeTransform = surface => {
+  let name = `browserThemeTransform/${surface}`;
+
+  // Matcher function for determining if a token's value needs to undergo
+  // a light-dark transform.
+  let matcher = token => {
+    let match =
+      token.original.value.nativeTheme &&
+      // Components only have shared tokens, otherwise only run on platform.
+      (isComponentToken(token) ? surface == "shared" : surface == "platform");
+    return match;
+  };
+
+  let getValueObject = root => {
+    if (root.light) {
+      return { light: root.light, dark: root.dark };
+    }
+    return { default: root.default };
+  };
+
+  // Function that uses the token's original value to create a new "default"
+  // light-dark value and updates the original value object.
+  let transformer = token => {
+    let value = token.original.value;
+    if (surface == "platform" && value.platform) {
+      let browserTheme = getValueObject(token.original.value.platform);
+      token.original.value.platform = {
+        default: value.nativeTheme,
+        browserTheme,
+      };
+      return token.value;
+    }
+    let browserThemeRoot = value.brand ? value.brand : value;
+    let browserTheme = getValueObject(browserThemeRoot);
+    if (isComponentToken(token)) {
+      delete token.original.value.light;
+      delete token.original.value.dark;
+      token.original.value.default = value.nativeTheme;
+      token.original.value.browserTheme = browserTheme;
+    } else {
+      token.original.value.platform = {
+        default: value.nativeTheme,
+        browserTheme,
+      };
+    }
+    return token.value;
+  };
+
+  StyleDictionary.registerTransform({
+    type: "value",
+    transitive: true,
+    name,
+    matcher,
+    transformer,
+  });
+
+  return name;
+};
+
 /**
  * Creates a light-dark transform that works for a given surface. Registers
  * the transform with style-dictionary and returns the transform's name.
@@ -828,36 +903,34 @@ function transformToken({ token, originalVal, dictionary, surface }) {
 const createLightDarkTransform = surface => {
   let name = `lightDarkTransform/${surface}`;
 
-  const getLayerValue = token =>
-    surface === "shared" ? token.original.value : token.original.value[surface];
+  function getTokenRoot(token) {
+    let isComponent = isComponentToken(token);
+    let root =
+      isComponent || surface == "shared"
+        ? token.original.value
+        : token.original.value[surface];
+    let isBrowserTheme =
+      (surface == "platform" || (isComponent && surface == "shared")) &&
+      root?.browserTheme;
+    if (isBrowserTheme) {
+      root = root.browserTheme;
+    }
+    return root;
+  }
 
   // Matcher function for determining if a token's value needs to undergo
   // a light-dark transform.
   let matcher = token => {
-    const layerValue = getLayerValue(token);
-    if (
-      !layerValue ||
-      typeof layerValue !== "object" ||
-      layerValue.nativeTheme ||
-      layerValue.default ||
-      !layerValue.light ||
-      !layerValue.dark
-    ) {
-      return false;
-    }
-    return !(surface !== "shared" && token.original.value.nativeTheme);
+    let root = getTokenRoot(token);
+    return root && root.light && root.dark;
   };
 
   // Function that uses the token's original value to create a new "default"
   // light-dark value and updates the original value object.
   let transformer = token => {
-    const layerValue = getLayerValue(token);
-    const lightDarkVal = getLightDarkPair(layerValue);
-    if (surface != "shared") {
-      token.original.value[surface].default = lightDarkVal;
-      return token.value;
-    }
-    token.original.value.default = lightDarkVal;
+    let root = getTokenRoot(token);
+    let lightDarkVal = `light-dark(${root.light}, ${root.dark})`;
+    root.default = lightDarkVal;
     return lightDarkVal;
   };
 
@@ -1142,6 +1215,7 @@ module.exports = {
       },
       transforms: [
         ...StyleDictionary.transformGroup.css,
+        ...["shared", "platform", "brand"].map(createBrowserThemeTransform),
         ...["shared", "platform", "brand"].map(createLightDarkTransform),
       ],
       files: [
@@ -1178,6 +1252,7 @@ module.exports = {
       },
       transforms: [
         ...StyleDictionary.transformGroup.css,
+        ...["shared", "platform", "brand"].map(createBrowserThemeTransform),
         ...["shared", "platform", "brand"].map(createLightDarkTransform),
       ],
       files: [

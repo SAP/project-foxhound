@@ -529,8 +529,8 @@
             "light": "{color.blue.60}",
             "dark": "{color.cyan.30}"
           },
+          "nativeTheme": "AccentColor",
           "platform": {
-            "nativeTheme": "AccentColor",
             "light": "{color.blue.60}",
             "dark": "{color.cyan.30}"
           }
@@ -579,8 +579,8 @@
           "light": "#2ac3a2",
           "dark": "#54ffbd"
         },
+        "nativeTheme": "AccentColor",
         "platform": {
-          "nativeTheme": "AccentColor",
           "light": "#2ac3a2",
           "dark": "#54ffbd"
         },

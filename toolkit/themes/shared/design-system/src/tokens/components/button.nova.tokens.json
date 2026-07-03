@@ -4,12 +4,14 @@
       "@base": {
         "comment": "TODO Bug 1821203 - Gray use needs to be consolidated",
         "value": {
+          "nativeTheme": "color-mix(in srgb, currentColor 13%, transparent)",
           "default": "transparent",
           "forcedColors": "ButtonFace"
         }
       },
       "hover": {
         "value": {
+          "nativeTheme": "color-mix(in srgb, currentColor 17%, transparent)",
           "light": "{color.violet-desaturated.20}",
           "dark": "{color.violet-desaturated.50}",
           "forcedColors": "SelectedItemText"
@@ -17,6 +19,7 @@
       },
       "active": {
         "value": {
+          "nativeTheme": "color-mix(in srgb, currentColor 30%, transparent)",
           "light": "{color.violet-desaturated.30}",
           "dark": "{color.violet-desaturated.40}",
           "forcedColors": "SelectedItemText"
@@ -179,6 +182,7 @@
     "color": {
       "@base": {
         "value": {
+          "nativeTheme": "currentColor",
           "light": "{color.violet.90}",
           "dark": "{color.gray.0}",
           "forcedColors": "ButtonText"
@@ -265,6 +269,7 @@
       "primary": {
         "@base": {
           "value": {
+            "nativeTheme": "AccentColorText",
             "light": "{color.white.@base}",
             "dark": "{color.gray.70}",
             "forcedColors": "ButtonFace"

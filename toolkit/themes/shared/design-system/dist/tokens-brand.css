@@ -7,7 +7,7 @@
 
 @import url("chrome://global/skin/design-system/tokens-shared.css");
 
-@layer tokens-foundation {
+@layer tokens-foundation-brand {
   :root,
   :host(.anonymous-content-host) {
     /** background-color **/

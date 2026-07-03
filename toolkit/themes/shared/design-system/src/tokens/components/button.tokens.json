@@ -8,8 +8,8 @@
           "brand": {
             "default": "color-mix(in srgb, currentColor 7%, transparent)"
           },
+          "nativeTheme": "color-mix(in srgb, currentColor 13%, transparent)",
           "platform": {
-            "nativeTheme": "color-mix(in srgb, currentColor 13%, transparent)",
             "light": "rgba(207, 207, 216, 0.33)",
             "dark": "rgba(0, 0, 0, 0.33)"
           }
@@ -21,8 +21,8 @@
           "brand": {
             "default": "color-mix(in srgb, currentColor 14%, transparent)"
           },
+          "nativeTheme": "color-mix(in srgb, currentColor 17%, transparent)",
           "platform": {
-            "nativeTheme": "color-mix(in srgb, currentColor 17%, transparent)",
             "light": "rgba(207, 207, 216, 0.66)",
             "dark": "rgba(207, 207, 216, 0.2)"
           }
@@ -34,8 +34,8 @@
           "brand": {
             "default": "color-mix(in srgb, currentColor 21%, transparent)"
           },
+          "nativeTheme": "color-mix(in srgb, currentColor 30%, transparent)",
           "platform": {
-            "nativeTheme": "color-mix(in srgb, currentColor 30%, transparent)",
             "light": "rgb(207, 207, 216)",
             "dark": "rgba(207, 207, 216, 0.4)"
           }
@@ -413,8 +413,8 @@
             "light": "{color.gray.100}",
             "dark": "{color.gray.0}"
           },
+          "nativeTheme": "currentColor",
           "platform": {
-            "nativeTheme": "currentColor",
             "light": "rgb(21, 20, 26)",
             "dark": "rgb(251, 251, 254)"
           }
@@ -536,8 +536,8 @@
               "light": "{color.white.@base}",
               "dark": "{color.gray.100}"
             },
+            "nativeTheme": "AccentColorText",
             "platform": {
-              "nativeTheme": "AccentColorText",
               "light": "rgb(251, 251, 254)",
               "dark": "rgb(43, 42, 51)"
             }
