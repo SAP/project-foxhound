@@ -63,6 +63,7 @@
     <ID>ForbiddenSuppress:HomeActivity.kt$HomeActivity$@SuppressWarnings("TooManyFunctions", "LargeClass", "LongMethod")</ID>
     <ID>ForbiddenSuppress:HomeDeepLinkIntentProcessor.kt$HomeDeepLinkIntentProcessor$@Suppress("CyclomaticComplexMethod")</ID>
     <ID>ForbiddenSuppress:HomeFragment.kt$HomeFragment$@Suppress("LongMethod")</ID>
+    <ID>ForbiddenSuppress:HomeFragment.kt$HomeFragment$@Suppress("LongMethod", "CognitiveComplexMethod")</ID>
     <ID>ForbiddenSuppress:Homepage.kt$@Suppress("LongMethod", "CyclomaticComplexMethod", "CognitiveComplexMethod")</ID>
     <ID>ForbiddenSuppress:InstalledAddonDetailsFragment.kt$InstalledAddonDetailsFragment$@SuppressWarnings("LongMethod")</ID>
     <ID>ForbiddenSuppress:ListItem.kt$@Suppress("CognitiveComplexMethod")</ID>

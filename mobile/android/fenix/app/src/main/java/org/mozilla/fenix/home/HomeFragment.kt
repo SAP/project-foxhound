@@ -553,7 +553,7 @@ class HomeFragment : Fragment() {
         )
     }
 
-    @Suppress("LongMethod")
+    @Suppress("LongMethod", "CognitiveComplexMethod")
     private fun initComposeHomepage(
         view: ComposeView,
         activity: HomeActivity,
@@ -591,39 +591,56 @@ class HomeFragment : Fragment() {
                     settings.shouldShowMicrosurveyPrompt = microsurveyVisible
                 }
 
-                Scaffold(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .systemBarsPadding()
-                        .displayCutoutPadding()
-                        .imePadding(),
-                    topBar = {
-                        if (isToolbarAtTop) {
-                            toolbarView.Content()
-                        }
-                    },
-                    bottomBar = {
-                        if (isToolbarAtTop) {
-                            homeNavigationBar?.Content()
-                        } else {
-                            toolbarView.Content()
-                        }
-                    },
-                    containerColor = Color.Transparent,
-                ) { innerPadding ->
-                    HomeContent(
-                        appState = appState.value,
-                        privacyNoticeBannerState = privacyNoticeBannerState.value,
-                        settings = settings,
-                        innerPadding = innerPadding,
-                        microsurveyVisible = microsurveyVisible,
-                        microsurveyMessage = appState.value.messaging.messageToShow[
-                            FenixMessageSurfaceId.MICROSURVEY,
-                        ],
-                        onMicrosurveyDismiss = {
-                            activity.isMicrosurveyPromptDismissed.value = true
+                Box(modifier = Modifier.fillMaxSize().systemBarsPadding().displayCutoutPadding()) {
+                    if (!appState.value.mode.isPrivate) {
+                        WallpaperBackground(
+                            wallpaper = appState.value.wallpaperState.currentWallpaper,
+                            loadBitmap = components.useCases.wallpaperUseCases.loadBitmap::invoke,
+                            onLoadFailed = {
+                                requireComponents.settings.currentWallpaperTextColor = 0L
+                                showComposeSnackbar(
+                                    SnackbarState(
+                                        message = resources.getString(
+                                            R.string.wallpaper_select_error_snackbar_message,
+                                        ),
+                                    ),
+                                )
+                            },
+                        )
+                    }
+
+                    Scaffold(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .imePadding(),
+                        topBar = {
+                            if (isToolbarAtTop) {
+                                toolbarView.Content()
+                            }
                         },
-                    )
+                        bottomBar = {
+                            if (isToolbarAtTop) {
+                                homeNavigationBar?.Content()
+                            } else {
+                                toolbarView.Content()
+                            }
+                        },
+                        containerColor = Color.Transparent,
+                    ) { innerPadding ->
+                        HomeContent(
+                            appState = appState.value,
+                            privacyNoticeBannerState = privacyNoticeBannerState.value,
+                            settings = settings,
+                            innerPadding = innerPadding,
+                            microsurveyVisible = microsurveyVisible,
+                            microsurveyMessage = appState.value.messaging.messageToShow[
+                                FenixMessageSurfaceId.MICROSURVEY,
+                            ],
+                            onMicrosurveyDismiss = {
+                                activity.isMicrosurveyPromptDismissed.value = true
+                            },
+                        )
+                    }
                 }
 
                 LaunchedEffect(Unit) {
@@ -648,23 +665,6 @@ class HomeFragment : Fragment() {
                 .fillMaxSize()
                 .padding(innerPadding),
         ) {
-            if (!appState.mode.isPrivate) {
-                WallpaperBackground(
-                    wallpaper = appState.wallpaperState.currentWallpaper,
-                    loadBitmap = components.useCases.wallpaperUseCases.loadBitmap::invoke,
-                    onLoadFailed = {
-                        requireComponents.settings.currentWallpaperTextColor = 0L
-                        showComposeSnackbar(
-                            SnackbarState(
-                                message = resources.getString(
-                                    R.string.wallpaper_select_error_snackbar_message,
-                                ),
-                            ),
-                        )
-                    },
-                )
-            }
-
             Homepage(
                 state = HomepageState.build(
                     appState = appState,
