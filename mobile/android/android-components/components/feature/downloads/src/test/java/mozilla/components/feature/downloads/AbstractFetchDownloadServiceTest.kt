@@ -72,6 +72,7 @@ import mozilla.components.support.utils.ext.stopForegroundCompat
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Before
@@ -593,6 +594,140 @@ class AbstractFetchDownloadServiceTest {
             assertEquals(Action.CANCEL, cancelFact.action)
             assertEquals(NOTIFICATION, cancelFact.item)
         }
+    }
+
+    @Test
+    fun `WHEN ACTION_CANCEL is received for a COMPLETED download THEN file is not deleted`() = runTest(testDispatcher) {
+        val service = createService(browserStore, backgroundScope, testScheduler)
+        val download = DownloadState("https://example.com/file.txt", "file.txt")
+        val response = Response(
+            "https://example.com/file.txt",
+            200,
+            MutableHeaders(),
+            Response.Body(mock()),
+        )
+        doReturn(response).`when`(client).fetch(Request("https://example.com/file.txt"))
+
+        val downloadIntent = Intent("ACTION_DOWNLOAD")
+        downloadIntent.putExtra(EXTRA_DOWNLOAD_ID, download.id)
+
+        browserStore.dispatch(DownloadAction.AddDownloadAction(download))
+        service.onStartCommand(downloadIntent, 0, 0)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val providedDownload = argumentCaptor<DownloadJobState>()
+        verify(service).performDownload(providedDownload.capture(), anyBoolean())
+
+        val downloadJobState = service.downloadJobs[providedDownload.value.state.id]!!
+        service.setDownloadJobStatus(downloadJobState, COMPLETED)
+
+        val cancelIntent = Intent(ACTION_CANCEL).apply {
+            setPackage(testContext.applicationContext.packageName)
+            putExtra(INTENT_EXTRA_DOWNLOAD_ID, downloadJobState.state.id)
+        }
+
+        service.broadcastReceiver.onReceive(testContext, cancelIntent)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertFalse(downloadJobState.downloadDeleted)
+        assertEquals(COMPLETED, service.getDownloadJobStatus(downloadJobState))
+        assertNull(service.downloadJobs[downloadJobState.state.id])
+    }
+
+    @Test
+    fun `WHEN ACTION_CANCEL is received for a CANCELLED download THEN file is not deleted`() = runTest(testDispatcher) {
+        val service = createService(browserStore, backgroundScope, testScheduler)
+        val download = DownloadState("https://example.com/file.txt", "file.txt")
+        val response = Response(
+            "https://example.com/file.txt",
+            200,
+            MutableHeaders(),
+            Response.Body(mock()),
+        )
+        doReturn(response).`when`(client).fetch(Request("https://example.com/file.txt"))
+
+        val downloadIntent = Intent("ACTION_DOWNLOAD")
+        downloadIntent.putExtra(EXTRA_DOWNLOAD_ID, download.id)
+
+        browserStore.dispatch(DownloadAction.AddDownloadAction(download))
+        service.onStartCommand(downloadIntent, 0, 0)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val providedDownload = argumentCaptor<DownloadJobState>()
+        verify(service).performDownload(providedDownload.capture(), anyBoolean())
+
+        val downloadJobState = service.downloadJobs[providedDownload.value.state.id]!!
+        service.setDownloadJobStatus(downloadJobState, CANCELLED)
+
+        val cancelIntent = Intent(ACTION_CANCEL).apply {
+            setPackage(testContext.applicationContext.packageName)
+            putExtra(INTENT_EXTRA_DOWNLOAD_ID, downloadJobState.state.id)
+        }
+
+        service.broadcastReceiver.onReceive(testContext, cancelIntent)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertFalse(downloadJobState.downloadDeleted)
+        assertEquals(CANCELLED, service.getDownloadJobStatus(downloadJobState))
+        assertNull(service.downloadJobs[downloadJobState.state.id])
+    }
+
+    @Test
+    fun `WHEN ACTION_CANCEL is received for a DOWNLOADING download THEN the state of the download is CANCELED`() = runTest(testDispatcher) {
+        val service = createService(browserStore, backgroundScope, testScheduler)
+        val download = DownloadState("https://example.com/file.txt", "file.txt", status = DOWNLOADING)
+        val downloadJobState = DownloadJobState(state = download, status = DOWNLOADING)
+
+        service.downloadJobs[download.id] = downloadJobState
+        assertEquals(DOWNLOADING, service.getDownloadJobStatus(downloadJobState))
+
+        val cancelIntent = Intent(ACTION_CANCEL).apply {
+            setPackage(testContext.applicationContext.packageName)
+            putExtra(INTENT_EXTRA_DOWNLOAD_ID, downloadJobState.state.id)
+        }
+
+        service.broadcastReceiver.onReceive(testContext, cancelIntent)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(CANCELLED, service.getDownloadJobStatus(downloadJobState))
+        assertNull(service.downloadJobs[downloadJobState.state.id])
+    }
+
+    @Test
+    fun `WHEN ACTION_CANCEL is received for a FAILED download THEN file is deleted`() = runTest(testDispatcher) {
+        val service = createService(browserStore, backgroundScope, testScheduler)
+        val download = DownloadState("https://example.com/file.txt", "file.txt")
+        val response = Response(
+            "https://example.com/file.txt",
+            200,
+            MutableHeaders(),
+            Response.Body(mock()),
+        )
+        doReturn(response).`when`(client).fetch(Request("https://example.com/file.txt"))
+
+        val downloadIntent = Intent("ACTION_DOWNLOAD")
+        downloadIntent.putExtra(EXTRA_DOWNLOAD_ID, download.id)
+
+        browserStore.dispatch(DownloadAction.AddDownloadAction(download))
+        service.onStartCommand(downloadIntent, 0, 0)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val providedDownload = argumentCaptor<DownloadJobState>()
+        verify(service).performDownload(providedDownload.capture(), anyBoolean())
+
+        val downloadJobState = service.downloadJobs[providedDownload.value.state.id]!!
+        service.setDownloadJobStatus(downloadJobState, FAILED)
+
+        val cancelIntent = Intent(ACTION_CANCEL).apply {
+            setPackage(testContext.applicationContext.packageName)
+            putExtra(INTENT_EXTRA_DOWNLOAD_ID, downloadJobState.state.id)
+        }
+
+        service.broadcastReceiver.onReceive(testContext, cancelIntent)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertTrue(downloadJobState.downloadDeleted)
+        assertNull(service.downloadJobs[downloadJobState.state.id])
     }
 
     @Test

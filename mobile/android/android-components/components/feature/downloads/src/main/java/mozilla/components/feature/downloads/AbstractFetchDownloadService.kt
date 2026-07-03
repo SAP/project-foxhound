@@ -204,7 +204,9 @@ abstract class AbstractFetchDownloadService : Service() {
                     }
 
                     ACTION_CANCEL -> {
-                        cancelDownloadJob(currentDownloadJobState)
+                        if (currentDownloadJobState.status !in listOf(COMPLETED, CANCELLED)) {
+                            cancelDownloadJob(currentDownloadJobState)
+                        }
                         removeDownloadJob(currentDownloadJobState)
                         emitNotificationCancelFact()
                         logger.debug("ACTION_CANCEL for ${currentDownloadJobState.state.id}")
