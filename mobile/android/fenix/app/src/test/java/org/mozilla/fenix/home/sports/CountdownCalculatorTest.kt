@@ -176,4 +176,19 @@ class CountdownCalculatorTest {
     fun `GIVEN today is after kickoff WHEN checking isOneWeekToWorldCup THEN returns false`() {
         assertFalse(isOneWeekToWorldCup(today = { LocalDate.of(2026, 7, 1) }))
     }
+
+    @Test
+    fun `GIVEN now is before the end instant WHEN checking hasWorldCupEnded THEN returns false`() {
+        assertFalse(hasWorldCupEnded(now = { Instant.parse("2026-07-20T07:59:59Z") }))
+    }
+
+    @Test
+    fun `GIVEN now is exactly the end instant WHEN checking hasWorldCupEnded THEN returns true`() {
+        assertTrue(hasWorldCupEnded(now = { Instant.parse("2026-07-20T08:00:00Z") }))
+    }
+
+    @Test
+    fun `GIVEN now is after the end instant WHEN checking hasWorldCupEnded THEN returns true`() {
+        assertTrue(hasWorldCupEnded(now = { Instant.parse("2026-07-21T00:00:00Z") }))
+    }
 }

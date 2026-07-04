@@ -24,6 +24,7 @@ import org.mozilla.fenix.ext.navigateWithBreadcrumb
 import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.ext.showToolbar
 import org.mozilla.fenix.home.pocket.ContentRecommendationsFeatureHelper
+import org.mozilla.fenix.home.sports.hasWorldCupEnded
 import org.mozilla.fenix.utils.Settings
 import org.mozilla.fenix.utils.view.addToRadioGroup
 
@@ -194,7 +195,10 @@ class HomeSettingsFragment : PreferenceFragmentCompat(), SystemInsetsPaddedFragm
 
     private fun setupSportsWidgetPreferences() {
         requirePreference<SwitchPreferenceCompat>(R.string.pref_key_show_homepage_sports_widget).apply {
-            isVisible = fenixSettings.enableHomepageSportsWidget
+            // Once the World Cup is over the widget is retired: hide the toggle. The widget itself
+            // is hidden by the hasWorldCupEnded() gate on SportsWidgetState.isShown, so we leave the
+            // user's saved preference untouched rather than mutating it off a transient clock reading.
+            isVisible = fenixSettings.enableHomepageSportsWidget && !hasWorldCupEnded()
             isChecked = fenixSettings.showHomepageSportsWidget
             onPreferenceChangeListener = Preference.OnPreferenceChangeListener { preference, newValue ->
                 val newBooleanValue = newValue as? Boolean ?: return@OnPreferenceChangeListener false

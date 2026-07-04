@@ -6,6 +6,7 @@ package org.mozilla.fenix.components.appstate.sports
 
 import org.mozilla.fenix.home.sports.MatchCard
 import org.mozilla.fenix.home.sports.SportCardErrorState
+import org.mozilla.fenix.home.sports.hasWorldCupEnded
 import org.mozilla.fenix.home.sports.hasWorldCupStarted
 import org.mozilla.fenix.home.sports.isOneWeekToWorldCup
 
@@ -46,10 +47,11 @@ data class SportsWidgetState(
 ) {
     /**
      * Whether the sports widget should be rendered on the homepage: true only when the feature
-     * is enabled and the user has not dismissed the widget.
+     * is enabled, the user has not dismissed the widget, and the World Cup hasn't ended yet.
+     * After [hasWorldCupEnded] the widget is retired for everyone regardless of the feature flag.
      */
     val isShown: Boolean
-        get() = isFeatureEnabled && isVisible
+        get() = isFeatureEnabled && isVisible && !hasWorldCupEnded()
 
     val hasWorldCupStarted: Boolean
         get() = hasWorldCupStartedOverride ?: hasWorldCupStarted()

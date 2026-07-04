@@ -79,6 +79,7 @@ import org.mozilla.fenix.home.sessioncontrol.CollectionInteractor
 import org.mozilla.fenix.home.sessioncontrol.MessageCardInteractor
 import org.mozilla.fenix.home.setup.ui.SetupChecklist
 import org.mozilla.fenix.home.sports.CountrySelectorSource
+import org.mozilla.fenix.home.sports.hasWorldCupEnded
 import org.mozilla.fenix.home.sports.ui.SportsCountrySelectorBottomSheet
 import org.mozilla.fenix.home.sports.ui.SportsWidget
 import org.mozilla.fenix.home.store.HeaderState
@@ -157,7 +158,8 @@ internal fun Homepage(
                 is HeaderState.Experimental.Normal -> {
                     val settings = components.settings
                     val shouldDisplaySportsLogo =
-                        settings.enableHomepageSportsWidget && settings.showHomepageSportsWidget
+                        settings.enableHomepageSportsWidget && settings.showHomepageSportsWidget &&
+                            !hasWorldCupEnded()
 
                     ExperimentalHomepageHeader(
                         wordmarkTextColor = headerState.wordmarkTextColor,
@@ -185,7 +187,8 @@ internal fun Homepage(
                 is HeaderState.Normal -> {
                     val settings = components.settings
                     val shouldDisplaySportsLogo =
-                        settings.enableHomepageSportsWidget && settings.showHomepageSportsWidget
+                        settings.enableHomepageSportsWidget && settings.showHomepageSportsWidget &&
+                            !hasWorldCupEnded()
 
                     HomepageHeader(
                         wordmarkTextColor = headerState.wordmarkTextColor,

@@ -41,6 +41,7 @@ import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.ext.showToolbar
 import org.mozilla.fenix.ext.showToolbarWithIconButton
+import org.mozilla.fenix.home.sports.hasWorldCupEnded
 import org.mozilla.fenix.theme.FirefoxTheme
 import org.mozilla.fenix.utils.SecretSettingsPrefDefaults
 import mozilla.components.ui.icons.R as iconsR
@@ -463,6 +464,8 @@ class SecretSettingsFragment : PreferenceFragmentCompat(), SystemInsetsPaddedFra
         }
 
         requirePreference<SwitchPreferenceCompat>(R.string.pref_key_enable_homepage_sports_widget).apply {
+            // Hide the toggle once the World Cup is over — the widget is retired.
+            isVisible = !hasWorldCupEnded()
             isChecked = context.settings().enableHomepageSportsWidget
             onPreferenceChangeListener = SharedPreferenceUpdater()
         }

@@ -8,6 +8,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import java.text.NumberFormat
+import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.ZonedDateTime
@@ -25,6 +26,22 @@ private const val ONE_WEEK_DAYS = 7L
  * by the Merino WCS `date` query parameter.
  */
 val WORLD_CUP_KICKOFF: LocalDate = LocalDate.of(2026, 6, 11)
+
+/**
+ * Instant at which the World Cup widget is retired for everyone — the day after the final. After
+ * this point the widget is hidden regardless of channel, experiment, or feature flag. A fixed UTC
+ * instant (not a local date) so the cut-off happens at the same moment worldwide. See bug 2051431.
+ */
+val WORLD_CUP_END: Instant = Instant.parse("2026-07-20T08:00:00Z")
+
+/**
+ * True once the World Cup is over and the widget should no longer be shown — i.e. [now] is at or
+ * past [WORLD_CUP_END].
+ *
+ * @param now Source of the current instant. Defaults to the device clock.
+ */
+fun hasWorldCupEnded(now: () -> Instant = Instant::now): Boolean =
+    !now().isBefore(WORLD_CUP_END)
 
 /**
  * ISO-8601 timestamp for the World Cup kickoff at midnight in the device's timezone.
