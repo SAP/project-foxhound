@@ -91,6 +91,7 @@ import org.mozilla.fenix.home.sports.SportsWidgetMiddleware
 import org.mozilla.fenix.home.sports.WorldCupMatchesRepository
 import org.mozilla.fenix.home.sports.client.AppServicesWorldCupMatchesClient
 import org.mozilla.fenix.home.sports.client.mockWorldCupBaseHost
+import org.mozilla.fenix.home.sports.hasWorldCupEnded
 import org.mozilla.fenix.ipprotection.IPProtectionManager
 import org.mozilla.fenix.ipprotection.store.DefaultIPProtectionPromptRepository
 import org.mozilla.fenix.messaging.state.MessagingMiddleware
@@ -453,7 +454,7 @@ class Components(private val context: Context) {
         DefaultFenixSettingsIndexer(
             context = context,
             excludedPreferenceKeys = {
-                if (!settings.enableHomepageSportsWidget) {
+                if (!settings.enableHomepageSportsWidget || hasWorldCupEnded()) {
                     setOf(context.getString(R.string.pref_key_show_homepage_sports_widget))
                 } else {
                     emptySet()
