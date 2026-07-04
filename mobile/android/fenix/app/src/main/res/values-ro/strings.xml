@@ -1974,6 +1974,8 @@
   <string name="webcompat_reporter_label_whats_broken_3">Ce nu funcționează?</string>
   <!-- Content description for the icon button that clears the selected broken site reason in the WebCompat Reporter. -->
   <string name="webcompat_reporter_clear_reason_content_description">Șterge motivul selectat</string>
+  <!-- The error message of the description when the user selects "Something else" as the reason, but left the description empty or too short. -->
+  <string name="webcompat_reporter_description_error">Te rugăm să introduci cel puțin 10 caractere</string>
   <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_label_whats_broken_2">Ce nu merge?</string>
   <!-- The placeholder text for the dropdown where a user selects a high-level reason why the site is broken. -->
@@ -2456,6 +2458,8 @@
   <string name="preferences_take_survey">Completează sondajul</string>
   <!-- Preference for not taking the short survey. -->
   <string name="preferences_not_take_survey">Nu, mulțumesc</string>
+  <!-- Error message shown in a Toast when the system fails to trigger the device uninstallation prompt. -->
+  <string name="uninstall_survey_error_failed">Nu s-a putut deschide cererea de dezinstalare a sistemului. Te rugăm să folosești direct acțiunea de dezinstalare a sistemului.</string>
   <!--
     Snackbar
 
@@ -4724,6 +4728,8 @@
   <string name="firefox_labs_feature_enable_dialog_message">Pentru a activa această funcție, repornește %s.</string>
   <!-- The description text that is displayed in the confirmation dialog on the Firefox Labs screen for toggling "off" experimental features. %s is the name of the app (for example "Firefox Nightly") -->
   <string name="firefox_labs_feature_disable_dialog_message">Pentru a dezactiva această funcție, repornește %s.</string>
+  <!-- Helper text shown beneath a Firefox Labs item when it is blocked from being turned on. -->
+  <string name="firefox_labs_feature_conflict">Funcția nu este disponibilă pentru încercare.</string>
   <!-- Text displayed on the Firefox Labs screen when there are no Labs experimental features present. -->
   <string name="firefox_labs_no_labs_available_description">Momentan nu sunt funcționalități experimentale de încercat</string>
 </resources>

@@ -149,6 +149,8 @@
   <string name="home_screen_shortcut_open_new_private_tab_2">Νέα ιδιωτική καρτέλα</string>
   <!-- Shortcut action to open Passwords screen -->
   <string name="home_screen_shortcut_passwords">Κωδικοί πρόσβασης</string>
+  <!-- Shortcut action to open uninstall survey -->
+  <string name="home_screen_shortcut_uninstall_survey">Απεγκατάσταση, γιατί;</string>
   <!--
     Recent Tabs
 
@@ -1965,6 +1967,8 @@
   <string name="webcompat_reporter_label_whats_broken_3">Τι δεν λειτουργεί;</string>
   <!-- Content description for the icon button that clears the selected broken site reason in the WebCompat Reporter. -->
   <string name="webcompat_reporter_clear_reason_content_description">Απαλοιφή επιλεγμένου λόγου</string>
+  <!-- The error message of the description when the user selects "Something else" as the reason, but left the description empty or too short. -->
+  <string name="webcompat_reporter_description_error">Εισαγάγετε τουλάχιστον 10 χαρακτήρες</string>
   <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_label_whats_broken_2">Τι δεν λειτουργεί;</string>
   <!-- The placeholder text for the dropdown where a user selects a high-level reason why the site is broken. -->
@@ -2447,6 +2451,8 @@
   <string name="preferences_take_survey">Έναρξη έρευνας</string>
   <!-- Preference for not taking the short survey. -->
   <string name="preferences_not_take_survey">Όχι, ευχαριστώ</string>
+  <!-- Error message shown in a Toast when the system fails to trigger the device uninstallation prompt. -->
+  <string name="uninstall_survey_error_failed">Αποτυχία ανοίγματος της προτροπής απεγκατάστασης, χρησιμοποιήστε απευθείας την ενέργεια απεγκατάστασης του συστήματος.</string>
   <!--
     Snackbar
 
@@ -4066,6 +4072,8 @@
   <string name="microsurvey_sync_title" tools:ignore="BrandUsage,UnusedResources">Πόσο ικανοποιημένοι είστε με την εμπειρία συγχρονισμού στο Firefox;</string>
   <!-- Text shown in the survey title for 'describe your experience so far' microsurvey. Note: The word "Firefox" should NOT be translated. -->
   <string name="microsurvey_describe_your_experience_title" tools:ignore="BrandUsage,UnusedResources">Βοηθήστε μας να βελτιώσουμε το Firefox. Τι περιγράφει καλύτερα την εμπειρία σας μέχρι στιγμής;</string>
+  <!-- Uninstall Survey -->
+  <string name="uninstall_survey_button_label">Υποβολή σχολίων και απεγκατάσταση</string>
   <!--
     Accessibility
 
@@ -4703,6 +4711,8 @@
   <string name="firefox_labs_feature_enable_dialog_message">Για να ενεργοποιήσετε αυτήν τη λειτουργία, επανεκκινήστε το %s.</string>
   <!-- The description text that is displayed in the confirmation dialog on the Firefox Labs screen for toggling "off" experimental features. %s is the name of the app (for example "Firefox Nightly") -->
   <string name="firefox_labs_feature_disable_dialog_message">Για να απενεργοποιήσετε αυτήν τη λειτουργία, επανεκκινήστε το %s.</string>
+  <!-- Helper text shown beneath a Firefox Labs item when it is blocked from being turned on. -->
+  <string name="firefox_labs_feature_conflict">Η λειτουργία δεν είναι διαθέσιμη για δοκιμή.</string>
   <!-- Text displayed on the Firefox Labs screen when there are no Labs experimental features present. -->
   <string name="firefox_labs_no_labs_available_description">Δεν υπάρχουν πειραματικές λειτουργίες αυτήν τη στιγμή</string>
 </resources>

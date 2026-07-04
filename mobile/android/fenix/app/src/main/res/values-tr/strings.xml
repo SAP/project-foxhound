@@ -149,6 +149,8 @@
   <string name="home_screen_shortcut_open_new_private_tab_2">Yeni gizli sekme</string>
   <!-- Shortcut action to open Passwords screen -->
   <string name="home_screen_shortcut_passwords">Parolalar</string>
+  <!-- Shortcut action to open uninstall survey -->
+  <string name="home_screen_shortcut_uninstall_survey">Kaldır (ama neden?)</string>
   <!--
     Recent Tabs
 
@@ -649,6 +651,13 @@
     %1$s is replaced by an active link, using nova_onboarding_marketing_body_link_text_1 as text (“Learn More”).
   -->
   <string name="nova_onboarding_marketing_body_7" tools:ignore="BrandUsage">Firefox kullandığınızı Mozilla’nın geldiğiniz platforma bildirmesine izin vererek daha fazla kişiye ulaşmamıza yardımcı olabilirsiniz. %1$s</string>
+  <!-- Marketing onboarding additional body text. 'Firefox' is intentionally hardcoded. -->
+  <string name="nova_onboarding_marketing_body_line_two" tools:ignore="BrandUsage">Firefox bağımsız olmaktan gurur duyuyor ve açık web’i teknoloji tekellerine karşı savunuyor.</string>
+  <!--
+    Marketing onboarding additional body text. 'Firefox' is intentionally hardcoded.
+    “Allowing” refers to the main button “Allow and Continue”; the ask for the user is to allow communicating back to the platform.
+  -->
+  <string name="nova_onboarding_marketing_body_line_three" tools:ignore="BrandUsage">Firefox’a destek olmak isterseniz lütfen izin verin.</string>
   <!-- Marketing onboarding body link text. -->
   <string name="nova_onboarding_marketing_body_link_text">Bu verileri nasıl kullanıyoruz?</string>
   <!-- Marketing onboarding body link text. -->
@@ -1958,6 +1967,8 @@
   <string name="webcompat_reporter_label_whats_broken_3">Ne çalışmıyor?</string>
   <!-- Content description for the icon button that clears the selected broken site reason in the WebCompat Reporter. -->
   <string name="webcompat_reporter_clear_reason_content_description">Seçilen nedeni temizle</string>
+  <!-- The error message of the description when the user selects "Something else" as the reason, but left the description empty or too short. -->
+  <string name="webcompat_reporter_description_error">Lütfen en az 10 karakter yazın</string>
   <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_label_whats_broken_2">Bozuk olan nedir?</string>
   <!-- The placeholder text for the dropdown where a user selects a high-level reason why the site is broken. -->
@@ -2440,6 +2451,8 @@
   <string name="preferences_take_survey">Ankete katıl</string>
   <!-- Preference for not taking the short survey. -->
   <string name="preferences_not_take_survey">Hayır</string>
+  <!-- Error message shown in a Toast when the system fails to trigger the device uninstallation prompt. -->
+  <string name="uninstall_survey_error_failed">Sistem kaldırma istemi açılamadı. Lütfen doğrudan sistem kaldırma eylemini kullanın.</string>
   <!--
     Snackbar
 
@@ -4059,6 +4072,8 @@
   <string name="microsurvey_sync_title" tools:ignore="BrandUsage,UnusedResources">Firefox’taki eşitleme özelliğinden ne kadar memnunsunuz?</string>
   <!-- Text shown in the survey title for 'describe your experience so far' microsurvey. Note: The word "Firefox" should NOT be translated. -->
   <string name="microsurvey_describe_your_experience_title" tools:ignore="BrandUsage,UnusedResources">Firefox’u geliştirmemize yardım edin. Şimdiye kadarki deneyiminizi hangisi en iyi şekilde tanımlar?</string>
+  <!-- Uninstall Survey -->
+  <string name="uninstall_survey_button_label">Geri bildirim gönder ve kaldır</string>
   <!--
     Accessibility
 
@@ -4642,6 +4657,8 @@
   <string name="preferences_debug_settings_google_lens_integration">Google Lens entegrasyonunu etkinleştir</string>
   <!-- Lens image search button content description -->
   <string name="lens_search_content_description">Resimle ara</string>
+  <!-- Content description for the gallery picker button in the Lens camera screen -->
+  <string name="content_description_gallery">Galeriden seçip Google Lens’e gönder</string>
   <!-- Content description for the shutter button in the Lens camera screen -->
   <string name="content_description_take_photo">Fotoğraf çekip Google Lens’e gönder</string>
   <!-- Image context menu entry that sends the long-pressed image to Google Lens -->
@@ -4650,6 +4667,8 @@
   <string name="lens_camera_permission_denied">İzin reddedildi</string>
   <!-- Title for the Google Lens AI feature toggle -->
   <string name="ai_controls_google_lens_title">Google Lens</string>
+  <!-- Description for the Google Lens AI feature toggle -->
+  <string name="ai_controls_google_lens_description">Resimleri ve fotoğrafları görsel arama için Google’a gönderir.</string>
   <!-- Content description for the Google Lens half of the camera mode toggle -->
   <string name="lens_camera_mode_lens">Google Lens</string>
   <!-- Content description for the QR scanner half of the camera mode toggle -->
@@ -4692,6 +4711,8 @@
   <string name="firefox_labs_feature_enable_dialog_message">Bu özelliği açmak için %s uygulamasını yeniden başlatın.</string>
   <!-- The description text that is displayed in the confirmation dialog on the Firefox Labs screen for toggling "off" experimental features. %s is the name of the app (for example "Firefox Nightly") -->
   <string name="firefox_labs_feature_disable_dialog_message">Bu özelliği kapatmak için %s uygulamasını yeniden başlatın.</string>
+  <!-- Helper text shown beneath a Firefox Labs item when it is blocked from being turned on. -->
+  <string name="firefox_labs_feature_conflict">Bu özellik denenemiyor.</string>
   <!-- Text displayed on the Firefox Labs screen when there are no Labs experimental features present. -->
   <string name="firefox_labs_no_labs_available_description">Şu anda denenebilecek deneysel özellik yok</string>
 </resources>

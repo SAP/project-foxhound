@@ -1968,7 +1968,7 @@
   <!-- Content description for the icon button that clears the selected broken site reason in the WebCompat Reporter. -->
   <string name="webcompat_reporter_clear_reason_content_description">Eliminar el motivo seleccionado</string>
   <!-- The error message of the description when the user selects "Something else" as the reason, but left the description empty or too short. -->
-  <string name="webcompat_reporter_description_error">Ingrese al menos 10 caracteres</string>
+  <string name="webcompat_reporter_description_error">Ingresá al menos 10 caracteres</string>
   <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_label_whats_broken_2">¿Qué está roto?</string>
   <!-- The placeholder text for the dropdown where a user selects a high-level reason why the site is broken. -->
