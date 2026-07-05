@@ -215,9 +215,14 @@ void FeaturePolicyUtils::ReportViolation(Document* aDocument,
     return;
   }
 
-  nsAutoCString url;
-  ReportingUtils::StripURL(uri, url);
-
+  // Strip the URL of any possible username/password and make it ready to be
+  // presented in the UI.
+  nsCOMPtr<nsIURI> exposableURI = net::nsIOService::CreateExposableURI(uri);
+  nsAutoCString spec;
+  nsresult rv = exposableURI->GetSpec(spec);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return;
+  }
   JSContext* cx = nsContentUtils::GetCurrentJSContext();
   if (NS_WARN_IF(!cx)) {
     return;
@@ -225,11 +230,10 @@ void FeaturePolicyUtils::ReportViolation(Document* aDocument,
 
   Nullable<int32_t> lineNumber;
   Nullable<int32_t> columnNumber;
-  nsAutoCString sourceFile;
-  if (auto loc = JSCallingLocation::Get()) {
+  auto loc = JSCallingLocation::Get();
+  if (loc) {
     lineNumber.SetValue(static_cast<int32_t>(loc.mLine));
     columnNumber.SetValue(static_cast<int32_t>(loc.mColumn));
-    ReportingUtils::StripLocationFileName(loc, sourceFile);
   }
 
   nsPIDOMWindowInner* window = aDocument->GetInnerWindow();
@@ -239,11 +243,11 @@ void FeaturePolicyUtils::ReportViolation(Document* aDocument,
 
   RefPtr<FeaturePolicyViolationReportBody> body =
       new FeaturePolicyViolationReportBody(window->AsGlobal(), aFeatureName,
-                                           sourceFile, lineNumber, columnNumber,
-                                           u"enforce"_ns);
+                                           loc.FileName(), lineNumber,
+                                           columnNumber, u"enforce"_ns);
 
   ReportingUtils::Report(window->AsGlobal(), nsGkAtoms::featurePolicyViolation,
-                         u"default"_ns, NS_ConvertUTF8toUTF16(url), body);
+                         u"default"_ns, NS_ConvertUTF8toUTF16(spec), body);
 }
 
 }  // namespace dom
