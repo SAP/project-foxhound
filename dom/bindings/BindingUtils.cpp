@@ -3985,14 +3985,8 @@ void ReportDeprecation(nsIGlobalObject* aGlobal, Document* aDoc, nsIURI* aURI,
                        const Nullable<uint32_t>& aColumnNumber) {
   MOZ_ASSERT(aURI);
 
-  // If the URI has the data scheme, report that instead of the spec,
-  // as the spec may be arbitrarily long and we would like to avoid
-  // copying it.
-  nsAutoCString specOrScheme;
-  nsresult rv = nsContentUtils::AnonymizeURI(aURI, specOrScheme);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return;
-  }
+  nsAutoCString url;
+  ReportingUtils::StripURL(aURI, url);
 
   nsAutoString type;
   type.AssignASCII(kDeprecatedOperations[static_cast<size_t>(aOperation)]);
@@ -4013,7 +4007,7 @@ void ReportDeprecation(nsIGlobalObject* aGlobal, Document* aDoc, nsIURI* aURI,
                                 aFileName, aLineNumber, aColumnNumber);
 
   ReportingUtils::Report(aGlobal, nsGkAtoms::deprecation, u"default"_ns,
-                         NS_ConvertUTF8toUTF16(specOrScheme), body);
+                         NS_ConvertUTF8toUTF16(url), body);
 }
 
 // This runnable is used to write a deprecation message from a worker to the
@@ -4092,16 +4086,18 @@ void MaybeReportDeprecation(const GlobalObject& aGlobal,
   auto location = JSCallingLocation::Get(aGlobal.Context());
   Nullable<uint32_t> lineNumber;
   Nullable<uint32_t> columnNumber;
+  nsAutoCString sourceFile;
   if (location) {
     lineNumber.SetValue(location.mLine);
     columnNumber.SetValue(location.mColumn);
+    ReportingUtils::StripLocationFileName(location, sourceFile);
   }
 
   nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(aGlobal.GetAsSupports());
   MOZ_ASSERT(global);
 
-  ReportDeprecation(global, doc, uri, aOperation, location.FileName(),
-                    lineNumber, columnNumber);
+  ReportDeprecation(global, doc, uri, aOperation, sourceFile, lineNumber,
+                    columnNumber);
 }
 
 }  // anonymous namespace

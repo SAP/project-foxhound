@@ -43,6 +43,22 @@ void ReportingUtils::StripURL(nsIURI* aURI, nsACString& outStrippedURL) {
 }
 
 // static
+void ReportingUtils::StripLocationFileName(
+    const mozilla::JSCallingLocation& aLocation,
+    nsACString& outStrippedFileName) {
+  nsCOMPtr<nsIURI> uri;
+  if (aLocation.mResource.is<nsCOMPtr<nsIURI>>()) {
+    uri = aLocation.mResource.as<nsCOMPtr<nsIURI>>();
+  } else {
+    (void)NS_NewURI(getter_AddRefs(uri), aLocation.FileName());
+  }
+
+  if (uri) {
+    ReportingUtils::StripURL(uri, outStrippedFileName);
+  }
+}
+
+// static
 void ReportingUtils::Report(nsIGlobalObject* aGlobal, nsAtom* aType,
                             const nsAString& aGroupName, const nsAString& aURL,
                             ReportBody* aBody) {
