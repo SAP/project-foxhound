@@ -1367,6 +1367,11 @@ IPCResult BrowserParent::RecvNewWindowGlobal(
   if (!browsingContext->Group()->IsKnownForChildID(OtherChildID())) {
     return IPC_FAIL(this, "Invalid BrowsingContextGroup for process");
   }
+  WindowGlobalParent* parentWgp = browsingContext->GetParentWindowContext();
+  if (browsingContext != mBrowsingContext &&
+      (!parentWgp || parentWgp->Manager() != this)) {
+    return IPC_FAIL(this, "BrowsingContext is not in BrowserParent subtree");
+  }
   if (!aInit.principal()) {
     return IPC_FAIL(this, "Cannot create without valid principal");
   }
@@ -1375,7 +1380,6 @@ IPCResult BrowserParent::RecvNewWindowGlobal(
   }
 
   nsCOMPtr<nsIURI> docURI = aInit.documentURI();
-  WindowGlobalParent* parentWgp = browsingContext->GetParentWindowContext();
 
   // Ensure we never load a document with a content principal in
   // the wrong type of webIsolated process
