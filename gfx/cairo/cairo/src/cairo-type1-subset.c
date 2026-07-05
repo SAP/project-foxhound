@@ -946,7 +946,7 @@ cairo_type1_font_subset_parse_charstring (cairo_type1_font_subset_t *font,
                     break;
 
 		case TYPE1_CHARSTRING_COMMAND_POP:
-		    if (font->ps_stack.sp < 1) {
+		    if (font->ps_stack.sp < 1 || font->build_stack.sp >= TYPE1_STACKSIZE) {
 			status = CAIRO_INT_STATUS_UNSUPPORTED;
 			goto cleanup;
 		    }
