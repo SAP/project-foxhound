@@ -373,7 +373,7 @@
   <!-- Text shown when attempting to install an add-on and an error occurred because the extension was incompatible. %1$s is the add-on name, %2$s is the app name and %3$s is the app version. -->
   <string name="mozac_feature_addons_failed_to_install_incompatible_error">%1$s koe net ynstallearre wurde, omdat it net kompatibel is mei %2$s %3$s.</string>
   <!-- Text shown when attempting to install a (hard) blocked add-on. %1$s is the add-on name. %2$s is the app name. -->
-  <string name="mozac_feature_addons_blocklisted_2">%1$s skeint it belied fan Mozilla en kin net yn %2$s ynstallearre wurde.</string>
+  <string name="mozac_feature_addons_blocklisted_2" tools:ignore="BrandUsage">%1$s skeint it belied fan Mozilla en kin net yn %2$s ynstallearre wurde.</string>
   <!-- Text shown when attempting to install an add-on that can only be install via Enterprise Policies, which is not supported on Android.  %1$s is the add-on name. -->
   <string name="mozac_feature_addons_admin_install_only">%1$s kin net ynstallearre wurde, omdat dizze allinnich ynstallearre wurde kin troch in organisaasje mei in bedriuwsbelied, dat net stipe wurdt op dit platfoarm.</string>
   <!-- Text shown when attempting to install an add-on that is soft-blocked. %1$s is the add-on name. %2$s is the app name. -->
@@ -421,7 +421,7 @@
   <!-- "See details" link displayed below an add-on status message. -->
   <string name="mozac_feature_addons_status_see_details">Details besjen</string>
   <!-- Status message below an add-on in the add-ons manager when this add-on has been blocklisted. %1$s is the add-on name. -->
-  <string name="mozac_feature_addons_status_blocklisted_1">Dizze útwreiding is blokkearre fanwegen skeining fan it belied fan Mozilla en is útskeakele.</string>
+  <string name="mozac_feature_addons_status_blocklisted_1" tools:ignore="BrandUsage">Dizze útwreiding is blokkearre fanwegen skeining fan it belied fan Mozilla en is útskeakele.</string>
   <!-- Status message below an add-on in the add-ons manager when this add-on has been soft-blocked. -->
   <string name="mozac_feature_addons_status_softblocked_2">Dizze útwreiding is beheind en is útskeakele. Jo kinne it ynskeakelje, mar dit kin riskant wêze.</string>
   <!-- Status message below an add-on in the add-ons manager when this add-on has been soft-blocked but the user re-enabled it. -->

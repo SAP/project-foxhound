@@ -38,7 +38,7 @@
   <!-- Text for the menu button to remove a recently saved bookmark from the user's home screen -->
   <string name="home_bookmarks_menu_item_remove">తొలగించు</string>
   <!-- About content. %1$s is the name of the app (for example "Firefox"). -->
-  <string name="about_content">%1$s‌ని తయారుచేసినది మొజిల్లా.</string>
+  <string name="about_content" tools:ignore="BrandUsage">%1$s‌ని తయారుచేసినది మొజిల్లా.</string>
   <!-- Private Browsing -->
   <string name="private_browsing_common_myths">అంతరంగిక విహారణ గురించి సామాన్య అపోహలు</string>
   <!-- Text for the positive action button -->
@@ -262,7 +262,7 @@
   <!-- Preference for settings related to visual options -->
   <string name="preferences_customize">అభిమతీకరణ</string>
   <!-- Preference shown instead of account display name while account profile information isn't available yet. -->
-  <string name="preferences_account_default_name_2">మొజిల్లా ఖాతా</string>
+  <string name="preferences_account_default_name_2" tools:ignore="BrandUsage">మొజిల్లా ఖాతా</string>
   <!-- Preference text for account title when there was an error syncing FxA -->
   <string name="preferences_account_sync_error">సింక్ చేయడాన్ని కొనసాగించడానికి అనుసంధానించండి</string>
   <!-- Preference for language -->
@@ -377,7 +377,7 @@
   <!-- Title for studies preferences -->
   <string name="preference_experiments_2">అధ్యయనాలు</string>
   <!-- Summary for studies preferences -->
-  <string name="preference_experiments_summary_2">అధ్యయనాలను స్థాపించడానికి, నడపడానికి Mozillaకు అనుమతినిస్తుంది</string>
+  <string name="preference_experiments_summary_2" tools:ignore="BrandUsage">అధ్యయనాలను స్థాపించడానికి, నడపడానికి Mozillaకు అనుమతినిస్తుంది</string>
   <!-- Preference for reconnecting to FxA sync -->
   <string name="preferences_sync_sign_in_to_reconnect">మళ్ళీ అనుసంధానించడానికి ప్రవేశించండి</string>
   <!-- Preference for removing FxA account -->
@@ -596,7 +596,7 @@
   -->
   <string name="tab_crash_title_2">క్షమించండి. %1$s ఆ పేజీని లోడు చేయలేకుంది.</string>
   <!-- Send crash report checkbox text on the tab crash page -->
-  <string name="tab_crash_send_report">క్రాష్ నివేదికను మొజిల్లాకు పంపు</string>
+  <string name="tab_crash_send_report" tools:ignore="BrandUsage">క్రాష్ నివేదికను మొజిల్లాకు పంపు</string>
   <!-- Close tab button text on the tab crash page -->
   <string name="tab_crash_close">ట్యాబును మూసివేయి</string>
   <!-- Restore tab button text on the tab crash page -->

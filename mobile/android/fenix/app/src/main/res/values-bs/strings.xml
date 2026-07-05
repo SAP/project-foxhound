@@ -66,7 +66,7 @@
   <!-- Text for the menu button to remove a recently saved bookmark from the user's home screen -->
   <string name="home_bookmarks_menu_item_remove">Ukloni</string>
   <!-- About content. %1$s is the name of the app (for example "Firefox"). -->
-  <string name="about_content">%1$s je razvila Mozilla.</string>
+  <string name="about_content" tools:ignore="BrandUsage">%1$s je razvila Mozilla.</string>
   <!-- Private Browsing -->
   <string name="private_browsing_common_myths">Uobičajeni mitovi o privatnom surfanju</string>
   <!-- Text to be announced by the accessibility service to inform the user that the private browsing mode is currently active. -->
@@ -396,7 +396,7 @@
   <!-- Button text to reopen firefox after the crash is processed %s is the name of the app (for example "Firefox") -->
   <string name="startup_crash_restart">Ponovo otvori %s</string>
   <!-- Title for the usage data option in the privacy preferences dialog shown during onboarding. Note: The word "Mozilla" should NOT be translated. -->
-  <string name="onboarding_preferences_dialog_usage_data_title">Pošaljite tehničke podatke i podatke o interakciji Mozilli</string>
+  <string name="onboarding_preferences_dialog_usage_data_title" tools:ignore="BrandUsage">Pošaljite tehničke podatke i podatke o interakciji Mozilli</string>
   <string name="onboarding_preferences_dialog_usage_data_description_2" tools:ignore="BrandUsage">Podaci o vašem uređaju, konfiguraciji hardvera i načinu na koji koristite Firefox pomažu u poboljšanju funkcija, performansi i stabilnosti za sve.</string>
   <string name="onboarding_preferences_dialog_usage_data_learn_more_2">Saznajte više</string>
   <!-- Positive button label for the privacy preferences dialog shown during onboarding. -->
@@ -616,7 +616,7 @@
   <!-- Preference for accessibility -->
   <string name="preferences_accessibility">Pristupačnost</string>
   <!-- Preference to override the Mozilla account server -->
-  <string name="preferences_override_account_server">Prilagođeni server Mozilla računa</string>
+  <string name="preferences_override_account_server" tools:ignore="BrandUsage">Prilagođeni server Mozilla računa</string>
   <!-- Preference to override the Sync token server -->
   <string name="preferences_override_sync_tokenserver">Zaseban Sync server</string>
   <!-- Preference category for account information -->
@@ -640,7 +640,7 @@
   <!-- Preference description shown in the banner prompting the user to sign in for sync features -->
   <string name="preferences_sign_in_description">Sinhronizujte svoje tabove, zabilješke, lozinke i više.</string>
   <!-- Preference shown instead of account display name while account profile information isn't available yet. -->
-  <string name="preferences_account_default_name_2">Mozilla račun</string>
+  <string name="preferences_account_default_name_2" tools:ignore="BrandUsage">Mozilla račun</string>
   <!-- Preference text for account title when there was an error syncing FxA -->
   <string name="preferences_account_sync_error">Ponovo se povežite za nastavak sinhronizacije</string>
   <!-- Preference for language -->
@@ -982,7 +982,7 @@
   <string name="preferences_usage_data_description_1" tools:ignore="BrandUsage">Podaci o vašem uređaju, konfiguraciji hardvera i korištenju nam pomažu da poboljšamo Firefox karakteristike, performanse i stabilnost.</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preferences_daily_usage_ping_title">Dnevna upotreba pinga</string>
-  <string name="preferences_daily_usage_ping_description">Ovo pomaže Mozili da procijeni aktivne korisnike.</string>
+  <string name="preferences_daily_usage_ping_description" tools:ignore="BrandUsage">Ovo pomaže Mozili da procijeni aktivne korisnike.</string>
   <string name="preferences_daily_usage_ping_learn_more">Saznajte više o svakodnevnoj upotrebi pinga</string>
   <!-- Title for the crash reporting option in the privacy preferences dialog shown during onboarding. -->
   <string name="crash_reporting_snack_bar_message">Izvještaj poslan</string>
@@ -1008,7 +1008,7 @@
   <!-- Title for studies preferences -->
   <string name="preference_experiments_2">Studije</string>
   <!-- Summary for studies preferences -->
-  <string name="preference_experiments_summary_2">Dozvoljava Mozilla-i da instalira i pokrene studije</string>
+  <string name="preference_experiments_summary_2" tools:ignore="BrandUsage">Dozvoljava Mozilla-i da instalira i pokrene studije</string>
   <!--
     Turn On Sync Preferences
 
@@ -1509,7 +1509,7 @@
   -->
   <string name="tab_crash_title_2">Oprostite. %1$s ne može učitati stranicu.</string>
   <!-- Send crash report checkbox text on the tab crash page -->
-  <string name="tab_crash_send_report">Pošalji izvještaj o rušenju Mozilla-i</string>
+  <string name="tab_crash_send_report" tools:ignore="BrandUsage">Pošalji izvještaj o rušenju Mozilla-i</string>
   <!-- Close tab button text on the tab crash page -->
   <string name="tab_crash_close">Zatvori tab</string>
   <!-- Restore tab button text on the tab crash page -->

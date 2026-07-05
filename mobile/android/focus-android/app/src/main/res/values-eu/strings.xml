@@ -156,7 +156,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s(e)k agintea ematen dizu.</p>\n<p>Erabili nabigatzaile pribatu gisa:\n<ul>\n<li>Bilatu eta nabigatu aplikaziotik zuzenean</li>\n<li>Blokeatu jarraipen-elementuak (edo eguneratu ezarpenak jarraipen-elementuak baimentzeko)</li>\n<li>Ezabatu cookieak eta bilaketa- eta nabigatze-historia</li>\n</ul> </p>\n<p>Mozillak egina da %1$s. Internet osasuntsu eta irekia sustatzea da gure misioa.<br/>\n<a href=\"%2$s\">Argibide gehiago</a></p>]]></string>
+  <string name="about_content" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s(e)k agintea ematen dizu.</p>\n<p>Erabili nabigatzaile pribatu gisa:\n<ul>\n<li>Bilatu eta nabigatu aplikaziotik zuzenean</li>\n<li>Blokeatu jarraipen-elementuak (edo eguneratu ezarpenak jarraipen-elementuak baimentzeko)</li>\n<li>Ezabatu cookieak eta bilaketa- eta nabigatze-historia</li>\n</ul> </p>\n<p>Mozillak egina da %1$s. Internet osasuntsu eta irekia sustatzea da gure misioa.<br/>\n<a href=\"%2$s\">Argibide gehiago</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">Argibide gehiago</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -251,7 +251,7 @@
   <!-- "Hint" text for the "custom autocomplete URL" input field. Shown when the field is empty. -->
   <string name="preference_autocomplete_add_hint">Itsatsi edo idatzi URLa</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
-  <string name="preference_autocomplete_add_example2">Adibidea: mozilla.org</string>
+  <string name="preference_autocomplete_add_example2" tools:ignore="BrandUsage">Adibidea: mozilla.org</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">Adibidea: adibidea.eus</string>
   <!-- Confirmation "snackbar" shown after a new custom autocomplete URL has been added. -->
@@ -323,15 +323,15 @@
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
   <string name="preference_default_browser2">Egin %1$s nabigatzaile lehenetsia</string>
-  <string name="preference_category_mozilla">Mozilla</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">Mozilla</string>
   <string name="preference_mozilla_telemetry2">Bidali erabilera-datuak</string>
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">Argibide gehiago</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-  <string name="preference_mozilla_telemetry_summary2">%1$s denontzat eskaini eta hobetzeko beharrezkoa dena soilik biltzen ahalegintzen da Mozilla.</string>
+  <string name="preference_mozilla_telemetry_summary2" tools:ignore="BrandUsage">%1$s denontzat eskaini eta hobetzeko beharrezkoa dena soilik biltzen ahalegintzen da Mozilla.</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preference_daily_usage_ping_title">Eguneroko erabilpenaren ping-a</string>
-  <string name="preference_daily_usage_ping_description">Honek erabiltzaile aktiboen kopurua kalkulatzen laguntzen dio Mozillari.</string>
+  <string name="preference_daily_usage_ping_description" tools:ignore="BrandUsage">Honek erabiltzaile aktiboen kopurua kalkulatzen laguntzen dio Mozillari.</string>
   <string name="preference_daily_usage_ping_learn_more">Argibide gehiago</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
   <string name="preference_privacy_notice">Pribatutasun-oharra</string>
@@ -829,7 +829,7 @@
   <!-- Label for button to close the tab -->
   <string name="tab_crash_report_close_tab_button_label">Itxi fitxa</string>
   <!-- Label for the checkbox to send the tab crash report to Mozilla -->
-  <string name="crash_report_send_crash_label">Bidali hutsegite-txostena Mozillara</string>
+  <string name="crash_report_send_crash_label" tools:ignore="BrandUsage">Bidali hutsegite-txostena Mozillara</string>
   <!-- Tracking protection bottom sheet -->
 
   <!-- Label for the total number of trackers blocked. %s is the app install date. -->

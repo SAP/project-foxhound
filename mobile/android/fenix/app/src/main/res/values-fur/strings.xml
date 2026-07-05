@@ -72,7 +72,7 @@
   <!-- Text for the menu button to remove a recently saved bookmark from the user's home screen -->
   <string name="home_bookmarks_menu_item_remove">Gjave</string>
   <!-- About content. %1$s is the name of the app (for example "Firefox"). -->
-  <string name="about_content">%1$s al è prodot di Mozilla.</string>
+  <string name="about_content" tools:ignore="BrandUsage">%1$s al è prodot di Mozilla.</string>
   <!-- Private Browsing -->
   <string name="private_browsing_common_myths">Falsis crodincis su la navigazion privade</string>
   <!-- Text to be announced by the accessibility service to inform the user that the private browsing mode is currently active. -->
@@ -149,6 +149,8 @@
   <string name="home_screen_shortcut_open_new_private_tab_2">Gnove schede privade</string>
   <!-- Shortcut action to open Passwords screen -->
   <string name="home_screen_shortcut_passwords">Passwords</string>
+  <!-- Shortcut action to open uninstall survey -->
+  <string name="home_screen_shortcut_uninstall_survey">Disinstalâ, parcè?</string>
   <!--
     Recent Tabs
 
@@ -473,7 +475,7 @@
   <!-- Button text to reopen firefox after the crash is processed %s is the name of the app (for example "Firefox") -->
   <string name="startup_crash_restart">Torne vierç %s</string>
   <!-- Title for the usage data option in the privacy preferences dialog shown during onboarding. Note: The word "Mozilla" should NOT be translated. -->
-  <string name="onboarding_preferences_dialog_usage_data_title">Mande a Mozilla dâts tecnics e di interazion</string>
+  <string name="onboarding_preferences_dialog_usage_data_title" tools:ignore="BrandUsage">Mande a Mozilla dâts tecnics e di interazion</string>
   <string name="onboarding_preferences_dialog_usage_data_description_2" tools:ignore="BrandUsage">I dâts relatîfs al to dispositîf, ae sô configurazion hardware e su cemût che tu dopris Firefox a judin a miorâi lis funzionalitâts, lis prestazions e la stabilitât par ducj.</string>
   <string name="onboarding_preferences_dialog_usage_data_learn_more_2">Plui informazions</string>
   <!-- Positive button label for the privacy preferences dialog shown during onboarding. -->
@@ -626,12 +628,12 @@
   <!-- Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded. -->
   <string name="nova_onboarding_marketing_body_2" tools:ignore="BrandUsage">Condivît cemût che tu âs scuviert Firefox e il fat che tu lu dopris cui colaboradôrs pe comercializazion di Mozilla. Chescj dâts no vegnin mai vendûts.</string>
   <!-- Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded. -->
-  <string name="nova_onboarding_marketing_body_3" tools:ignore="BrandUsage">Tu puedis judânus a fâ cognossi Firefox a altre int permetint a Mozilla di comunicâ, ai canâi di promozion di Firefox, che tu lu dopris.</string>
+  <string name="nova_onboarding_marketing_body_3" tools:ignore="BrandUsage,UnusedResources">Tu puedis judânus a fâ cognossi Firefox a altre int permetint a Mozilla di comunicâ, ai canâi di promozion di Firefox, che tu lu dopris.</string>
   <!--
     Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
     “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
   -->
-  <string name="nova_onboarding_marketing_body_4" tools:ignore="BrandUsage">Tu puedis judânus a fâ cognossi Firefox a plui personis permetint a Mozilla di segnalâ, ae plateforme che ti à puartât a savê di Firefox, che tu lu dopris.</string>
+  <string name="nova_onboarding_marketing_body_4" tools:ignore="BrandUsage,UnusedResources">Tu puedis judânus a fâ cognossi Firefox a plui personis permetint a Mozilla di segnalâ, ae plateforme che ti à puartât a savê di Firefox, che tu lu dopris.</string>
   <!--
     Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
     “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
@@ -661,7 +663,7 @@
   <!-- Marketing onboarding body link text. -->
   <string name="nova_onboarding_marketing_body_link_text_1">Plui informazions</string>
   <!-- Marketing onboarding primary button text. 'Firefox' is intentionally hardcoded. -->
-  <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage">Jude Firefox</string>
+  <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage,UnusedResources">Jude Firefox</string>
   <!-- Marketing onboarding primary button text. -->
   <string name="nova_onboarding_marketing_primary_button_text_2">Permet e continue</string>
   <!-- Marketing onboarding secondary button text. -->
@@ -843,7 +845,7 @@
   <!-- Preference for accessibility -->
   <string name="preferences_accessibility">Acès facilitât</string>
   <!-- Preference to override the Mozilla account server -->
-  <string name="preferences_override_account_server">Servidôr di account Mozilla personalizât</string>
+  <string name="preferences_override_account_server" tools:ignore="BrandUsage">Servidôr di account Mozilla personalizât</string>
   <!-- Preference to override the Sync token server -->
   <string name="preferences_override_sync_tokenserver">Servidôr personalizât par Sync</string>
   <!-- Preference category for account information -->
@@ -871,7 +873,7 @@
   <!-- Preference description shown in the banner prompting the user to sign in for sync features -->
   <string name="preferences_sign_in_description">Sincronize schedis, segnelibris, passwords e ancjemò altri.</string>
   <!-- Preference shown instead of account display name while account profile information isn't available yet. -->
-  <string name="preferences_account_default_name_2">Account Mozilla</string>
+  <string name="preferences_account_default_name_2" tools:ignore="BrandUsage">Account Mozilla</string>
   <!-- Preference text for account title when there was an error syncing FxA -->
   <string name="preferences_account_sync_error">Torne conet par ripiâ la sincronizazion</string>
   <!-- Preference for language -->
@@ -919,7 +921,7 @@
   <!-- Summary for preference to show Firefox Suggest search suggestions for web content -->
   <string name="preferences_show_nonsponsored_suggestions_summary">Oten sugjeriments dal web relatîfs ae tô ricercje</string>
   <!-- Preference title for switch preference to show search optimization cards -->
-  <string name="preferences_show_search_optimization_cards">Oten sugjeriments di Mozilla intant che tu scrivis</string>
+  <string name="preferences_show_search_optimization_cards" tools:ignore="BrandUsage">Oten sugjeriments di Mozilla intant che tu scrivis</string>
   <!-- Preference for link sharing -->
   <string name="preferences_link_sharing">Condivision colegaments</string>
   <!-- Title for the link sharing toggle. %1$s is replaced by the brand name (e.g. Firefox). -->
@@ -1249,7 +1251,7 @@
   <string name="preferences_usage_data_description_1" tools:ignore="BrandUsage">I dâts relatîfs al to dispositîf, ae sô configurazion hardware e ae utilizazion nus judin a miorâ lis funzionalitâts, lis prestazions e la stabilitât di Firefox.</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preferences_daily_usage_ping_title">Ping di utilizazion zornaliere</string>
-  <string name="preferences_daily_usage_ping_description">Chest al permet a Mozilla di stimâ il numar di utents atîfs.</string>
+  <string name="preferences_daily_usage_ping_description" tools:ignore="BrandUsage">Chest al permet a Mozilla di stimâ il numar di utents atîfs.</string>
   <string name="preferences_daily_usage_ping_learn_more">Plui informazions sul ping di utilizazion zornaliere</string>
   <!-- Title for the crash reporting option in the privacy preferences dialog shown during onboarding. -->
   <string name="crash_reporting_snack_bar_message">Segnalazion inviade</string>
@@ -1275,7 +1277,7 @@
   <!-- Title for studies preferences -->
   <string name="preference_experiments_2">Studis</string>
   <!-- Summary for studies preferences -->
-  <string name="preference_experiments_summary_2">Al permet a Mozilla di instalâ e puartâ indenant studis</string>
+  <string name="preference_experiments_summary_2" tools:ignore="BrandUsage">Al permet a Mozilla di instalâ e puartâ indenant studis</string>
   <!--
     Turn On Sync Preferences
 
@@ -2038,7 +2040,7 @@
   -->
   <string name="tab_crash_title_2">Nus displâs. %1$s nol rive a cjariâ chê pagjine.</string>
   <!-- Send crash report checkbox text on the tab crash page -->
-  <string name="tab_crash_send_report">Invie la segnalazion di colàs a Mozilla</string>
+  <string name="tab_crash_send_report" tools:ignore="BrandUsage">Invie la segnalazion di colàs a Mozilla</string>
   <!-- Close tab button text on the tab crash page -->
   <string name="tab_crash_close">Siere schede</string>
   <!-- Restore tab button text on the tab crash page -->
@@ -2447,6 +2449,8 @@
   <string name="preferences_take_survey">Partecipe al sondaç</string>
   <!-- Preference for not taking the short survey. -->
   <string name="preferences_not_take_survey">No graciis</string>
+  <!-- Error message shown in a Toast when the system fails to trigger the device uninstallation prompt. -->
+  <string name="uninstall_survey_error_failed">Impussibil fâ partî la domande par disinstalâ dal sisteme. Par plasê dopre il sisteme di disinstalazion dal sisteme operatîf.</string>
   <!--
     Snackbar
 
@@ -4066,6 +4070,8 @@
   <string name="microsurvey_sync_title" tools:ignore="BrandUsage,UnusedResources">Trope sodisfazion cjatistu cu la esperience di sincronizazion in Firefox?</string>
   <!-- Text shown in the survey title for 'describe your experience so far' microsurvey. Note: The word "Firefox" should NOT be translated. -->
   <string name="microsurvey_describe_your_experience_title" tools:ignore="BrandUsage,UnusedResources">Judinus a miorâ Firefox. Ce opzion rapresentie miôr la tô esperience fintremai cumò?</string>
+  <!-- Button label shown at the bottom of the uninstall survey -->
+  <string name="uninstall_survey_button_label">Mande une opinion e disinstale</string>
   <!--
     Accessibility
 

@@ -353,7 +353,7 @@
   <!-- Text shown when attempting to install an add-on and an error occurred because the extension was incompatible. %1$s is the add-on name, %2$s is the app name and %3$s is the app version. -->
   <string name="mozac_feature_addons_failed_to_install_incompatible_error">%2$s %3$s -ന്റെ കൂടെ പൊരുത്തമില്ലാത്തുകൊണ്ടു് %1$s-നെ സ്ഥാപിക്കാൻ പറ്റിയില്ല.</string>
   <!-- Text shown when attempting to install a (hard) blocked add-on. %1$s is the add-on name. %2$s is the app name. -->
-  <string name="mozac_feature_addons_blocklisted_2">%1$s മോസില്ലയുടെ നയങ്ങൾ ലംഘിക്കുന്നതിനാൽ %2$s-ൽ സ്ഥാപിക്കാൻ കഴിയില്ല.</string>
+  <string name="mozac_feature_addons_blocklisted_2" tools:ignore="BrandUsage">%1$s മോസില്ലയുടെ നയങ്ങൾ ലംഘിക്കുന്നതിനാൽ %2$s-ൽ സ്ഥാപിക്കാൻ കഴിയില്ല.</string>
   <!-- Text shown when attempting to install an add-on that can only be install via Enterprise Policies, which is not supported on Android.  %1$s is the add-on name. -->
   <string name="mozac_feature_addons_admin_install_only">%1$s സ്ഥാപിക്കാൻ പറ്റിയില്ല കാരണം ഇതു് വെറും ഉദ്യമനയങ്ങൾ ഉപയോഗിക്കുന്നയൊരു സ്ഥാപനത്തിനെ സ്ഥാപിക്കാൻ കഴിയും. ഈ മഞ്ചത്തിൽ ഇതിനു് പിന്തുണയില്ല.</string>
   <!-- Text shown after failed to enable an add-on. %1$s is the add-on name. -->
@@ -397,7 +397,7 @@
   <!-- "See details" link displayed below an add-on status message. -->
   <string name="mozac_feature_addons_status_see_details">വിശദാംശങ്ങൾ കാണിക്കുക</string>
   <!-- Status message below an add-on in the add-ons manager when this add-on has been blocklisted. %1$s is the add-on name. -->
-  <string name="mozac_feature_addons_status_blocklisted_1">മോസില്ലയുടെ നയങ്ങൾ ലംഘിച്ചതിനാൽ ഈ വിപുലീകരണം തടയുകയും പ്രവർത്തനരഹിതമാക്കുകയും ചെയ്തു.</string>
+  <string name="mozac_feature_addons_status_blocklisted_1" tools:ignore="BrandUsage">മോസില്ലയുടെ നയങ്ങൾ ലംഘിച്ചതിനാൽ ഈ വിപുലീകരണം തടയുകയും പ്രവർത്തനരഹിതമാക്കുകയും ചെയ്തു.</string>
   <!-- Status message below an add-on in the add-ons manager when this add-on has been soft-blocked. -->
   <string name="mozac_feature_addons_status_softblocked_2">ഈ വിപുലീകരണം വിലക്കപ്പെട്ടതും പ്രവൎത്തനരഹിതവും ആണു്. താങ്ങൾക്കിതിനെ പ്രവൎത്തനക്ഷമമാക്കാൻ പറ്റും എന്നാൽ ഇതു് അപകടകരമായേക്കാം.</string>
   <!-- Status message below an add-on in the add-ons manager when this add-on has been soft-blocked but the user re-enabled it. -->

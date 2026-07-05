@@ -156,7 +156,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>Gyda %1$s chi sy’n rheoli.</p>\n<p>Defnyddiwch ef fel porwr preifat:\n<ul>\n<li>Chwilio a phori o fewn yr ap</li>\n<li>Rhwystro tracwyr (neu ddiweddaru’ch gosodiadau i ganiatáu tracwyr)</li>\n<li>Dileu er mwyn dileu cwcis yn ogystal â hanes chwilio a phori</li>\n</ul> </p>\n<p>Mae %1$s yn cael ei gynhyrchu gan Mozilla. Ein cenhadaeth yw meithrin Rhyngrwyd iach ac agored.<br/>\n<a href=\"%2$s\">Dysgu rhagor</a></p>]]></string>
+  <string name="about_content" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote"><![CDATA[<p>Gyda %1$s chi sy’n rheoli.</p>\n<p>Defnyddiwch ef fel porwr preifat:\n<ul>\n<li>Chwilio a phori o fewn yr ap</li>\n<li>Rhwystro tracwyr (neu ddiweddaru’ch gosodiadau i ganiatáu tracwyr)</li>\n<li>Dileu er mwyn dileu cwcis yn ogystal â hanes chwilio a phori</li>\n</ul> </p>\n<p>Mae %1$s yn cael ei gynhyrchu gan Mozilla. Ein cenhadaeth yw meithrin Rhyngrwyd iach ac agored.<br/>\n<a href=\"%2$s\">Dysgu rhagor</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">Dysgu rhagor</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -251,7 +251,7 @@
   <!-- "Hint" text for the "custom autocomplete URL" input field. Shown when the field is empty. -->
   <string name="preference_autocomplete_add_hint">Gludo neu rhoi URL</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
-  <string name="preference_autocomplete_add_example2">Esiampl: mozilla.org</string>
+  <string name="preference_autocomplete_add_example2" tools:ignore="BrandUsage">Esiampl: mozilla.org</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">Esiampl: example.com</string>
   <!-- Confirmation "snackbar" shown after a new custom autocomplete URL has been added. -->
@@ -323,15 +323,15 @@
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
   <string name="preference_default_browser2">Gwneud %1$s yn borwr rhagosodedig</string>
-  <string name="preference_category_mozilla">Mozilla</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">Mozilla</string>
   <string name="preference_mozilla_telemetry2">Anfon data defnydd</string>
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">Darllen rhagor</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-  <string name="preference_mozilla_telemetry_summary2">Mae Mozilla\'n ceisio casglu dim ond yr hyn sydd ei angen arnom i ddarparu a gwella %1$s ar gyfer pawb.</string>
+  <string name="preference_mozilla_telemetry_summary2" tools:ignore="BrandUsage">Mae Mozilla\'n ceisio casglu dim ond yr hyn sydd ei angen arnom i ddarparu a gwella %1$s ar gyfer pawb.</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preference_daily_usage_ping_title">Ping defnydd dyddiol</string>
-  <string name="preference_daily_usage_ping_description">Mae hyn yn helpu Mozilla i amcangyfrif defnyddwyr gweithredol.</string>
+  <string name="preference_daily_usage_ping_description" tools:ignore="BrandUsage">Mae hyn yn helpu Mozilla i amcangyfrif defnyddwyr gweithredol.</string>
   <string name="preference_daily_usage_ping_learn_more">Dysgu rhagor</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
   <string name="preference_privacy_notice">Hysbysiad Preifatrwydd</string>
@@ -829,7 +829,7 @@
   <!-- Label for button to close the tab -->
   <string name="tab_crash_report_close_tab_button_label">Cau Tab</string>
   <!-- Label for the checkbox to send the tab crash report to Mozilla -->
-  <string name="crash_report_send_crash_label">Anfon adroddiad chwalu at Mozilla</string>
+  <string name="crash_report_send_crash_label" tools:ignore="BrandUsage">Anfon adroddiad chwalu at Mozilla</string>
   <!-- Tracking protection bottom sheet -->
 
   <!-- Label for the total number of trackers blocked. %s is the app install date. -->

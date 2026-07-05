@@ -155,7 +155,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s ku ts\'áaik ti\' kaambalil.</p>\n<p>Meyajt bey jump\'éel navegador privado:\n<ul>\n<li>Kaxant yéetel navegar tu tojile\' ti\' le ka\'anatako\'ob</li>\n<li>Bloquear le rastreadores (wa actualizar configuración utia\'al u permitir le rastreadores)</li>\n<li>Borrar utia\'al u tselik le cookies bey xan le historial xookilo\' yéetel navegación</li>\n</ul> </p>\n<p>%1$s ku beeta\'al tumen Mozilla. K meyaje\' leti\' u yantal jump\'éel Internet toj yéetel je\'ek\'ab.<br/>\n<a href=\"%2$s\">Kaanbal asab</a></p>]]></string>
+  <string name="about_content" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s ku ts\'áaik ti\' kaambalil.</p>\n<p>Meyajt bey jump\'éel navegador privado:\n<ul>\n<li>Kaxant yéetel navegar tu tojile\' ti\' le ka\'anatako\'ob</li>\n<li>Bloquear le rastreadores (wa actualizar configuración utia\'al u permitir le rastreadores)</li>\n<li>Borrar utia\'al u tselik le cookies bey xan le historial xookilo\' yéetel navegación</li>\n</ul> </p>\n<p>%1$s ku beeta\'al tumen Mozilla. K meyaje\' leti\' u yantal jump\'éel Internet toj yéetel je\'ek\'ab.<br/>\n<a href=\"%2$s\">Kaanbal asab</a></p>]]></string>
   <!-- Header for the Privacy and Security settings menu -->
   <string name="preference_privacy_and_security_header">Ta wóok’sal yéetel Jeets’el óol</string>
   <!-- Preference summary for settings related to privacy and security -->
@@ -248,7 +248,7 @@
   <!-- "Hint" text for the "custom autocomplete URL" input field. Shown when the field is empty. -->
   <string name="preference_autocomplete_add_hint">Tak’bil wa oksa’ak u ts’íibtal URL</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
-  <string name="preference_autocomplete_add_example2">E’esajil: mozilla.org</string>
+  <string name="preference_autocomplete_add_example2" tools:ignore="BrandUsage">E’esajil: mozilla.org</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">E’esajil: example.com</string>
   <!-- Confirmation "snackbar" shown after a new custom autocomplete URL has been added. -->
@@ -320,15 +320,15 @@
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
   <string name="preference_default_browser2">Yéeytej %1$s ka p’àatak bey a suuk a maan ich web yéeteli’</string>
-  <string name="preference_category_mozilla">Mozilla</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">Mozilla</string>
   <string name="preference_mozilla_telemetry2">Túuxtej buka’aj ts’óok a xupik</string>
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">K’ajóoltal u yaanali’</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-  <string name="preference_mozilla_telemetry_summary2">Mozilla ku kaxantik u molik chen le jach k’áabetaj uti’al u ts’a’ik yéetel u ma’alobtal %1$s ti’ tuláakalilo’ob.</string>
+  <string name="preference_mozilla_telemetry_summary2" tools:ignore="BrandUsage">Mozilla ku kaxantik u molik chen le jach k’áabetaj uti’al u ts’a’ik yéetel u ma’alobtal %1$s ti’ tuláakalilo’ob.</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preference_daily_usage_ping_title">Ping u búukinta\'al sáansamal</string>
-  <string name="preference_daily_usage_ping_description">Le je\'ela\' ku yáantik Mozilla u estimar le usuarios activos.</string>
+  <string name="preference_daily_usage_ping_description" tools:ignore="BrandUsage">Le je\'ela\' ku yáantik Mozilla u estimar le usuarios activos.</string>
   <string name="preference_daily_usage_ping_learn_more">K’ajóoltal u yaanali’</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
   <string name="preference_privacy_notice">Ts’áab ojelbil bix u kana’antal ati’alo’</string>
@@ -785,7 +785,7 @@
   <!-- Label for button to close the tab -->
   <string name="tab_crash_report_close_tab_button_label">Muts\'ik u ju\'unil</string>
   <!-- Label for the checkbox to send the tab crash report to Mozilla -->
-  <string name="crash_report_send_crash_label">Túuxt informe ti\' Mozilla</string>
+  <string name="crash_report_send_crash_label" tools:ignore="BrandUsage">Túuxt informe ti\' Mozilla</string>
   <!-- Tracking protection bottom sheet -->
 
   <!-- Label for the total number of trackers blocked. %s is the app install date. -->

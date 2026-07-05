@@ -366,7 +366,7 @@
   <!-- Text shown when attempting to install an add-on and an error occurred because the extension was incompatible. %1$s is the add-on name, %2$s is the app name and %3$s is the app version. -->
   <string name="mozac_feature_addons_failed_to_install_incompatible_error">%1$s non si podet installare ca no est cumpatìbile cun %2$s %3$s.</string>
   <!-- Text shown when attempting to install a (hard) blocked add-on. %1$s is the add-on name. %2$s is the app name. -->
-  <string name="mozac_feature_addons_blocklisted_2">%1$s vìolat is polìticas de Mozilla e non podet èssere installadu in %2$s.</string>
+  <string name="mozac_feature_addons_blocklisted_2" tools:ignore="BrandUsage">%1$s vìolat is polìticas de Mozilla e non podet èssere installadu in %2$s.</string>
   <!-- Text shown when attempting to install an add-on that can only be install via Enterprise Policies, which is not supported on Android.  %1$s is the add-on name. -->
   <string name="mozac_feature_addons_admin_install_only">No at fatu a installare %1$s, dae chi podet èssere impreadu isceti dae organizatziones cun polìticas aziendales, su chi no est cumpatìbile cun custa prataforma.</string>
   <!-- Text shown after failed to enable an add-on. %1$s is the add-on name. -->
@@ -412,7 +412,7 @@
   <!-- "See details" link displayed below an add-on status message. -->
   <string name="mozac_feature_addons_status_see_details">Ammustra detàllios</string>
   <!-- Status message below an add-on in the add-ons manager when this add-on has been blocklisted. %1$s is the add-on name. -->
-  <string name="mozac_feature_addons_status_blocklisted_1">Custa estensione est blocada pro àere violadu is polìticas de Mozilla e est istada disativada.</string>
+  <string name="mozac_feature_addons_status_blocklisted_1" tools:ignore="BrandUsage">Custa estensione est blocada pro àere violadu is polìticas de Mozilla e est istada disativada.</string>
   <!-- Status message below an add-on in the add-ons manager when this add-on hasn't been signed correctly. %1$s is the add-on name. -->
   <string name="mozac_feature_addons_status_unsigned">%1$s est istadu disativadu, dae chi est istadu impossìbile a dd’averguare comente segura.</string>
   <!-- Status message below an add-on in the add-ons manager when this add-on isn't compatible with the application version. %1$s is the add-on name, %2$s is the app name and %3$s is the app version. -->

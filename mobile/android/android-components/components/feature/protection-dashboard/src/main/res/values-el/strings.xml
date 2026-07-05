@@ -41,7 +41,7 @@
   -->
   <string name="mozac_protections_dashboard_empty_title">Το %1$s αποκλείει ιχνηλάτες κατά την περιήγησή σας.</string>
   <!-- Subtitle shown when no trackers have been blocked yet -->
-  <string name="mozac_protections_dashboard_empty_subtitle">Θα τους δείτε εδώ.</string>
+  <string name="mozac_protections_dashboard_empty_subtitle">Θα τους βλέπετε εδώ.</string>
   <plurals name="mozac_protections_dashboard_total_blocked_since_2">
     <!--
       Footer line shown in the dashboard summarizing total trackers blocked

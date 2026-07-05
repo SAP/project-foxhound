@@ -190,7 +190,7 @@
   <!-- Text shown when attempting to install an add-on and an error occurred because the extension was incompatible. %1$s is the add-on name, %2$s is the app name and %3$s is the app version. -->
   <string name="mozac_feature_addons_failed_to_install_incompatible_error">Hindi ma-install ang %1$s dahil hindi ito angkop sa %2$s %3$s.</string>
   <!-- Text shown when attempting to install a (hard) blocked add-on. %1$s is the add-on name. %2$s is the app name. -->
-  <string name="mozac_feature_addons_blocklisted_2">Nilalabag ng %1$s ang mga polisiya ng Mozilla kaya hindi ito mai-install sa %2$s.</string>
+  <string name="mozac_feature_addons_blocklisted_2" tools:ignore="BrandUsage">Nilalabag ng %1$s ang mga polisiya ng Mozilla kaya hindi ito mai-install sa %2$s.</string>
   <!-- Text shown when attempting to install an add-on that can only be install via Enterprise Policies, which is not supported on Android.  %1$s is the add-on name. -->
   <string name="mozac_feature_addons_admin_install_only">Hindi kayang ma-install ang %1$s dahil maaari lamang itong ma-install ng isang organisasyong gumagamit ng mga enterprise policy, mga policy na hindi suportado sa platform na ito.</string>
   <!-- Text shown after failed to enable an add-on. %1$s is the add-on name. -->
@@ -230,7 +230,7 @@
   <!-- "See details" link displayed below an add-on status message. -->
   <string name="mozac_feature_addons_status_see_details">Tingnan ang detalye</string>
   <!-- Status message below an add-on in the add-ons manager when this add-on has been blocklisted. %1$s is the add-on name. -->
-  <string name="mozac_feature_addons_status_blocklisted_1">Hinarang at na-disable ang extension na ito dahil sa paglabag sa polisiya ng Mozilla.</string>
+  <string name="mozac_feature_addons_status_blocklisted_1" tools:ignore="BrandUsage">Hinarang at na-disable ang extension na ito dahil sa paglabag sa polisiya ng Mozilla.</string>
   <!-- Status message below an add-on in the add-ons manager when this add-on hasn't been signed correctly. %1$s is the add-on name. -->
   <string name="mozac_feature_addons_status_unsigned">Hindi maberipikang ligtas ang %1$s kung kaya\'t ito ay hindi pinagana.</string>
   <!-- Status message below an add-on in the add-ons manager when this add-on isn't compatible with the application version. %1$s is the add-on name, %2$s is the app name and %3$s is the app version. -->

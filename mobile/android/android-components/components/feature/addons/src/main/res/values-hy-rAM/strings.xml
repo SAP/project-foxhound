@@ -373,7 +373,7 @@
   <!-- Text shown when attempting to install an add-on and an error occurred because the extension was incompatible. %1$s is the add-on name, %2$s is the app name and %3$s is the app version. -->
   <string name="mozac_feature_addons_failed_to_install_incompatible_error">%1$s-ը չի կարող տեղադրվել, քանի որ համատեղելի չէ %2$s %3$s-ի հետ:</string>
   <!-- Text shown when attempting to install a (hard) blocked add-on. %1$s is the add-on name. %2$s is the app name. -->
-  <string name="mozac_feature_addons_blocklisted_2">%1$s-ը խախտում է Mozilla-ի կանոնները և չի կարող տեղադրվել %2$s-ում:</string>
+  <string name="mozac_feature_addons_blocklisted_2" tools:ignore="BrandUsage">%1$s-ը խախտում է Mozilla-ի կանոնները և չի կարող տեղադրվել %2$s-ում:</string>
   <!-- Text shown when attempting to install an add-on that can only be install via Enterprise Policies, which is not supported on Android.  %1$s is the add-on name. -->
   <string name="mozac_feature_addons_admin_install_only">%1$s-ը չի կարող տեղադրվել, քանի որ այն հնարավոր է տեղադրել, քանի որ այն կարող է տեղադրվել միայն ձեռնարկության քաղաքականություններ օգտագործող կազմակերպության կողմից, որը չի աջակցվում այս հարթակում:</string>
   <!-- Text shown when attempting to install an add-on that is soft-blocked. %1$s is the add-on name. %2$s is the app name. -->
@@ -421,7 +421,7 @@
   <!-- "See details" link displayed below an add-on status message. -->
   <string name="mozac_feature_addons_status_see_details">Տե՛ս մանրամասները</string>
   <!-- Status message below an add-on in the add-ons manager when this add-on has been blocklisted. %1$s is the add-on name. -->
-  <string name="mozac_feature_addons_status_blocklisted_1">Այս ընդլայնումն արգելափակված է Mozilla-ի կանոնները խախտելու համար և անջատված է:</string>
+  <string name="mozac_feature_addons_status_blocklisted_1" tools:ignore="BrandUsage">Այս ընդլայնումն արգելափակված է Mozilla-ի կանոնները խախտելու համար և անջատված է:</string>
   <!-- Status message below an add-on in the add-ons manager when this add-on has been soft-blocked. -->
   <string name="mozac_feature_addons_status_softblocked_2">Այս ընդլայնումը խախտում է Mozilla-ի կանոնները և անջատված է: Դուք կարող եք միացնել այն, բայց դա կարող է վտանգավոր լինել:</string>
   <!-- Status message below an add-on in the add-ons manager when this add-on has been soft-blocked but the user re-enabled it. -->

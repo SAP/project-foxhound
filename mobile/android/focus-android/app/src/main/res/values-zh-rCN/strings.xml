@@ -156,7 +156,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s 让您掌控线上生活。</p>\n<p>可以用作隐私浏览器：\n<ul>\n<li>直接在应用中搜索和浏览</li>\n<li>拦截跟踪器（也可调整为允许跟踪器）</li>\n<li>自动清除 Cookie、搜索记录和浏览历史</li>\n</ul> </p>\n<p>%1$s 由 Mozilla 出品。我们的使命是促成健康、开放的互联网。<br/>\n<a href=\"%2$s\">详细了解</a></p>]]></string>
+  <string name="about_content" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s 让您掌控线上生活。</p>\n<p>可以用作隐私浏览器：\n<ul>\n<li>直接在应用中搜索和浏览</li>\n<li>拦截跟踪器（也可调整为允许跟踪器）</li>\n<li>自动清除 Cookie、搜索记录和浏览历史</li>\n</ul> </p>\n<p>%1$s 由 Mozilla 出品。我们的使命是促成健康、开放的互联网。<br/>\n<a href=\"%2$s\">详细了解</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">详细了解</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -251,7 +251,7 @@
   <!-- "Hint" text for the "custom autocomplete URL" input field. Shown when the field is empty. -->
   <string name="preference_autocomplete_add_hint">粘贴或输入网址</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
-  <string name="preference_autocomplete_add_example2">示例：mozilla.org</string>
+  <string name="preference_autocomplete_add_example2" tools:ignore="BrandUsage">示例：mozilla.org</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">例如：example.com</string>
   <!-- Confirmation "snackbar" shown after a new custom autocomplete URL has been added. -->
@@ -323,15 +323,15 @@
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
   <string name="preference_default_browser2">将 %1$s 设为默认浏览器</string>
-  <string name="preference_category_mozilla">Mozilla</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">Mozilla</string>
   <string name="preference_mozilla_telemetry2">发送使用统计</string>
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">详细了解</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-  <string name="preference_mozilla_telemetry_summary2">Mozilla 力图仅收集为大众提供和改进 %1$s 所必需的数据。</string>
+  <string name="preference_mozilla_telemetry_summary2" tools:ignore="BrandUsage">Mozilla 力图仅收集为大众提供和改进 %1$s 所必需的数据。</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preference_daily_usage_ping_title">每日使用情况报告</string>
-  <string name="preference_daily_usage_ping_description">此信息可帮助 Mozilla 估算活跃用户数量。</string>
+  <string name="preference_daily_usage_ping_description" tools:ignore="BrandUsage">此信息可帮助 Mozilla 估算活跃用户数量。</string>
   <string name="preference_daily_usage_ping_learn_more">详细了解</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
   <string name="preference_privacy_notice">隐私声明</string>
@@ -829,7 +829,7 @@
   <!-- Label for button to close the tab -->
   <string name="tab_crash_report_close_tab_button_label">关闭标签页</string>
   <!-- Label for the checkbox to send the tab crash report to Mozilla -->
-  <string name="crash_report_send_crash_label">向 Mozilla 发送崩溃报告</string>
+  <string name="crash_report_send_crash_label" tools:ignore="BrandUsage">向 Mozilla 发送崩溃报告</string>
   <!-- Tracking protection bottom sheet -->
 
   <!-- Label for the total number of trackers blocked. %s is the app install date. -->

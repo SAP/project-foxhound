@@ -371,7 +371,7 @@
   <!-- Text shown when attempting to install an add-on and an error occurred because the extension was incompatible. %1$s is the add-on name, %2$s is the app name and %3$s is the app version. -->
   <string name="mozac_feature_addons_failed_to_install_incompatible_error">%1$s nehat sazkirin ji ber ku bi %2$s %3$s re ne lihevhatî ye.</string>
   <!-- Text shown when attempting to install a (hard) blocked add-on. %1$s is the add-on name. %2$s is the app name. -->
-  <string name="mozac_feature_addons_blocklisted_2">%1$s polîtîkayên Mozillayê binpê dike û nikare li %2$s bê sazkirin.</string>
+  <string name="mozac_feature_addons_blocklisted_2" tools:ignore="BrandUsage">%1$s polîtîkayên Mozillayê binpê dike û nikare li %2$s bê sazkirin.</string>
   <!-- Text shown when attempting to install an add-on that can only be install via Enterprise Policies, which is not supported on Android.  %1$s is the add-on name. -->
   <string name="mozac_feature_addons_admin_install_only">%1$s nehat sazkirin, ji ber ku ew tenê dikare ji hêla rêxistineke ku polîtîkayên pargîdaniyê bikar tîne ve bê sazkirin, ku li ser vê platformê nayê piştgirîkirin.</string>
   <!-- Text shown when attempting to install an add-on that is soft-blocked. %1$s is the add-on name. %2$s is the app name. -->
@@ -419,7 +419,7 @@
   <!-- "See details" link displayed below an add-on status message. -->
   <string name="mozac_feature_addons_status_see_details">Kitekitan bibîne</string>
   <!-- Status message below an add-on in the add-ons manager when this add-on has been blocklisted. %1$s is the add-on name. -->
-  <string name="mozac_feature_addons_status_blocklisted_1">Ev pêvek ji ber binpêkirina polîtîkayên Mozillayê hat astengkirin û hate neçalakkirin.</string>
+  <string name="mozac_feature_addons_status_blocklisted_1" tools:ignore="BrandUsage">Ev pêvek ji ber binpêkirina polîtîkayên Mozillayê hat astengkirin û hate neçalakkirin.</string>
   <!-- Status message below an add-on in the add-ons manager when this add-on has been soft-blocked. -->
   <string name="mozac_feature_addons_status_softblocked_2">Ev pêvek bi sînor e û hatiye neçalakkirin. Tu dikarî wê çalak bikî, lê dibe ku ev xeternak be.</string>
   <!-- Status message below an add-on in the add-ons manager when this add-on has been soft-blocked but the user re-enabled it. -->

@@ -377,7 +377,7 @@
   <!-- Text shown when attempting to install an add-on and an error occurred because the extension was incompatible. %1$s is the add-on name, %2$s is the app name and %3$s is the app version. -->
   <string name="mozac_feature_addons_failed_to_install_incompatible_error">تعذر ثبيت الإضافة %1$s لأنها غير متوافقة مع %2$s‏ %3$s.</string>
   <!-- Text shown when attempting to install a (hard) blocked add-on. %1$s is the add-on name. %2$s is the app name. -->
-  <string name="mozac_feature_addons_blocklisted_2">ينتهك %1$s سياسات موزيلا ولا يمكن تثبيته على %2$s.</string>
+  <string name="mozac_feature_addons_blocklisted_2" tools:ignore="BrandUsage">ينتهك %1$s سياسات موزيلا ولا يمكن تثبيته على %2$s.</string>
   <!-- Text shown when attempting to install an add-on that can only be install via Enterprise Policies, which is not supported on Android.  %1$s is the add-on name. -->
   <string name="mozac_feature_addons_admin_install_only">لم يتم تثبيت %1$s لأنه لا يمكن تثبيته إلا بواسطة منظمة تستخدم سياسات المؤسسة، وهو أمر غير مدعوم على هذه المنصة.</string>
   <!-- Text shown when attempting to install an add-on that is soft-blocked. %1$s is the add-on name. %2$s is the app name. -->
@@ -425,7 +425,7 @@
   <!-- "See details" link displayed below an add-on status message. -->
   <string name="mozac_feature_addons_status_see_details">عرض التفاصيل</string>
   <!-- Status message below an add-on in the add-ons manager when this add-on has been blocklisted. %1$s is the add-on name. -->
-  <string name="mozac_feature_addons_status_blocklisted_1">حُظِر هذا الامتداد بسبب انتهاكه لسياسات Mozilla وتم تعطيله.</string>
+  <string name="mozac_feature_addons_status_blocklisted_1" tools:ignore="BrandUsage">حُظِر هذا الامتداد بسبب انتهاكه لسياسات Mozilla وتم تعطيله.</string>
   <!-- Status message below an add-on in the add-ons manager when this add-on has been soft-blocked. -->
   <string name="mozac_feature_addons_status_softblocked_2">قٌيّد هذا الامتداد وتم تعطيله. يمكنك تفعيله، ولكن قد يشكل هذا خطرًا عليك.</string>
   <!-- Status message below an add-on in the add-ons manager when this add-on has been soft-blocked but the user re-enabled it. -->

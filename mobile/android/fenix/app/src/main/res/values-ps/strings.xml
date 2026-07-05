@@ -68,7 +68,7 @@
   <!-- Text for the menu button to remove a recently saved bookmark from the user's home screen -->
   <string name="home_bookmarks_menu_item_remove">لېرې کړئ</string>
   <!-- About content. %1$s is the name of the app (for example "Firefox"). -->
-  <string name="about_content">%1$s د موزیلا لخوا تولید شوی.</string>
+  <string name="about_content" tools:ignore="BrandUsage">%1$s د موزیلا لخوا تولید شوی.</string>
   <!-- Private Browsing -->
   <string name="private_browsing_common_myths">د شخصي پلټنې په اړه عامې افسانې</string>
   <!-- Text to be announced by the accessibility service to inform the user that the private browsing mode is currently active. -->

@@ -72,7 +72,7 @@
   <!-- Text for the menu button to remove a recently saved bookmark from the user's home screen -->
   <string name="home_bookmarks_menu_item_remove">Tynnu</string>
   <!-- About content. %1$s is the name of the app (for example "Firefox"). -->
-  <string name="about_content">Mae %1$s yn cael ei greu gan Mozilla.</string>
+  <string name="about_content" tools:ignore="BrandUsage">Mae %1$s yn cael ei greu gan Mozilla.</string>
   <!-- Private Browsing -->
   <string name="private_browsing_common_myths">Mythau cyffredin am bori preifat</string>
   <!-- Text to be announced by the accessibility service to inform the user that the private browsing mode is currently active. -->
@@ -149,6 +149,8 @@
   <string name="home_screen_shortcut_open_new_private_tab_2">Tab preifat newydd</string>
   <!-- Shortcut action to open Passwords screen -->
   <string name="home_screen_shortcut_passwords">Cyfrineiriau</string>
+  <!-- Shortcut action to open uninstall survey -->
+  <string name="home_screen_shortcut_uninstall_survey">Dadosod, pam?</string>
   <!--
     Recent Tabs
 
@@ -473,7 +475,7 @@
   <!-- Button text to reopen firefox after the crash is processed %s is the name of the app (for example "Firefox") -->
   <string name="startup_crash_restart">Ailagor %s</string>
   <!-- Title for the usage data option in the privacy preferences dialog shown during onboarding. Note: The word "Mozilla" should NOT be translated. -->
-  <string name="onboarding_preferences_dialog_usage_data_title">Anfon data technegol a rhyngweithio i Mozilla</string>
+  <string name="onboarding_preferences_dialog_usage_data_title" tools:ignore="BrandUsage">Anfon data technegol a rhyngweithio i Mozilla</string>
   <string name="onboarding_preferences_dialog_usage_data_description_2" tools:ignore="BrandUsage">Mae data am eich dyfais, ffurfweddiad caledwedd, a sut rydych chi\'n defnyddio Firefox yn helpu i wella nodweddion, perfformiad, a sefydlogrwydd i bawb.</string>
   <string name="onboarding_preferences_dialog_usage_data_learn_more_2">Dysgu rhagor</string>
   <!-- Positive button label for the privacy preferences dialog shown during onboarding. -->
@@ -626,12 +628,12 @@
   <!-- Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded. -->
   <string name="nova_onboarding_marketing_body_2" tools:ignore="BrandUsage">Rhannwch sut wnaethoch chi ddarganfod Firefox, a\'ch bod chi\'n ei ddefnyddio, gyda phartneriaid marchnata Mozilla. Nid yw\'r data hwn byth yn cael ei werthu.</string>
   <!-- Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded. -->
-  <string name="nova_onboarding_marketing_body_3" tools:ignore="BrandUsage">Gallwch ein helpu i gyrraedd mwy o bobl trwy ganiatáu i Mozilla hysbysu\'r sianeli lle rydym yn hyrwyddo Firefox eich bod yn ddefnyddiwr Firefox.</string>
+  <string name="nova_onboarding_marketing_body_3" tools:ignore="BrandUsage,UnusedResources">Gallwch ein helpu i gyrraedd mwy o bobl trwy ganiatáu i Mozilla hysbysu\'r sianeli lle rydym yn hyrwyddo Firefox eich bod yn ddefnyddiwr Firefox.</string>
   <!--
     Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
     “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
   -->
-  <string name="nova_onboarding_marketing_body_4" tools:ignore="BrandUsage">Gallwch ein helpu i gyrraedd mwy o bobl drwy ganiatáu i Mozilla hysbysu\'r platfform y daethoch ohono a\'ch bod nawr defnyddio Firefox.</string>
+  <string name="nova_onboarding_marketing_body_4" tools:ignore="BrandUsage,UnusedResources">Gallwch ein helpu i gyrraedd mwy o bobl drwy ganiatáu i Mozilla hysbysu\'r platfform y daethoch ohono a\'ch bod nawr defnyddio Firefox.</string>
   <!--
     Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
     “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
@@ -661,7 +663,7 @@
   <!-- Marketing onboarding body link text. -->
   <string name="nova_onboarding_marketing_body_link_text_1">Dysgu rhagor</string>
   <!-- Marketing onboarding primary button text. 'Firefox' is intentionally hardcoded. -->
-  <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage">Helpu Firefox</string>
+  <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage,UnusedResources">Helpu Firefox</string>
   <!-- Marketing onboarding primary button text. -->
   <string name="nova_onboarding_marketing_primary_button_text_2">Caniatáu a Pharhau</string>
   <!-- Marketing onboarding secondary button text. -->
@@ -847,7 +849,7 @@
   <!-- Preference for accessibility -->
   <string name="preferences_accessibility">Hygyrchedd</string>
   <!-- Preference to override the Mozilla account server -->
-  <string name="preferences_override_account_server">Gweinydd cyfrif Mozilla cyfaddas</string>
+  <string name="preferences_override_account_server" tools:ignore="BrandUsage">Gweinydd cyfrif Mozilla cyfaddas</string>
   <!-- Preference to override the Sync token server -->
   <string name="preferences_override_sync_tokenserver">Gweinydd Sync Cyfaddas</string>
   <!-- Preference category for account information -->
@@ -875,7 +877,7 @@
   <!-- Preference description shown in the banner prompting the user to sign in for sync features -->
   <string name="preferences_sign_in_description">Cydweddu tabiau, nodau tudalen, cyfrineiriau, a rhagor.</string>
   <!-- Preference shown instead of account display name while account profile information isn't available yet. -->
-  <string name="preferences_account_default_name_2">Cyfrif Mozilla</string>
+  <string name="preferences_account_default_name_2" tools:ignore="BrandUsage">Cyfrif Mozilla</string>
   <!-- Preference text for account title when there was an error syncing FxA -->
   <string name="preferences_account_sync_error">Ailgysylltu i ailddechrau cydweddu</string>
   <!-- Preference for language -->
@@ -923,7 +925,7 @@
   <!-- Summary for preference to show Firefox Suggest search suggestions for web content -->
   <string name="preferences_show_nonsponsored_suggestions_summary">Cael awgrymiadau o’r we sy’n ymwneud â’ch chwilio</string>
   <!-- Preference title for switch preference to show search optimization cards -->
-  <string name="preferences_show_search_optimization_cards">Cael awgrymiadau gan Mozilla wrth i chi deipio</string>
+  <string name="preferences_show_search_optimization_cards" tools:ignore="BrandUsage">Cael awgrymiadau gan Mozilla wrth i chi deipio</string>
   <!-- Preference for link sharing -->
   <string name="preferences_link_sharing">Rhannu dolenni</string>
   <!-- Title for the link sharing toggle. %1$s is replaced by the brand name (e.g. Firefox). -->
@@ -1253,7 +1255,7 @@
   <string name="preferences_usage_data_description_1" tools:ignore="BrandUsage">Mae data am eich dyfais, ffurfweddiad caledwedd, a defnydd yn ein helpu i wella nodweddion, perfformiad a sefydlogrwydd Firefox.</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preferences_daily_usage_ping_title">Ping defnydd dyddiol</string>
-  <string name="preferences_daily_usage_ping_description">Mae hyn yn helpu Mozilla i amcangyfrif defnyddwyr gweithredol.</string>
+  <string name="preferences_daily_usage_ping_description" tools:ignore="BrandUsage">Mae hyn yn helpu Mozilla i amcangyfrif defnyddwyr gweithredol.</string>
   <string name="preferences_daily_usage_ping_learn_more">Dysgwch fwy am ping defnydd dyddiol</string>
   <!-- Title for the crash reporting option in the privacy preferences dialog shown during onboarding. -->
   <string name="crash_reporting_snack_bar_message">Anfonwyd yr adroddiad</string>
@@ -1279,7 +1281,7 @@
   <!-- Title for studies preferences -->
   <string name="preference_experiments_2">Astudiaethau</string>
   <!-- Summary for studies preferences -->
-  <string name="preference_experiments_summary_2">Yn caniatáu i Mozilla osod a rhedeg astudiaethau</string>
+  <string name="preference_experiments_summary_2" tools:ignore="BrandUsage">Yn caniatáu i Mozilla osod a rhedeg astudiaethau</string>
   <!--
     Turn On Sync Preferences
 
@@ -1993,6 +1995,8 @@
   <string name="webcompat_reporter_label_whats_broken_3">Beth sydd ddim yn gweithio?</string>
   <!-- Content description for the icon button that clears the selected broken site reason in the WebCompat Reporter. -->
   <string name="webcompat_reporter_clear_reason_content_description">Clirio\'r rheswm wedi\'i ddewis</string>
+  <!-- The error message of the description when the user selects "Something else" as the reason, but left the description empty or too short. -->
+  <string name="webcompat_reporter_description_error">Rhowch o leiaf 10 nod</string>
   <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_label_whats_broken_2">Beth sydd wedi torri?</string>
   <!-- The placeholder text for the dropdown where a user selects a high-level reason why the site is broken. -->
@@ -2066,7 +2070,7 @@
   -->
   <string name="tab_crash_title_2">Ymddiheuriadau, nid yw %1$s yn gallu llwytho’r dudalen honno.</string>
   <!-- Send crash report checkbox text on the tab crash page -->
-  <string name="tab_crash_send_report">Anfon adroddiad chwalu at Mozilla</string>
+  <string name="tab_crash_send_report" tools:ignore="BrandUsage">Anfon adroddiad chwalu at Mozilla</string>
   <!-- Close tab button text on the tab crash page -->
   <string name="tab_crash_close">Cau tab</string>
   <!-- Restore tab button text on the tab crash page -->
@@ -2475,6 +2479,8 @@
   <string name="preferences_take_survey">Llenwch yr Arolwg</string>
   <!-- Preference for not taking the short survey. -->
   <string name="preferences_not_take_survey">Dim Diolch</string>
+  <!-- Error message shown in a Toast when the system fails to trigger the device uninstallation prompt. -->
+  <string name="uninstall_survey_error_failed">Wedi methu ag agor yr anogwr dadosod system, defnyddiwch y weithred dadosod system yn uniongyrchol.</string>
   <!--
     Snackbar
 
@@ -4011,6 +4017,8 @@
     %s is a placeholder for the name of the certificate authority that issued the certificate.
   -->
   <string name="connection_security_panel_verified_by">Wedi\'i wirio gan %s</string>
+  <!-- Content description (not visible, for screen readers etc.) for the handle used to drag the protections dashboard to the bottom of the screen and close it. -->
+  <string name="tracker_protections_dashboard_close_handlebar_content_description">Cau\'r dangosfwrdd</string>
   <!--
     Text for the connection security panel when the site uses a QWAC.
     %s is a placeholder for the organization for which the certificate was issued.
@@ -4134,6 +4142,26 @@
   <string name="microsurvey_sync_title" tools:ignore="BrandUsage,UnusedResources">Pa mor fodlon ydych chi gyda\'r profiad cydweddu yn Firefox?</string>
   <!-- Text shown in the survey title for 'describe your experience so far' microsurvey. Note: The word "Firefox" should NOT be translated. -->
   <string name="microsurvey_describe_your_experience_title" tools:ignore="BrandUsage,UnusedResources">Helpwch ni i wella Firefox. Pa un sy\'n disgrifio orau eich profiad hyd yn hyn?</string>
+  <!--
+    Uninstall Survey
+
+    Title text for the uninstall survey dialog, asking the user for the reason they are removing the app
+  -->
+  <string name="microsurvey_uninstall_survey_title">Mae eich adborth yn bwysig. Pam ydych chi\'n dadosod?</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_1">Materion tudalen we</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_2">Materion fideo a lawrlwytho</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_3">Materion perfformiad</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_4">Materion swyddogaeth a dylunio</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_5">Materion yn ymwneud â phreifatrwydd</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_6">Materion talu a thanysgrifio</string>
+  <!-- Button label shown at the bottom of the uninstall survey -->
+  <string name="uninstall_survey_button_label">Cyflwyno adborth a dadosod</string>
   <!--
     Accessibility
 
@@ -4771,6 +4799,8 @@
   <string name="firefox_labs_feature_enable_dialog_message">I droi\'r nodwedd hon ymlaen, ailgychwynnwch %s.</string>
   <!-- The description text that is displayed in the confirmation dialog on the Firefox Labs screen for toggling "off" experimental features. %s is the name of the app (for example "Firefox Nightly") -->
   <string name="firefox_labs_feature_disable_dialog_message">I ddiffodd y nodwedd hon, ailgychwynnwch %s.</string>
+  <!-- Helper text shown beneath a Firefox Labs item when it is blocked from being turned on. -->
+  <string name="firefox_labs_feature_conflict">Nid yw\'r nodwedd ar gael i roi cynnig arni.</string>
   <!-- Text displayed on the Firefox Labs screen when there are no Labs experimental features present. -->
   <string name="firefox_labs_no_labs_available_description">Does dim nodweddion arbrofol i\'w profi ar hyn o bryd</string>
 </resources>

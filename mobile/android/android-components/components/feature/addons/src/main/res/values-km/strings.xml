@@ -372,7 +372,7 @@
   <!-- Text shown when attempting to install an add-on and an error occurred because the extension was incompatible. %1$s is the add-on name, %2$s is the app name and %3$s is the app version. -->
   <string name="mozac_feature_addons_failed_to_install_incompatible_error">មិនអាចដំឡើង %1$s បានទេ ព្រោះវាមិនត្រូវគ្នាជាមួយ %2$s %3$s។</string>
   <!-- Text shown when attempting to install a (hard) blocked add-on. %1$s is the add-on name. %2$s is the app name. -->
-  <string name="mozac_feature_addons_blocklisted_2">%1$s បំពាន​គោលការណ៍​របស់ Mozilla ហើយ​មិន​អាច​ដំឡើង​នៅ​លើ %2$s បាន​ទេ។</string>
+  <string name="mozac_feature_addons_blocklisted_2" tools:ignore="BrandUsage">%1$s បំពាន​គោលការណ៍​របស់ Mozilla ហើយ​មិន​អាច​ដំឡើង​នៅ​លើ %2$s បាន​ទេ។</string>
   <!-- Text shown when attempting to install an add-on that can only be install via Enterprise Policies, which is not supported on Android.  %1$s is the add-on name. -->
   <string name="mozac_feature_addons_admin_install_only">មិនអាចដំឡើង %1$s បានទេ ពីព្រោះវាអាចដំឡើងបានដោយអង្គការដែលប្រើគោលការណ៍សហគ្រាសប៉ុណ្ណោះ ដែលមិនត្រូវបានគាំទ្រនៅលើវេទិកានេះ។</string>
   <!-- Text shown when attempting to install an add-on that is soft-blocked. %1$s is the add-on name. %2$s is the app name. -->
@@ -420,7 +420,7 @@
   <!-- "See details" link displayed below an add-on status message. -->
   <string name="mozac_feature_addons_status_see_details">មើលព័ត៌មានលម្អិត</string>
   <!-- Status message below an add-on in the add-ons manager when this add-on has been blocklisted. %1$s is the add-on name. -->
-  <string name="mozac_feature_addons_status_blocklisted_1">កម្មវិធីបន្ថែមនេះត្រូវបានរារាំងដោយសារតែការរំលោភលើគោលការណ៍របស់ Mozilla ហើយត្រូវបានបិទ។</string>
+  <string name="mozac_feature_addons_status_blocklisted_1" tools:ignore="BrandUsage">កម្មវិធីបន្ថែមនេះត្រូវបានរារាំងដោយសារតែការរំលោភលើគោលការណ៍របស់ Mozilla ហើយត្រូវបានបិទ។</string>
   <!-- Status message below an add-on in the add-ons manager when this add-on has been soft-blocked. -->
   <string name="mozac_feature_addons_status_softblocked_2">ផ្នែកបន្ថែមនេះត្រូវបានដាក់កម្រិត ហើយត្រូវបានបិទ។ អ្នកអាចបើកវាបាន ប៉ុន្តែវាអាចមានគ្រោះថ្នាក់។</string>
   <!-- Status message below an add-on in the add-ons manager when this add-on has been soft-blocked but the user re-enabled it. -->

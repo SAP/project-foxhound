@@ -172,6 +172,8 @@
   <string name="mozac_feature_prompts_collapse_address_content_description_2">摺疊儲存的地址資訊</string>
   <!-- Text for the manage addresses button. -->
   <string name="mozac_feature_prompts_manage_address">管理已存地址</string>
+  <!-- Text for the title of a save address dialog. -->
+  <string name="mozac_feature_prompts_save_address_prompt_title">要儲存地址嗎？</string>
   <!--
     Federated Credential Management prompts
 

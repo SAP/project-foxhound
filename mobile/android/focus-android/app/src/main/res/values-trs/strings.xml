@@ -156,7 +156,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s sò\' \'nïnj rā\'a daran\' sa \'iát.</p>\n<p>Nāgi\'iaj \'ngō nabegado huìi man:\n<ul>\n<li>Nānà\'uì\' nī gāchē nu āsìj riña aplikasiun dan</li>\n<li>Nārán riña nej sa naga\'nāj a (asi nāgi\'iaj nākàt man sisī dādan achín man)</li>\n<li>Nādure\' nej koki nī nej sa atāj na\'ānj danè\' gaché nunt</li>\n</ul> </p>\n<p>%1$s si rāsūn Mozilla huin man. Nù huin ñunj da\' gā ni\'nïnj internter riñant.<br/>\n<a href=\"%2$s\">Gāhuin chrūn doj</a></p>]]></string>
+  <string name="about_content" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s sò\' \'nïnj rā\'a daran\' sa \'iát.</p>\n<p>Nāgi\'iaj \'ngō nabegado huìi man:\n<ul>\n<li>Nānà\'uì\' nī gāchē nu āsìj riña aplikasiun dan</li>\n<li>Nārán riña nej sa naga\'nāj a (asi nāgi\'iaj nākàt man sisī dādan achín man)</li>\n<li>Nādure\' nej koki nī nej sa atāj na\'ānj danè\' gaché nunt</li>\n</ul> </p>\n<p>%1$s si rāsūn Mozilla huin man. Nù huin ñunj da\' gā ni\'nïnj internter riñant.<br/>\n<a href=\"%2$s\">Gāhuin chrūn doj</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">Gāhuin chrūn doj</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -251,7 +251,7 @@
   <!-- "Hint" text for the "custom autocomplete URL" input field. Shown when the field is empty. -->
   <string name="preference_autocomplete_add_hint">Gàchru\' URL</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
-  <string name="preference_autocomplete_add_example2">Nagi\'io\': mozilla.org</string>
+  <string name="preference_autocomplete_add_example2" tools:ignore="BrandUsage">Nagi\'io\': mozilla.org</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">Dànaj gachrunt: example.com</string>
   <!-- Confirmation "snackbar" shown after a new custom autocomplete URL has been added. -->
@@ -323,15 +323,15 @@
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
   <string name="preference_default_browser2">Nagi\'iaj %1$s da\' garasun yitïnjt</string>
-  <string name="preference_category_mozilla">Mozilla</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">Mozilla</string>
   <string name="preference_mozilla_telemetry2">Ga\'nïnj nej datô arâj sunt</string>
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">Gini\'in doj rayi\'î na</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-  <string name="preference_mozilla_telemetry_summary2">Ûta ‘iaj nukuaj Mozilla man’an da’ gā hue’ê nej sa narikïj %1$s da’ garasun daran’ nê’.</string>
+  <string name="preference_mozilla_telemetry_summary2" tools:ignore="BrandUsage">Ûta ‘iaj nukuaj Mozilla man’an da’ gā hue’ê nej sa narikïj %1$s da’ garasun daran’ nê’.</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preference_daily_usage_ping_title">Ping arâjsun nīgànt</string>
-  <string name="preference_daily_usage_ping_description">Nan rugûñūn’ūnj Mozilla da’ gīni’in andaj duguî’ atûj yītïnj riñanj.</string>
+  <string name="preference_daily_usage_ping_description" tools:ignore="BrandUsage">Nan rugûñūn’ūnj Mozilla da’ gīni’in andaj duguî’ atûj yītïnj riñanj.</string>
   <string name="preference_daily_usage_ping_learn_more">Gāhuin chrūn doj</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
   <string name="preference_privacy_notice">Noticia huìi</string>
@@ -829,7 +829,7 @@
   <!-- Label for button to close the tab -->
   <string name="tab_crash_report_close_tab_button_label">Narán Rakïj ñanj</string>
   <!-- Label for the checkbox to send the tab crash report to Mozilla -->
-  <string name="crash_report_send_crash_label">Gana\'nínj nuguan\'an nuhuin saj \'iaj sun a\'nan\' Mozilla</string>
+  <string name="crash_report_send_crash_label" tools:ignore="BrandUsage">Gana\'nínj nuguan\'an nuhuin saj \'iaj sun a\'nan\' Mozilla</string>
   <!-- Tracking protection bottom sheet -->
 
   <!-- Label for the total number of trackers blocked. %s is the app install date. -->

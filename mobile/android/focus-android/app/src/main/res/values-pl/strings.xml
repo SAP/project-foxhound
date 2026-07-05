@@ -156,7 +156,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s daje większą kontrolę.</p>\n<p>Jako prywatna przeglądarka umożliwia:\n<ul>\n<li>wyszukiwanie i\u00a0przeglądanie prosto z\u00a0aplikacji</li>\n<li>blokowanie elementów śledzących (można to zmienić w\u00a0ustawieniach)</li>\n<li>usuwanie ciasteczek oraz całej historii wyszukiwania i\u00a0przeglądania</li>\n</ul> </p>\n<p>%1$s jest tworzony przez Mozillę. Naszym celem jest wspieranie zdrowego i\u00a0otwartego Internetu.<br/>\n<a href=\"%2$s\">Więcej informacji</a></p>]]></string>
+  <string name="about_content" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s daje większą kontrolę.</p>\n<p>Jako prywatna przeglądarka umożliwia:\n<ul>\n<li>wyszukiwanie i\u00a0przeglądanie prosto z\u00a0aplikacji</li>\n<li>blokowanie elementów śledzących (można to zmienić w\u00a0ustawieniach)</li>\n<li>usuwanie ciasteczek oraz całej historii wyszukiwania i\u00a0przeglądania</li>\n</ul> </p>\n<p>%1$s jest tworzony przez Mozillę. Naszym celem jest wspieranie zdrowego i\u00a0otwartego Internetu.<br/>\n<a href=\"%2$s\">Więcej informacji</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">Więcej informacji</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -251,7 +251,7 @@
   <!-- "Hint" text for the "custom autocomplete URL" input field. Shown when the field is empty. -->
   <string name="preference_autocomplete_add_hint">Wklej lub wpisz adres</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
-  <string name="preference_autocomplete_add_example2">Przykład: mozilla.org</string>
+  <string name="preference_autocomplete_add_example2" tools:ignore="BrandUsage">Przykład: mozilla.org</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">Przykład: example.com</string>
   <!-- Confirmation "snackbar" shown after a new custom autocomplete URL has been added. -->
@@ -323,15 +323,15 @@
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
   <string name="preference_default_browser2">Ustaw %1$s jako domyślną przeglądarkę</string>
-  <string name="preference_category_mozilla">Mozilla</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">Mozilla</string>
   <string name="preference_mozilla_telemetry2">Przesyłanie danych o\u00a0użyciu</string>
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">Więcej informacji</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-  <string name="preference_mozilla_telemetry_summary2">Mozilla zbiera wyłącznie informacje niezbędne do udostępniania i\u00a0ulepszania %1$s.</string>
+  <string name="preference_mozilla_telemetry_summary2" tools:ignore="BrandUsage">Mozilla zbiera wyłącznie informacje niezbędne do udostępniania i\u00a0ulepszania %1$s.</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preference_daily_usage_ping_title">Dzienny sygnał o\u00a0użyciu</string>
-  <string name="preference_daily_usage_ping_description">To pomaga Mozilli oszacować liczbę aktywnych użytkowników.</string>
+  <string name="preference_daily_usage_ping_description" tools:ignore="BrandUsage">To pomaga Mozilli oszacować liczbę aktywnych użytkowników.</string>
   <string name="preference_daily_usage_ping_learn_more">Więcej informacji</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
   <string name="preference_privacy_notice">Zasady ochrony prywatności</string>
@@ -829,7 +829,7 @@
   <!-- Label for button to close the tab -->
   <string name="tab_crash_report_close_tab_button_label">Zamknij kartę</string>
   <!-- Label for the checkbox to send the tab crash report to Mozilla -->
-  <string name="crash_report_send_crash_label">Zgłoś awarię Mozilli</string>
+  <string name="crash_report_send_crash_label" tools:ignore="BrandUsage">Zgłoś awarię Mozilli</string>
   <!-- Tracking protection bottom sheet -->
 
   <!-- Label for the total number of trackers blocked. %s is the app install date. -->

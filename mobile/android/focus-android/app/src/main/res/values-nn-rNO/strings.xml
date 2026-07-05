@@ -156,7 +156,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s gir deg kontroll.</p>\n<p>Bruk han som ein privat nettlesar:\n<ul>\n<li>Søk og surf rett i appen</li>\n<li>Blokker sporarar (eller oppdater innstillingane for å tillate sporarar)</li>\n<li>Slett for å fjerne infokapslar samt søk- og nettlesarhistorikk</li>\n</ul> </p>\n<p>%1$s er produsert av Mozilla. Vårt oppdrag er å fremme eit sunt, ope Internett.<br/>\n<a href=\"%2$s\">Les meir</a></p>]]></string>
+  <string name="about_content" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s gir deg kontroll.</p>\n<p>Bruk han som ein privat nettlesar:\n<ul>\n<li>Søk og surf rett i appen</li>\n<li>Blokker sporarar (eller oppdater innstillingane for å tillate sporarar)</li>\n<li>Slett for å fjerne infokapslar samt søk- og nettlesarhistorikk</li>\n</ul> </p>\n<p>%1$s er produsert av Mozilla. Vårt oppdrag er å fremme eit sunt, ope Internett.<br/>\n<a href=\"%2$s\">Les meir</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">Les meir</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -251,7 +251,7 @@
   <!-- "Hint" text for the "custom autocomplete URL" input field. Shown when the field is empty. -->
   <string name="preference_autocomplete_add_hint">Lim inn eller skriv inn ei nettadresse</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
-  <string name="preference_autocomplete_add_example2">Døme: mozilla.org</string>
+  <string name="preference_autocomplete_add_example2" tools:ignore="BrandUsage">Døme: mozilla.org</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">Døme: example.com</string>
   <!-- Confirmation "snackbar" shown after a new custom autocomplete URL has been added. -->
@@ -323,15 +323,15 @@
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
   <string name="preference_default_browser2">Bruk %1$s som standard nettlesar</string>
-  <string name="preference_category_mozilla">Mozilla</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">Mozilla</string>
   <string name="preference_mozilla_telemetry2">Send brukardata</string>
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">Les meir</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-  <string name="preference_mozilla_telemetry_summary2">Mozilla strevar etter å berre samle inn det vi treng for å tilby og forbetre %1$s for alle.</string>
+  <string name="preference_mozilla_telemetry_summary2" tools:ignore="BrandUsage">Mozilla strevar etter å berre samle inn det vi treng for å tilby og forbetre %1$s for alle.</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preference_daily_usage_ping_title">Ping for dagleg bruk</string>
-  <string name="preference_daily_usage_ping_description">Dette hjelper Mozilla med å berekne aktive brukarar.</string>
+  <string name="preference_daily_usage_ping_description" tools:ignore="BrandUsage">Dette hjelper Mozilla med å berekne aktive brukarar.</string>
   <string name="preference_daily_usage_ping_learn_more">Les meir</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
   <string name="preference_privacy_notice">Personvernfråsegn</string>
@@ -829,7 +829,7 @@
   <!-- Label for button to close the tab -->
   <string name="tab_crash_report_close_tab_button_label">Lat att fane</string>
   <!-- Label for the checkbox to send the tab crash report to Mozilla -->
-  <string name="crash_report_send_crash_label">Send krasjrapport til Mozilla</string>
+  <string name="crash_report_send_crash_label" tools:ignore="BrandUsage">Send krasjrapport til Mozilla</string>
   <!-- Tracking protection bottom sheet -->
 
   <!-- Label for the total number of trackers blocked. %s is the app install date. -->

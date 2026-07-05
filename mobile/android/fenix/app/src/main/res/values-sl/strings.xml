@@ -23,6 +23,8 @@
   <string name="content_description_normal_browsing">Običajno brskanje</string>
   <!-- Placeholder text shown in the search bar before a user enters text for the default engine -->
   <string name="search_hint">Iskanje ali naslov strani</string>
+  <!-- Shorter placeholder text shown in the search bar when an additional action (voice search) is rendered alongside the hint. -->
+  <string name="search_hint_short">Išči</string>
   <!-- Placeholder text shown in the search bar before a user enters text for a general engine -->
   <string name="search_hint_general_engine">Iskanje po spletu</string>
   <!-- Placeholder text shown in search bar when using history search -->
@@ -70,7 +72,7 @@
   <!-- Text for the menu button to remove a recently saved bookmark from the user's home screen -->
   <string name="home_bookmarks_menu_item_remove">Odstrani</string>
   <!-- About content. %1$s is the name of the app (for example "Firefox"). -->
-  <string name="about_content">%1$s izdeluje Mozilla.</string>
+  <string name="about_content" tools:ignore="BrandUsage">%1$s izdeluje Mozilla.</string>
   <!-- Private Browsing -->
   <string name="private_browsing_common_myths">Pogoste zmote o zasebnem brskanju</string>
   <!-- Text to be announced by the accessibility service to inform the user that the private browsing mode is currently active. -->
@@ -287,6 +289,8 @@
   <string name="browser_menu_move_to_non_private_tab">Premakni na nezaseben zavihek</string>
   <!-- Browser menu label for navigating to the translation feature, which provides language translation options the current visited page -->
   <string name="browser_menu_translate_page_2">Prevedi stran</string>
+  <!-- Browser menu label for navigating to the summarization feature, which provides site summarization for the current visited page -->
+  <string name="browser_menu_summarize_page">Povzemi stran</string>
   <!-- Browser menu badge text for summarization feature -->
   <string name="browser_menu_summarize_page_badge">Novo</string>
   <!-- Browser menu label for navigating to the Web Compat Reporter feature, which provides users the ability to send bug reports for broken sites. -->
@@ -343,6 +347,8 @@
   <string name="translation_toolbar_close_action">Skrij sporočilo</string>
   <!-- Headline text for the AI controls banner. %s is the name of the app (for example "Firefox"). -->
   <string name="ai_controls_banner_headline">V %su imate vedno izbiro</string>
+  <!-- Supporting text for the AI controls banner. %s is a learn more link using ai_controls_learn_more as text. -->
+  <string name="ai_controls_banner_supporting_text_2">Vključno s tem, ali želite uporabljati možnosti, izboljšane z umetno inteligenco. %s</string>
   <!-- Link text for learning more about AI controls -->
   <string name="ai_controls_learn_more">Več o tem</string>
   <!-- Title for the block AI enhancements toggle -->
@@ -449,7 +455,7 @@
   <!-- Button text to reopen firefox after the crash is processed %s is the name of the app (for example "Firefox") -->
   <string name="startup_crash_restart">Ponovno odpri %s</string>
   <!-- Title for the usage data option in the privacy preferences dialog shown during onboarding. Note: The word "Mozilla" should NOT be translated. -->
-  <string name="onboarding_preferences_dialog_usage_data_title">Pošiljaj Mozilli tehnične in interakcijske podatke</string>
+  <string name="onboarding_preferences_dialog_usage_data_title" tools:ignore="BrandUsage">Pošiljaj Mozilli tehnične in interakcijske podatke</string>
   <string name="onboarding_preferences_dialog_usage_data_description_2" tools:ignore="BrandUsage">Podatki o vaši napravi, nastavitvi strojne opreme in načinu uporabe Firefoxa pomagajo izboljšati funkcionalnost, zmogljivost in zanesljivost za vse uporabnike.</string>
   <string name="onboarding_preferences_dialog_usage_data_learn_more_2">Več o tem</string>
   <!-- Positive button label for the privacy preferences dialog shown during onboarding. -->
@@ -535,6 +541,8 @@
   <string name="nova_onboarding_negative_button">Ne zdaj</string>
   <!-- "Skip" onboarding button. -->
   <string name="nova_onboarding_skip_button" tools:ignore="UnusedResources">Preskoči</string>
+  <!-- Terms of use (ToU) onboarding title. -->
+  <string name="nova_onboarding_tou_title" tools:ignore="UnusedResources">Pripravite se na uporabo brez preprek</string>
   <!-- Terms of use (ToU) onboarding subtitle. -->
   <string name="nova_onboarding_tou_subtitle">Hiter, varen in ne bo vas prodal.\nBrskanje je pravkar postalo še boljše.</string>
   <!--
@@ -593,6 +601,8 @@
     %1$s is replaced by an active link, using nova_onboarding_marketing_body_link_text as text (“How we use the data”).
   -->
   <string name="nova_onboarding_marketing_body" tools:ignore="BrandUsage,UnusedResources">Sporočite Mozillinim tehnološkim partnerjem za trženje, kako ste odkrili Firefox in da ga uporabljate. Ti podatki se nikoli ne bodo prodali. %1$s</string>
+  <!-- Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded. -->
+  <string name="nova_onboarding_marketing_body_2" tools:ignore="BrandUsage">Sporočite Mozillinim tehnološkim partnerjem za trženje, kako ste odkrili Firefox in da ga uporabljate. Ti podatki se nikoli ne bodo prodali.</string>
   <!--
     Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
     “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
@@ -600,8 +610,10 @@
   <string name="nova_onboarding_marketing_body_5" tools:ignore="BrandUsage,UnusedResources">Pomagajte nam doseči več ljudi in dovolite Mozilli, da platformo, s katere prihajate, obvesti, da uporabljate Firefox.</string>
   <!-- Marketing onboarding body link text. -->
   <string name="nova_onboarding_marketing_body_link_text">Kako uporabljamo te podatke</string>
+  <!-- Marketing onboarding body link text. -->
+  <string name="nova_onboarding_marketing_body_link_text_1">Več o tem</string>
   <!-- Marketing onboarding primary button text. 'Firefox' is intentionally hardcoded. -->
-  <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage">Pomagaj Firefoxu</string>
+  <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage,UnusedResources">Pomagaj Firefoxu</string>
   <!-- Marketing onboarding primary button text. -->
   <string name="nova_onboarding_marketing_primary_button_text_2">Dovoli in nadaljuj</string>
   <!-- Marketing onboarding secondary button text. -->
@@ -616,6 +628,8 @@
   <string name="nova_onboarding_add_search_widget_subtitle" tools:ignore="BrandUsage">Začnite vsako iskanje z domače strani svojega telefona in vedite, da vam Firefox s svojimi zaščitami krije hrbet.</string>
   <!-- "Add search widget" onboarding button. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_add_search_widget_button" tools:ignore="BrandUsage">Dodaj pripomoček Firefox</string>
+  <!-- Customize prompt onboarding title. -->
+  <string name="nova_onboarding_customize_prompt_title" tools:ignore="UnusedResources">Preprost za prilagajanje in zasebnejši z vsakim dotikom</string>
   <plurals name="nova_onboarding_customize_prompt_body" tools:ignore="UnusedResources">
     <!--
       Customize prompt onboarding body.
@@ -781,7 +795,7 @@
   <!-- Preference for accessibility -->
   <string name="preferences_accessibility">Dostopnost</string>
   <!-- Preference to override the Mozilla account server -->
-  <string name="preferences_override_account_server">Strežnik računov Mozilla po meri</string>
+  <string name="preferences_override_account_server" tools:ignore="BrandUsage">Strežnik računov Mozilla po meri</string>
   <!-- Preference to override the Sync token server -->
   <string name="preferences_override_sync_tokenserver">Sinhronizacijski strežnik po meri</string>
   <!-- Preference category for account information -->
@@ -809,7 +823,7 @@
   <!-- Preference description shown in the banner prompting the user to sign in for sync features -->
   <string name="preferences_sign_in_description">Sinhronizirajte zavihke, zaznamke, gesla in drugo.</string>
   <!-- Preference shown instead of account display name while account profile information isn't available yet. -->
-  <string name="preferences_account_default_name_2">Račun Mozilla</string>
+  <string name="preferences_account_default_name_2" tools:ignore="BrandUsage">Račun Mozilla</string>
   <!-- Preference text for account title when there was an error syncing FxA -->
   <string name="preferences_account_sync_error">Ponovno se povežite za nadaljevanje sinhronizacije</string>
   <!-- Preference for language -->
@@ -857,7 +871,7 @@
   <!-- Summary for preference to show Firefox Suggest search suggestions for web content -->
   <string name="preferences_show_nonsponsored_suggestions_summary">Prejemajte predloge s spleta, povezane z vašim iskanjem</string>
   <!-- Preference title for switch preference to show search optimization cards -->
-  <string name="preferences_show_search_optimization_cards">Med tipkanjem prejemaj predloge Mozille</string>
+  <string name="preferences_show_search_optimization_cards" tools:ignore="BrandUsage">Med tipkanjem prejemaj predloge Mozille</string>
   <!-- Preference for link sharing -->
   <string name="preferences_link_sharing">Deljenje povezav</string>
   <!-- Title for the link sharing toggle. %1$s is replaced by the brand name (e.g. Firefox). -->
@@ -1187,7 +1201,7 @@
   <string name="preferences_usage_data_description_1" tools:ignore="BrandUsage">Podatki o vaši napravi, nastavitvi strojne opreme in uporabi nam pomagajo izboljševati zmogljivosti, delovanje in zanesljivost Firefoxa.</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preferences_daily_usage_ping_title">Ping za dnevno uporabo</string>
-  <string name="preferences_daily_usage_ping_description">To Mozilli pomaga oceniti število aktivnih uporabnikov.</string>
+  <string name="preferences_daily_usage_ping_description" tools:ignore="BrandUsage">To Mozilli pomaga oceniti število aktivnih uporabnikov.</string>
   <string name="preferences_daily_usage_ping_learn_more">Več o pingu za dnevno uporabo</string>
   <!-- Title for the crash reporting option in the privacy preferences dialog shown during onboarding. -->
   <string name="crash_reporting_snack_bar_message">Poročilo poslano</string>
@@ -1213,7 +1227,7 @@
   <!-- Title for studies preferences -->
   <string name="preference_experiments_2">Raziskave</string>
   <!-- Summary for studies preferences -->
-  <string name="preference_experiments_summary_2">Dovoli Mozilli namestitev in izvajanje raziskav</string>
+  <string name="preference_experiments_summary_2" tools:ignore="BrandUsage">Dovoli Mozilli namestitev in izvajanje raziskav</string>
   <!--
     Turn On Sync Preferences
 
@@ -1969,7 +1983,7 @@
   -->
   <string name="tab_crash_title_2">Oprostite. %1$s ne more naložiti te strani.</string>
   <!-- Send crash report checkbox text on the tab crash page -->
-  <string name="tab_crash_send_report">Pošlji poročilo o sesutju Mozilli</string>
+  <string name="tab_crash_send_report" tools:ignore="BrandUsage">Pošlji poročilo o sesutju Mozilli</string>
   <!-- Close tab button text on the tab crash page -->
   <string name="tab_crash_close">Zapri zavihek</string>
   <!-- Restore tab button text on the tab crash page -->
@@ -4465,6 +4479,17 @@
   <string name="privacy_notice_updated_homepage_message_privacy_notice" tools:ignore="UnusedResources">obvestilo o zasebnosti</string>
   <!-- The second active link used in privacy_notice_updated_homepage_message -->
   <string name="privacy_notice_updated_homepage_message_learn_more" tools:ignore="UnusedResources">Več o tem</string>
+  <!--
+    Firefox Labs
+
+    Firefox Labs is the name of a screen in Settings to allow users to learn about
+    experimental and in-development features, and turn those features on and off.
+    The "Labs" portion can be localized, "Firefox" must be treated as a brand and kept
+    in English.
+  -->
+  <string name="firefox_labs_title" tools:ignore="BrandUsage">Firefox Labs</string>
+  <!-- Button text on the Firefox Labs screen for restoring all toggles back to the default settings. The button will turn off any experimental features. -->
+  <string name="firefox_labs_restore_default_button_text">Obnovi privzeto</string>
   <!-- The title used in a confirmation dialog on the Firefox Labs screen when toggling "on" or "off" an experimental feature that requires a restart. -->
   <string name="firefox_labs_feature_dialog_title">Zahtevan je ponoven zagon</string>
   <!-- The text on the dialog on the Firefox Labs screen for the positive button when toggling "on" and "off" experimental features. This prompts the user to confirm that they want to restart the app. -->

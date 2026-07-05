@@ -72,7 +72,7 @@
   <!-- Text for the menu button to remove a recently saved bookmark from the user's home screen -->
   <string name="home_bookmarks_menu_item_remove">Ta bort</string>
   <!-- About content. %1$s is the name of the app (for example "Firefox"). -->
-  <string name="about_content">%1$s produceras av Mozilla.</string>
+  <string name="about_content" tools:ignore="BrandUsage">%1$s produceras av Mozilla.</string>
   <!-- Private Browsing -->
   <string name="private_browsing_common_myths">Vanliga myter om privat surfning</string>
   <!-- Text to be announced by the accessibility service to inform the user that the private browsing mode is currently active. -->
@@ -149,6 +149,8 @@
   <string name="home_screen_shortcut_open_new_private_tab_2">Ny privat flik</string>
   <!-- Shortcut action to open Passwords screen -->
   <string name="home_screen_shortcut_passwords">Lösenord</string>
+  <!-- Shortcut action to open uninstall survey -->
+  <string name="home_screen_shortcut_uninstall_survey">Avinstallera, varför?</string>
   <!--
     Recent Tabs
 
@@ -473,7 +475,7 @@
   <!-- Button text to reopen firefox after the crash is processed %s is the name of the app (for example "Firefox") -->
   <string name="startup_crash_restart">Öppna %s igen</string>
   <!-- Title for the usage data option in the privacy preferences dialog shown during onboarding. Note: The word "Mozilla" should NOT be translated. -->
-  <string name="onboarding_preferences_dialog_usage_data_title">Skicka teknisk information och interaktionsdata till Mozilla</string>
+  <string name="onboarding_preferences_dialog_usage_data_title" tools:ignore="BrandUsage">Skicka teknisk information och interaktionsdata till Mozilla</string>
   <string name="onboarding_preferences_dialog_usage_data_description_2" tools:ignore="BrandUsage">Data om din enhet, hårdvarukonfiguration och hur du använder Firefox hjälper till att förbättra funktioner, prestanda och stabilitet för alla.</string>
   <string name="onboarding_preferences_dialog_usage_data_learn_more_2">Läs mer</string>
   <!-- Positive button label for the privacy preferences dialog shown during onboarding. -->
@@ -626,12 +628,12 @@
   <!-- Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded. -->
   <string name="nova_onboarding_marketing_body_2" tools:ignore="BrandUsage">Dela med dig av hur du upptäckte Firefox och att du använder det, med Mozillas marknadsföringspartners. Denna data säljs aldrig.</string>
   <!-- Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded. -->
-  <string name="nova_onboarding_marketing_body_3" tools:ignore="BrandUsage">Du kan hjälpa oss att nå fler genom att låta Mozilla informera de kanaler där vi marknadsför Firefox att du är en Firefox-användare.</string>
+  <string name="nova_onboarding_marketing_body_3" tools:ignore="BrandUsage,UnusedResources">Du kan hjälpa oss att nå fler genom att låta Mozilla informera de kanaler där vi marknadsför Firefox att du är en Firefox-användare.</string>
   <!--
     Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
     “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
   -->
-  <string name="nova_onboarding_marketing_body_4" tools:ignore="BrandUsage">Du kan hjälpa oss att nå fler genom att låta Mozilla informera plattformen du kom från att du använder Firefox.</string>
+  <string name="nova_onboarding_marketing_body_4" tools:ignore="BrandUsage,UnusedResources">Du kan hjälpa oss att nå fler genom att låta Mozilla informera plattformen du kom från att du använder Firefox.</string>
   <!--
     Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
     “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
@@ -661,7 +663,7 @@
   <!-- Marketing onboarding body link text. -->
   <string name="nova_onboarding_marketing_body_link_text_1">Läs mer</string>
   <!-- Marketing onboarding primary button text. 'Firefox' is intentionally hardcoded. -->
-  <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage">Hjälp Firefox</string>
+  <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage,UnusedResources">Hjälp Firefox</string>
   <!-- Marketing onboarding primary button text. -->
   <string name="nova_onboarding_marketing_primary_button_text_2">Tillåt och fortsätt</string>
   <!-- Marketing onboarding secondary button text. -->
@@ -843,7 +845,7 @@
   <!-- Preference for accessibility -->
   <string name="preferences_accessibility">Hjälpmedel</string>
   <!-- Preference to override the Mozilla account server -->
-  <string name="preferences_override_account_server">Anpassad Mozilla-kontoserver</string>
+  <string name="preferences_override_account_server" tools:ignore="BrandUsage">Anpassad Mozilla-kontoserver</string>
   <!-- Preference to override the Sync token server -->
   <string name="preferences_override_sync_tokenserver">Anpassad synkroniseringsserver</string>
   <!-- Preference category for account information -->
@@ -871,7 +873,7 @@
   <!-- Preference description shown in the banner prompting the user to sign in for sync features -->
   <string name="preferences_sign_in_description">Synka flikar, bokmärken, lösenord och mer.</string>
   <!-- Preference shown instead of account display name while account profile information isn't available yet. -->
-  <string name="preferences_account_default_name_2">Mozilla-konto</string>
+  <string name="preferences_account_default_name_2" tools:ignore="BrandUsage">Mozilla-konto</string>
   <!-- Preference text for account title when there was an error syncing FxA -->
   <string name="preferences_account_sync_error">Anslut igen för att återuppta synkroniseringen</string>
   <!-- Preference for language -->
@@ -919,7 +921,7 @@
   <!-- Summary for preference to show Firefox Suggest search suggestions for web content -->
   <string name="preferences_show_nonsponsored_suggestions_summary">Få förslag från webben relaterade till din sökning</string>
   <!-- Preference title for switch preference to show search optimization cards -->
-  <string name="preferences_show_search_optimization_cards">Få förslag från Mozilla medan du skriver</string>
+  <string name="preferences_show_search_optimization_cards" tools:ignore="BrandUsage">Få förslag från Mozilla medan du skriver</string>
   <!-- Preference for link sharing -->
   <string name="preferences_link_sharing">Länkdelning</string>
   <!-- Title for the link sharing toggle. %1$s is replaced by the brand name (e.g. Firefox). -->
@@ -1249,7 +1251,7 @@
   <string name="preferences_usage_data_description_1" tools:ignore="BrandUsage">Data om din enhet, hårdvarukonfiguration och användning hjälper oss att förbättra Firefox funktioner, prestanda och stabilitet.</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preferences_daily_usage_ping_title">Ping för daglig användning</string>
-  <string name="preferences_daily_usage_ping_description">Detta hjälper Mozilla att uppskatta antalet aktiva användare.</string>
+  <string name="preferences_daily_usage_ping_description" tools:ignore="BrandUsage">Detta hjälper Mozilla att uppskatta antalet aktiva användare.</string>
   <string name="preferences_daily_usage_ping_learn_more">Läs mer om ping för daglig användning</string>
   <!-- Title for the crash reporting option in the privacy preferences dialog shown during onboarding. -->
   <string name="crash_reporting_snack_bar_message">Rapport skickad</string>
@@ -1275,7 +1277,7 @@
   <!-- Title for studies preferences -->
   <string name="preference_experiments_2">Undersökningar</string>
   <!-- Summary for studies preferences -->
-  <string name="preference_experiments_summary_2">Tillåter Mozilla att installera och köra undersökningar</string>
+  <string name="preference_experiments_summary_2" tools:ignore="BrandUsage">Tillåter Mozilla att installera och köra undersökningar</string>
   <!--
     Turn On Sync Preferences
 
@@ -1965,6 +1967,8 @@
   <string name="webcompat_reporter_label_whats_broken_3">Vad fungerar inte?</string>
   <!-- Content description for the icon button that clears the selected broken site reason in the WebCompat Reporter. -->
   <string name="webcompat_reporter_clear_reason_content_description">Rensa valt skäl</string>
+  <!-- The error message of the description when the user selects "Something else" as the reason, but left the description empty or too short. -->
+  <string name="webcompat_reporter_description_error">Ange minst 10 tecken</string>
   <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_label_whats_broken_2">Vad är trasigt?</string>
   <!-- The placeholder text for the dropdown where a user selects a high-level reason why the site is broken. -->
@@ -2038,7 +2042,7 @@
   -->
   <string name="tab_crash_title_2">Tyvärr. %1$s kan inte ladda den sidan.</string>
   <!-- Send crash report checkbox text on the tab crash page -->
-  <string name="tab_crash_send_report">Skicka kraschrapport till Mozilla</string>
+  <string name="tab_crash_send_report" tools:ignore="BrandUsage">Skicka kraschrapport till Mozilla</string>
   <!-- Close tab button text on the tab crash page -->
   <string name="tab_crash_close">Stäng flik</string>
   <!-- Restore tab button text on the tab crash page -->
@@ -2447,6 +2451,8 @@
   <string name="preferences_take_survey">Gör undersökning</string>
   <!-- Preference for not taking the short survey. -->
   <string name="preferences_not_take_survey">Nej tack</string>
+  <!-- Error message shown in a Toast when the system fails to trigger the device uninstallation prompt. -->
+  <string name="uninstall_survey_error_failed">Det gick inte att öppna prompten för systemavinstallation, använd avinstallationsåtgärden direkt.</string>
   <!--
     Snackbar
 
@@ -3943,6 +3949,8 @@
     %s is a placeholder for the name of the certificate authority that issued the certificate.
   -->
   <string name="connection_security_panel_verified_by">Verifierad av %s</string>
+  <!-- Content description (not visible, for screen readers etc.) for the handle used to drag the protections dashboard to the bottom of the screen and close it. -->
+  <string name="tracker_protections_dashboard_close_handlebar_content_description">Stäng översikten</string>
   <!--
     Text for the connection security panel when the site uses a QWAC.
     %s is a placeholder for the organization for which the certificate was issued.
@@ -4066,6 +4074,26 @@
   <string name="microsurvey_sync_title" tools:ignore="BrandUsage,UnusedResources">Hur nöjd är du med synkroniseringen i Firefox?</string>
   <!-- Text shown in the survey title for 'describe your experience so far' microsurvey. Note: The word "Firefox" should NOT be translated. -->
   <string name="microsurvey_describe_your_experience_title" tools:ignore="BrandUsage,UnusedResources">Hjälp oss att förbättra Firefox. Vilken beskriver bäst din upplevelse hittills?</string>
+  <!--
+    Uninstall Survey
+
+    Title text for the uninstall survey dialog, asking the user for the reason they are removing the app
+  -->
+  <string name="microsurvey_uninstall_survey_title">Din feedback är viktig. Varför avinstallerar du?</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_1">Problem med webbsidor</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_2">Problem med video och nedladdningar</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_3">Prestandaproblem</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_4">Funktions- och designfrågor</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_5">Sekretessrelaterade frågor</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_6">Betalnings- och teckningsfrågor</string>
+  <!-- Button label shown at the bottom of the uninstall survey -->
+  <string name="uninstall_survey_button_label">Skicka feedback och avinstallera</string>
   <!--
     Accessibility
 
@@ -4703,6 +4731,8 @@
   <string name="firefox_labs_feature_enable_dialog_message">För att aktivera den här funktionen, starta om %s.</string>
   <!-- The description text that is displayed in the confirmation dialog on the Firefox Labs screen for toggling "off" experimental features. %s is the name of the app (for example "Firefox Nightly") -->
   <string name="firefox_labs_feature_disable_dialog_message">För att stänga av den här funktionen, starta om %s.</string>
+  <!-- Helper text shown beneath a Firefox Labs item when it is blocked from being turned on. -->
+  <string name="firefox_labs_feature_conflict">Funktionen är inte tillgänglig att prova.</string>
   <!-- Text displayed on the Firefox Labs screen when there are no Labs experimental features present. -->
   <string name="firefox_labs_no_labs_available_description">Inga experimentella funktioner att prova just nu</string>
 </resources>

@@ -373,7 +373,7 @@
   <!-- Text shown when attempting to install an add-on and an error occurred because the extension was incompatible. %1$s is the add-on name, %2$s is the app name and %3$s is the app version. -->
   <string name="mozac_feature_addons_failed_to_install_incompatible_error">%1$s nu gā’hue nānunj dadin’ nitāj si aran’anj ngà %2$s %3$s.</string>
   <!-- Text shown when attempting to install a (hard) blocked add-on. %1$s is the add-on name. %2$s is the app name. -->
-  <string name="mozac_feature_addons_blocklisted_2">%1$s nitāj si nìkoj nej nuguan’ āhī huā ‘hiaj Mozilla yi’ì dan na’hue nàñunj riña %2$s.</string>
+  <string name="mozac_feature_addons_blocklisted_2" tools:ignore="BrandUsage">%1$s nitāj si nìkoj nej nuguan’ āhī huā ‘hiaj Mozilla yi’ì dan na’hue nàñunj riña %2$s.</string>
   <!-- Text shown when attempting to install an add-on that can only be install via Enterprise Policies, which is not supported on Android.  %1$s is the add-on name. -->
   <string name="mozac_feature_addons_admin_install_only">%1$s nu gā’hue nāñùnj dadin’ huā niñā yi’nïn’ nû yikïn nā’nïnj man, yī’ì dan nu nāhuin rā’a luguà nan man.</string>
   <!-- Text shown when attempting to install an add-on that is soft-blocked. %1$s is the add-on name. %2$s is the app name. -->
@@ -421,7 +421,7 @@
   <!-- "See details" link displayed below an add-on status message. -->
   <string name="mozac_feature_addons_status_see_details">Ni\'hio\' dàj huaj</string>
   <!-- Status message below an add-on in the add-ons manager when this add-on has been blocklisted. %1$s is the add-on name. -->
-  <string name="mozac_feature_addons_status_blocklisted_1">Ganarán riña ekstensiûn nan dadin’ nitāj si nīkāj ni’ñan ngà si nūguàn’ Mozilla yi’ì dan giyichinj si ‘hiaj sunj.</string>
+  <string name="mozac_feature_addons_status_blocklisted_1" tools:ignore="BrandUsage">Ganarán riña ekstensiûn nan dadin’ nitāj si nīkāj ni’ñan ngà si nūguàn’ Mozilla yi’ì dan giyichinj si ‘hiaj sunj.</string>
   <!-- Status message below an add-on in the add-ons manager when this add-on has been soft-blocked. -->
   <string name="mozac_feature_addons_status_softblocked_2">Huā chì’ yi’îj yi’ì dan giyichinj. Gā’hue nāchrūnt man, sanī gā’hue gā’huì’ yī’ij.</string>
   <!-- Status message below an add-on in the add-ons manager when this add-on has been soft-blocked but the user re-enabled it. -->

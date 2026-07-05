@@ -156,7 +156,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>«%1$s» ба шумо идора медиҳад.</p>\n<p>Онро ҳамчун браузери хусусӣ истифода баред:\n<ul>\n<li>Ҷустуҷӯ кунед ва рост дар дохили барнома тамошо намоед</li>\n<li>Васоити пайгириро манъ кунед (ё танзимотро иваз карда, ба васоити пайгирӣ иҷозат диҳед)</li>\n<li>Кукиҳоро нест кунед, аз он ҷумла таърихи ҷустуҷӯ ва тамошоро пок намоед</li>\n</ul> </p>\n<p>«%1$s» аз ҷониши «Mozilla» истеҳсол карда шудааст. Мақсади мо дар мусоидат ба Интернети солим ва кушод мебошад.<br/>\n<a href=\"%2$s\">Маълумоти бештар</a></p>]]></string>
+  <string name="about_content" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote"><![CDATA[<p>«%1$s» ба шумо идора медиҳад.</p>\n<p>Онро ҳамчун браузери хусусӣ истифода баред:\n<ul>\n<li>Ҷустуҷӯ кунед ва рост дар дохили барнома тамошо намоед</li>\n<li>Васоити пайгириро манъ кунед (ё танзимотро иваз карда, ба васоити пайгирӣ иҷозат диҳед)</li>\n<li>Кукиҳоро нест кунед, аз он ҷумла таърихи ҷустуҷӯ ва тамошоро пок намоед</li>\n</ul> </p>\n<p>«%1$s» аз ҷониши «Mozilla» истеҳсол карда шудааст. Мақсади мо дар мусоидат ба Интернети солим ва кушод мебошад.<br/>\n<a href=\"%2$s\">Маълумоти бештар</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">Маълумоти бештар</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -251,7 +251,7 @@
   <!-- "Hint" text for the "custom autocomplete URL" input field. Shown when the field is empty. -->
   <string name="preference_autocomplete_add_hint">Нишонии URL-ро гузоред ё ворид намоед</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
-  <string name="preference_autocomplete_add_example2">Мисол: mozilla.org</string>
+  <string name="preference_autocomplete_add_example2" tools:ignore="BrandUsage">Мисол: mozilla.org</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">Мисол: example.com</string>
   <!-- Confirmation "snackbar" shown after a new custom autocomplete URL has been added. -->
@@ -323,15 +323,15 @@
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
   <string name="preference_default_browser2">Гузоштани «%1$s» ҳамчун браузери пешфарз</string>
-  <string name="preference_category_mozilla">Mozilla</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">Mozilla</string>
   <string name="preference_mozilla_telemetry2">Фиристодани маълумоти истифодабарӣ</string>
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">Маълумоти бештар</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-  <string name="preference_mozilla_telemetry_summary2">«Mozilla» cаъю кӯшиш мекунад, ки танҳо он маълумотеро ҷамъоварӣ намояд, ки мо бояд барои фаъолият ва беҳтарсозии «%1$s» барои ҳар як кас таъмин намоем.</string>
+  <string name="preference_mozilla_telemetry_summary2" tools:ignore="BrandUsage">«Mozilla» cаъю кӯшиш мекунад, ки танҳо он маълумотеро ҷамъоварӣ намояд, ки мо бояд барои фаъолият ва беҳтарсозии «%1$s» барои ҳар як кас таъмин намоем.</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preference_daily_usage_ping_title">Пинги истифодабарии ҳаррӯза</string>
-  <string name="preference_daily_usage_ping_description">Ин ба «Mozilla» кумак мекунад, ки корбарони фаъолро ҳисоб кунад.</string>
+  <string name="preference_daily_usage_ping_description" tools:ignore="BrandUsage">Ин ба «Mozilla» кумак мекунад, ки корбарони фаъолро ҳисоб кунад.</string>
   <string name="preference_daily_usage_ping_learn_more">Маълумоти бештар</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
   <string name="preference_privacy_notice">Огоҳномаи махфият</string>
@@ -829,7 +829,7 @@
   <!-- Label for button to close the tab -->
   <string name="tab_crash_report_close_tab_button_label">Пӯшидани варақа</string>
   <!-- Label for the checkbox to send the tab crash report to Mozilla -->
-  <string name="crash_report_send_crash_label">Фиристодани гузориш дар бораи вайронӣ ба Mozilla</string>
+  <string name="crash_report_send_crash_label" tools:ignore="BrandUsage">Фиристодани гузориш дар бораи вайронӣ ба Mozilla</string>
   <!-- Tracking protection bottom sheet -->
 
   <!-- Label for the total number of trackers blocked. %s is the app install date. -->

@@ -156,7 +156,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s ti duna u cuntrollu.</p>\n<p>Ùsalu comu navicaturi privatu:\n<ul>\n<li>Riscedi e nàvica direttu di l’applicazzioni</li>\n<li>Ferma i trazzatura (o cancia i mpustazzioni pi pirmittìrili)</li>\n<li>Scancella i viscotta e macari a crunuluggìa di risciduta e di navicazzioni</li>\n</ul> </p>\n<p>%1$s fu criatu di Mozilla. A nostra missioni è chiḍḍa d’ammuttari pi na riti graputa e ’n saluti.<br/>\n<a href=\"%2$s\">Cchiù nfurmazzioni</a></p>]]></string>
+  <string name="about_content" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s ti duna u cuntrollu.</p>\n<p>Ùsalu comu navicaturi privatu:\n<ul>\n<li>Riscedi e nàvica direttu di l’applicazzioni</li>\n<li>Ferma i trazzatura (o cancia i mpustazzioni pi pirmittìrili)</li>\n<li>Scancella i viscotta e macari a crunuluggìa di risciduta e di navicazzioni</li>\n</ul> </p>\n<p>%1$s fu criatu di Mozilla. A nostra missioni è chiḍḍa d’ammuttari pi na riti graputa e ’n saluti.<br/>\n<a href=\"%2$s\">Cchiù nfurmazzioni</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">Cchiù nfurmazzioni</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -251,7 +251,7 @@
   <!-- "Hint" text for the "custom autocomplete URL" input field. Shown when the field is empty. -->
   <string name="preference_autocomplete_add_hint">Ncoḍḍa o scrivi nu nnirizzu</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
-  <string name="preference_autocomplete_add_example2">Scempru: mozilla.org</string>
+  <string name="preference_autocomplete_add_example2" tools:ignore="BrandUsage">Scempru: mozilla.org</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">Scempru: example.com</string>
   <!-- Confirmation "snackbar" shown after a new custom autocomplete URL has been added. -->
@@ -323,15 +323,15 @@
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
   <string name="preference_default_browser2">Mposta %1$s comu navicaturi pridifinutu</string>
-  <string name="preference_category_mozilla">Mozilla</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">Mozilla</string>
   <string name="preference_mozilla_telemetry2">Manna i dati d’usu</string>
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">Cchiù nfurmazzioni</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-  <string name="preference_mozilla_telemetry_summary2">Mozilla cerca di ricògghiri sulu chiḍḍu chi ci serbi pi fari megghiu %1$s pi tutti.</string>
+  <string name="preference_mozilla_telemetry_summary2" tools:ignore="BrandUsage">Mozilla cerca di ricògghiri sulu chiḍḍu chi ci serbi pi fari megghiu %1$s pi tutti.</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preference_daily_usage_ping_title">Ping d’usu nnô jornu</string>
-  <string name="preference_daily_usage_ping_description">Chistu ajuta Mozilla a fari na stima di l’utenti attivi.</string>
+  <string name="preference_daily_usage_ping_description" tools:ignore="BrandUsage">Chistu ajuta Mozilla a fari na stima di l’utenti attivi.</string>
   <string name="preference_daily_usage_ping_learn_more">Cchiù nfurmazzioni</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
   <string name="preference_privacy_notice">Abbisu di privatizza</string>
@@ -812,7 +812,7 @@
   <!-- Label for button to close the tab -->
   <string name="tab_crash_report_close_tab_button_label">Chiuji scheda</string>
   <!-- Label for the checkbox to send the tab crash report to Mozilla -->
-  <string name="crash_report_send_crash_label">Signalija u scasciu a Mozilla</string>
+  <string name="crash_report_send_crash_label" tools:ignore="BrandUsage">Signalija u scasciu a Mozilla</string>
   <!-- Tracking protection bottom sheet -->
 
   <!-- Label for the total number of trackers blocked. %s is the app install date. -->

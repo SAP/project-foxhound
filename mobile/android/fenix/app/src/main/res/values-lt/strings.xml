@@ -52,7 +52,7 @@
   <!-- Text for the menu button to remove a recently saved bookmark from the user's home screen -->
   <string name="home_bookmarks_menu_item_remove">Pašalinti</string>
   <!-- About content. %1$s is the name of the app (for example "Firefox"). -->
-  <string name="about_content">„%1$s“ kūrėjai yra „Mozilla“.</string>
+  <string name="about_content" tools:ignore="BrandUsage">„%1$s“ kūrėjai yra „Mozilla“.</string>
   <!-- Private Browsing -->
   <string name="private_browsing_common_myths">Dažni mitai apie privatųjį naršymą</string>
   <!--
@@ -479,7 +479,7 @@
   <!-- Title for studies preferences -->
   <string name="preference_experiments_2">Tyrimai</string>
   <!-- Summary for studies preferences -->
-  <string name="preference_experiments_summary_2">Leidžia „Mozillai“ diegti ir vykdyti tyrimus</string>
+  <string name="preference_experiments_summary_2" tools:ignore="BrandUsage">Leidžia „Mozillai“ diegti ir vykdyti tyrimus</string>
   <!-- Preference for reconnecting to FxA sync -->
   <string name="preferences_sync_sign_in_to_reconnect">Prisijungti iš naujo</string>
   <!-- Preference for removing FxA account -->
@@ -701,7 +701,7 @@
   -->
   <string name="tab_crash_title_2">Atsiprašome. „%1$s“ nepavyko įkelti šio tinklalapio.</string>
   <!-- Send crash report checkbox text on the tab crash page -->
-  <string name="tab_crash_send_report">Pranešti apie strigtį „Mozillai“</string>
+  <string name="tab_crash_send_report" tools:ignore="BrandUsage">Pranešti apie strigtį „Mozillai“</string>
   <!-- Close tab button text on the tab crash page -->
   <string name="tab_crash_close">Užverti kortelę</string>
   <!-- Restore tab button text on the tab crash page -->

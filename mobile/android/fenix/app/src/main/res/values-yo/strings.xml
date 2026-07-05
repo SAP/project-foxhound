@@ -32,7 +32,7 @@
   <!-- Content description for close button while in multiselect mode in tab tray -->
   <string name="tab_tray_close_multiselect_content_description">Kúrò ní móòdù aláṣàyàn púpọ̀</string>
   <!-- About content. %1$s is the name of the app (for example "Firefox"). -->
-  <string name="about_content">%1$s Jẹ́ ṣíṣẹ̀dá látọwọ́ọ Mozilla.</string>
+  <string name="about_content" tools:ignore="BrandUsage">%1$s Jẹ́ ṣíṣẹ̀dá látọwọ́ọ Mozilla.</string>
   <!-- Private Browsing -->
   <string name="private_browsing_common_myths">Àwọn àròsọ tó wọ́pọ̀ nípa ìlọkiri-oníwẹ́ẹ̀bù ìkọ̀kọ̀</string>
   <!--
@@ -394,7 +394,7 @@
   <!-- Title for studies preferences -->
   <string name="preference_experiments_2">Àwọn àyẹ̀wò</string>
   <!-- Summary for studies preferences -->
-  <string name="preference_experiments_summary_2">Fàyègba Mozilla láàyè láti wọlé sórí ẹ̀rọ kó sì ṣe àwọn ayẹ̀wò</string>
+  <string name="preference_experiments_summary_2" tools:ignore="BrandUsage">Fàyègba Mozilla láàyè láti wọlé sórí ẹ̀rọ kó sì ṣe àwọn ayẹ̀wò</string>
   <!-- Preference for reconnecting to FxA sync -->
   <string name="preferences_sync_sign_in_to_reconnect">Wọlé láti tún-un sopọ̀</string>
   <!-- Preference for removing FxA account -->
@@ -616,7 +616,7 @@
   -->
   <string name="tab_crash_title_2">Má bínú. %1$s kò le ṣàkójọpọ̀ ojú-ìwé yẹn.</string>
   <!-- Send crash report checkbox text on the tab crash page -->
-  <string name="tab_crash_send_report">Fi ìròyìn ìjàm̀bá ráńṣẹ́ sí Mozilla</string>
+  <string name="tab_crash_send_report" tools:ignore="BrandUsage">Fi ìròyìn ìjàm̀bá ráńṣẹ́ sí Mozilla</string>
   <!-- Close tab button text on the tab crash page -->
   <string name="tab_crash_close">Pa táàbù dé</string>
   <!-- Restore tab button text on the tab crash page -->

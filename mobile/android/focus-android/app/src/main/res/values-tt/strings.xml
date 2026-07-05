@@ -156,7 +156,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s дилбегәне Сезнең кулга тапшыра.</p>\n<p>Аны хосусый браузер буларак кулланып, түбәндәгеләрне эшләп була:\n<ul>\n<li>Турыдан-туры кушымта эчендә эзләү һәм пәрәвездә гизү</li>\n<li>Күзәтүче-трекерларны блоклау (яисә, көйләүләрне яңартып, аларны рөхсәт итү)</li>\n<li>Кукиларны, эзләү һәм гизү тарихларын җиңел генә бетереп ату</li>\n</ul> </p>\n<p>%1$s Mozilla тарафыннан җитештерелә. Безнең миссиябез — сәламәт һәм ачык Интернетны үстерү.<br/>\n<a href=\"%2$s\">Күбрәк белү</a></p>]]></string>
+  <string name="about_content" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s дилбегәне Сезнең кулга тапшыра.</p>\n<p>Аны хосусый браузер буларак кулланып, түбәндәгеләрне эшләп була:\n<ul>\n<li>Турыдан-туры кушымта эчендә эзләү һәм пәрәвездә гизү</li>\n<li>Күзәтүче-трекерларны блоклау (яисә, көйләүләрне яңартып, аларны рөхсәт итү)</li>\n<li>Кукиларны, эзләү һәм гизү тарихларын җиңел генә бетереп ату</li>\n</ul> </p>\n<p>%1$s Mozilla тарафыннан җитештерелә. Безнең миссиябез — сәламәт һәм ачык Интернетны үстерү.<br/>\n<a href=\"%2$s\">Күбрәк белү</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">Күбрәк белү</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -251,7 +251,7 @@
   <!-- "Hint" text for the "custom autocomplete URL" input field. Shown when the field is empty. -->
   <string name="preference_autocomplete_add_hint">URL\'ны ябыштырыгыз яки языгыз</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
-  <string name="preference_autocomplete_add_example2">Мисал: mozilla.org</string>
+  <string name="preference_autocomplete_add_example2" tools:ignore="BrandUsage">Мисал: mozilla.org</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">Мисал: example.com</string>
   <!-- Confirmation "snackbar" shown after a new custom autocomplete URL has been added. -->
@@ -323,15 +323,15 @@
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
   <string name="preference_default_browser2">%1$s\'ны төп гизгеч итү</string>
-  <string name="preference_category_mozilla">Mozilla</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">Mozilla</string>
   <string name="preference_mozilla_telemetry2">Куллану мәгълүматларын җибәрү</string>
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">Күбрәк белү</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-  <string name="preference_mozilla_telemetry_summary2">Mozilla, %1$s\'ны һәркемгә дә тәкъдим итү һәм яхшырту өчен кирәкле мәгълүматларны гына җыярга тырыша.</string>
+  <string name="preference_mozilla_telemetry_summary2" tools:ignore="BrandUsage">Mozilla, %1$s\'ны һәркемгә дә тәкъдим итү һәм яхшырту өчен кирәкле мәгълүматларны гына җыярга тырыша.</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preference_daily_usage_ping_title">Көндәлек куллану пингы</string>
-  <string name="preference_daily_usage_ping_description">Бу Mozilla-га актив кулланучылар санын бәяләргә ярдәм итә.</string>
+  <string name="preference_daily_usage_ping_description" tools:ignore="BrandUsage">Бу Mozilla-га актив кулланучылар санын бәяләргә ярдәм итә.</string>
   <string name="preference_daily_usage_ping_learn_more">Күбрәк белү</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
   <string name="preference_privacy_notice">Хосусыйлык сәясәте</string>
@@ -814,7 +814,7 @@
   <!-- Label for button to close the tab -->
   <string name="tab_crash_report_close_tab_button_label">Табны ябу</string>
   <!-- Label for the checkbox to send the tab crash report to Mozilla -->
-  <string name="crash_report_send_crash_label">Mozilla-га ватылу турында хәбәр җибәрү</string>
+  <string name="crash_report_send_crash_label" tools:ignore="BrandUsage">Mozilla-га ватылу турында хәбәр җибәрү</string>
   <!-- Tracking protection bottom sheet -->
 
   <!-- Label for the total number of trackers blocked. %s is the app install date. -->

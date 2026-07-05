@@ -125,7 +125,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s ले तपाईंलाई नियन्त्रणमा राख्छ।</p>\n<p>यसलाई निजी ब्राउजरको रूपमा प्रयोग गर्नुहोस्:\n<ul>\n<li>एपमानै खोज्नुहोस् र ब्राउज गर्नुहोस्</li>\n<li>ट्र्याकरहरू रोक्नुहोस् (वा ट्र्याकरहरूलाई अनुमति दिन सेटिङ्गहरू अपडेट गर्नुहोस्)</li>\n<li>कुकीजहरू मेटाउनका साथै खोज र ब्राउजिङ्ग इतिहास मेटाउनुहोस्</li>\n</ul> </p>\n<p>%1$s Mozilla द्वारा उत्पादन गरिएको हो। हाम्रो लक्ष्य भनेको स्वस्थ, खुला इन्टरनेटको विकास गर्नु हो।<br/>\n<a href=\"%2$s\">थप जान्नुहोस्</a></p>]]></string>
+  <string name="about_content" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s ले तपाईंलाई नियन्त्रणमा राख्छ।</p>\n<p>यसलाई निजी ब्राउजरको रूपमा प्रयोग गर्नुहोस्:\n<ul>\n<li>एपमानै खोज्नुहोस् र ब्राउज गर्नुहोस्</li>\n<li>ट्र्याकरहरू रोक्नुहोस् (वा ट्र्याकरहरूलाई अनुमति दिन सेटिङ्गहरू अपडेट गर्नुहोस्)</li>\n<li>कुकीजहरू मेटाउनका साथै खोज र ब्राउजिङ्ग इतिहास मेटाउनुहोस्</li>\n</ul> </p>\n<p>%1$s Mozilla द्वारा उत्पादन गरिएको हो। हाम्रो लक्ष्य भनेको स्वस्थ, खुला इन्टरनेटको विकास गर्नु हो।<br/>\n<a href=\"%2$s\">थप जान्नुहोस्</a></p>]]></string>
   <!-- Header for the Privacy and Security settings menu -->
   <string name="preference_privacy_and_security_header">गोपनीयता र सुरक्षा</string>
   <!-- Preference summary for settings related to privacy and security -->
@@ -218,7 +218,7 @@
   <!-- "Hint" text for the "custom autocomplete URL" input field. Shown when the field is empty. -->
   <string name="preference_autocomplete_add_hint">URL टाँस्नुहोस् वा प्रविष्ट गर्नुहोस्</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
-  <string name="preference_autocomplete_add_example2">उदाहरण: mozilla.org</string>
+  <string name="preference_autocomplete_add_example2" tools:ignore="BrandUsage">उदाहरण: mozilla.org</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">Example: example.com</string>
   <!-- Confirmation "snackbar" shown after a new custom autocomplete URL has been added. -->
@@ -282,12 +282,12 @@
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
   <string name="preference_default_browser2">%1$s लाई पूर्वनिर्धारित ब्राउजर बनाउनुहोस्</string>
-  <string name="preference_category_mozilla">Mozilla</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">Mozilla</string>
   <string name="preference_mozilla_telemetry2">उपयोग डाटा पठाउनुहोस्</string>
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">अझ जान्नुहोस्</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-  <string name="preference_mozilla_telemetry_summary2">Mozilla सबैको लागि %1$s प्रदान र सुधार गर्न आवश्यक कुरा मात्र संकलन गर्ने प्रयास गर्दछ ।</string>
+  <string name="preference_mozilla_telemetry_summary2" tools:ignore="BrandUsage">Mozilla सबैको लागि %1$s प्रदान र सुधार गर्न आवश्यक कुरा मात्र संकलन गर्ने प्रयास गर्दछ ।</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
   <string name="preference_privacy_notice">गोपनीयता नीति</string>
   <!-- Item in Preferences that shows the about page. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar"). -->

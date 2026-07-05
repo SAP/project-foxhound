@@ -156,7 +156,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>Assuma o controle com o %1$s.</p>\n<p>Use para navegação privativa:\n<ul>\n<li>Pesquisa e navegação direto no aplicativo.</li>\n<li>Bloqueio de rastreamento (ou mude as configurações para permitir).</li>\n<li>Limpeza de cookies e histórico de pesquisa e navegação.</li>\n</ul> </p>\n<p>O %1$s é produzido pela Mozilla. Nossa missão é promover uma internet saudável e aberta.<br/>\n<a href=\"%2$s\">Saiba mais</a></p>]]></string>
+  <string name="about_content" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote"><![CDATA[<p>Assuma o controle com o %1$s.</p>\n<p>Use para navegação privativa:\n<ul>\n<li>Pesquisa e navegação direto no aplicativo.</li>\n<li>Bloqueio de rastreamento (ou mude as configurações para permitir).</li>\n<li>Limpeza de cookies e histórico de pesquisa e navegação.</li>\n</ul> </p>\n<p>O %1$s é produzido pela Mozilla. Nossa missão é promover uma internet saudável e aberta.<br/>\n<a href=\"%2$s\">Saiba mais</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">Saiba mais</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -251,7 +251,7 @@
   <!-- "Hint" text for the "custom autocomplete URL" input field. Shown when the field is empty. -->
   <string name="preference_autocomplete_add_hint">Cole ou digite uma URL</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
-  <string name="preference_autocomplete_add_example2">Exemplo: mozilla.org</string>
+  <string name="preference_autocomplete_add_example2" tools:ignore="BrandUsage">Exemplo: mozilla.org</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">Exemplo: example.com</string>
   <!-- Confirmation "snackbar" shown after a new custom autocomplete URL has been added. -->
@@ -323,15 +323,15 @@
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
   <string name="preference_default_browser2">Definir o %1$s como navegador padrão</string>
-  <string name="preference_category_mozilla">Mozilla</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">Mozilla</string>
   <string name="preference_mozilla_telemetry2">Enviar dados de uso</string>
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">Saiba mais</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-  <string name="preference_mozilla_telemetry_summary2">A Mozilla se empenha para coletar somente o necessário para fornecer e melhorar o %1$s para todos.</string>
+  <string name="preference_mozilla_telemetry_summary2" tools:ignore="BrandUsage">A Mozilla se empenha para coletar somente o necessário para fornecer e melhorar o %1$s para todos.</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preference_daily_usage_ping_title">Ping de uso diário</string>
-  <string name="preference_daily_usage_ping_description">Isto ajuda a Mozilla a estimar o número de usuários ativos.</string>
+  <string name="preference_daily_usage_ping_description" tools:ignore="BrandUsage">Isto ajuda a Mozilla a estimar o número de usuários ativos.</string>
   <string name="preference_daily_usage_ping_learn_more">Saiba mais</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
   <string name="preference_privacy_notice">Aviso de privacidade</string>
@@ -829,7 +829,7 @@
   <!-- Label for button to close the tab -->
   <string name="tab_crash_report_close_tab_button_label">Fechar aba</string>
   <!-- Label for the checkbox to send the tab crash report to Mozilla -->
-  <string name="crash_report_send_crash_label">Enviar relatório de travamento para a Mozilla</string>
+  <string name="crash_report_send_crash_label" tools:ignore="BrandUsage">Enviar relatório de travamento para a Mozilla</string>
   <!-- Tracking protection bottom sheet -->
 
   <!-- Label for the total number of trackers blocked. %s is the app install date. -->

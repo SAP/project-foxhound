@@ -54,7 +54,7 @@
   <!-- Text for the menu button to remove a recently saved bookmark from the user's home screen -->
   <string name="home_bookmarks_menu_item_remove">Leva</string>
   <!-- About content. %1$s is the name of the app (for example "Firefox"). -->
-  <string name="about_content">%1$s è criatu di Mozilla.</string>
+  <string name="about_content" tools:ignore="BrandUsage">%1$s è criatu di Mozilla.</string>
   <!-- Private Browsing -->
   <string name="private_browsing_common_myths">Liggenni ncapu â navicazzioni privata</string>
   <!-- Text to be announced by the accessibility service to inform the user that the private browsing mode is currently active. -->
@@ -362,7 +362,7 @@
   <!-- Learn more link for the crash reporting option in the privacy preferences dialog shown during onboarding. -->
   <string name="onboarding_preferences_dialog_crash_reporting_learn_more_2">Cchiù nfurmazzioni</string>
   <!-- Title for the usage data option in the privacy preferences dialog shown during onboarding. Note: The word "Mozilla" should NOT be translated. -->
-  <string name="onboarding_preferences_dialog_usage_data_title">Manna dati tècnici e di ntirazzioni a Mozilla</string>
+  <string name="onboarding_preferences_dialog_usage_data_title" tools:ignore="BrandUsage">Manna dati tècnici e di ntirazzioni a Mozilla</string>
   <string name="onboarding_preferences_dialog_usage_data_description_2" tools:ignore="BrandUsage">I dati supra ô to dispusitivu, a cunfijurazzioni hardware e ncapu a comu usi Firefox n’ajùtanu a travagghiari megghiu ncapu ê carattarìstichi, i pristazzioni e a stabbilità pi tutti pari.</string>
   <string name="onboarding_preferences_dialog_usage_data_learn_more_2">Cchiù nfurmazzioni</string>
   <!-- Positive button label for the privacy preferences dialog shown during onboarding. -->
@@ -525,7 +525,7 @@
   <!-- Preference for accessibility -->
   <string name="preferences_accessibility">Accissibbilità</string>
   <!-- Preference to override the Mozilla account server -->
-  <string name="preferences_override_account_server">Sirburi dî cunti Mozilla pirsunalizzatu</string>
+  <string name="preferences_override_account_server" tools:ignore="BrandUsage">Sirburi dî cunti Mozilla pirsunalizzatu</string>
   <!-- Preference to override the Sync token server -->
   <string name="preferences_override_sync_tokenserver">Sirburi di Sync pirsunalizzatu</string>
   <!-- Preference category for account information -->
@@ -547,7 +547,7 @@
   <!-- Preference for settings related to visual options -->
   <string name="preferences_customize">Pirsunalizza</string>
   <!-- Preference shown instead of account display name while account profile information isn't available yet. -->
-  <string name="preferences_account_default_name_2">Cuntu Mozilla</string>
+  <string name="preferences_account_default_name_2" tools:ignore="BrandUsage">Cuntu Mozilla</string>
   <!-- Preference text for account title when there was an error syncing FxA -->
   <string name="preferences_account_sync_error">Cullèjati arrè pi ripigghiari a sincrunizzazzioni</string>
   <!-- Preference for language -->
@@ -879,7 +879,7 @@
   <string name="preferences_usage_data_description_1" tools:ignore="BrandUsage">Dati supra ô to dispusitivu, a cunfijurazzioni hardware e ncapu a comu usi Firefox n’ajuta a ’mmigghiuràrinni i funzioni, i pristazzioni e a stabbilità.</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preferences_daily_usage_ping_title">Ping d’usu nnô jornu</string>
-  <string name="preferences_daily_usage_ping_description">Chistu ajuta Mozilla a fari na stima di l’utenti attivi.</string>
+  <string name="preferences_daily_usage_ping_description" tools:ignore="BrandUsage">Chistu ajuta Mozilla a fari na stima di l’utenti attivi.</string>
   <string name="preferences_daily_usage_ping_learn_more">Cchiù nfurmazzioni supra ô ping d’usu nnô jornu</string>
   <!-- Title for the crash reporting option in the privacy preferences dialog shown during onboarding. -->
   <string name="crash_reporting_snack_bar_message">Mannasti u papellu</string>
@@ -905,7 +905,7 @@
   <!-- Title for studies preferences -->
   <string name="preference_experiments_2">Studi</string>
   <!-- Summary for studies preferences -->
-  <string name="preference_experiments_summary_2">Pirmetti a Mozilla di nzitari e abbiari studi</string>
+  <string name="preference_experiments_summary_2" tools:ignore="BrandUsage">Pirmetti a Mozilla di nzitari e abbiari studi</string>
   <!-- Preference for reconnecting to FxA sync -->
   <string name="preferences_sync_sign_in_to_reconnect">Trasi pi cullijàriti arrè</string>
   <!-- Preference for removing FxA account -->
@@ -1386,7 +1386,7 @@
   -->
   <string name="tab_crash_title_2">%1$s nun potti carricari sta pàggina.</string>
   <!-- Send crash report checkbox text on the tab crash page -->
-  <string name="tab_crash_send_report">Signalija u scasciu a Mozilla</string>
+  <string name="tab_crash_send_report" tools:ignore="BrandUsage">Signalija u scasciu a Mozilla</string>
   <!-- Close tab button text on the tab crash page -->
   <string name="tab_crash_close">Chiuji scheda</string>
   <!-- Restore tab button text on the tab crash page -->

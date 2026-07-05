@@ -52,7 +52,7 @@
   <!-- Text for the menu button to remove a recently saved bookmark from the user's home screen -->
   <string name="home_bookmarks_menu_item_remove">o weka</string>
   <!-- About content. %1$s is the name of the app (for example "Firefox"). -->
-  <string name="about_content">kulupu Mozilla li pali e ilo %1$s.</string>
+  <string name="about_content" tools:ignore="BrandUsage">kulupu Mozilla li pali e ilo %1$s.</string>
   <!-- Private Browsing -->
   <string name="private_browsing_common_myths">o kama sona pona e nasin len</string>
   <!--
@@ -389,7 +389,7 @@
   <!-- Preference for settings related to visual options -->
   <string name="preferences_customize">o nasin sina</string>
   <!-- Preference shown instead of account display name while account profile information isn't available yet. -->
-  <string name="preferences_account_default_name_2">sijelo pi kulupu Mozilla</string>
+  <string name="preferences_account_default_name_2" tools:ignore="BrandUsage">sijelo pi kulupu Mozilla</string>
   <!-- Preference for language -->
   <string name="preferences_language">toki ilo</string>
   <!-- Preference for translations -->
@@ -861,7 +861,7 @@
   -->
   <string name="tab_crash_title_2">pakala la ilo %1$s li ken ala pana e lipu ni.</string>
   <!-- Send crash report checkbox text on the tab crash page -->
-  <string name="tab_crash_send_report">o pana e sona pakala tawa kulupu Mozilla</string>
+  <string name="tab_crash_send_report" tools:ignore="BrandUsage">o pana e sona pakala tawa kulupu Mozilla</string>
   <!-- Close tab button text on the tab crash page -->
   <string name="tab_crash_close">o weka e poki</string>
   <!-- Unsubmitted crash dialog negative button to dismiss the dialog -->

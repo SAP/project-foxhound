@@ -50,7 +50,7 @@
   <!-- Text for the menu button to remove a recently saved bookmark from the user's home screen -->
   <string name="home_bookmarks_menu_item_remove">قالدیر</string>
   <!-- About content. %1$s is the name of the app (for example "Firefox"). -->
-  <string name="about_content">%1$s موزیلا طرفیندن دوزه‌دیلمیش.</string>
+  <string name="about_content" tools:ignore="BrandUsage">%1$s موزیلا طرفیندن دوزه‌دیلمیش.</string>
   <!-- Private Browsing -->
   <string name="private_browsing_common_myths">گیزلی مورور حاقیندا یایقین اینانجلار</string>
   <!--
@@ -402,7 +402,7 @@
   <!-- Preference for accessibility -->
   <string name="preferences_accessibility">اَل چاتانلیق</string>
   <!-- Preference to override the Mozilla account server -->
-  <string name="preferences_override_account_server">اؤزل موْزیلا حسابیْ سِروری</string>
+  <string name="preferences_override_account_server" tools:ignore="BrandUsage">اؤزل موْزیلا حسابیْ سِروری</string>
   <!-- Preference to override the Sync token server -->
   <string name="preferences_override_sync_tokenserver">اؤزل دؤنگل سرور</string>
   <!-- Preference category for account information -->
@@ -418,7 +418,7 @@
   <!-- Preference for settings related to visual options -->
   <string name="preferences_customize">اؤزللشدیرمک</string>
   <!-- Preference shown instead of account display name while account profile information isn't available yet. -->
-  <string name="preferences_account_default_name_2">موْزیلا حسابی</string>
+  <string name="preferences_account_default_name_2" tools:ignore="BrandUsage">موْزیلا حسابی</string>
   <!-- Preference text for account title when there was an error syncing FxA -->
   <string name="preferences_account_sync_error">دؤنگلی ایدامه وئرمک اوچون یئنی‌دن باغلانین.</string>
   <!-- Preference for language -->
@@ -661,7 +661,7 @@
   <!-- Title for studies preferences -->
   <string name="preference_experiments_2">آراشدیرمالار</string>
   <!-- Summary for studies preferences -->
-  <string name="preference_experiments_summary_2">موزیلایا آراشدیرمالار قوْشماغینا و ایجرا ائتمه‌سینه ایجازه وئریر.</string>
+  <string name="preference_experiments_summary_2" tools:ignore="BrandUsage">موزیلایا آراشدیرمالار قوْشماغینا و ایجرا ائتمه‌سینه ایجازه وئریر.</string>
   <!-- Preference for reconnecting to FxA sync -->
   <string name="preferences_sync_sign_in_to_reconnect">یئنی‌دن باغلانماق اوچون گیریش ائدین</string>
   <!-- Preference for removing FxA account -->
@@ -915,7 +915,7 @@
   -->
   <string name="tab_crash_title_2">باغیشلایین، %1$s بو صفحه‌نی دولدورا بیلمه‌دی.</string>
   <!-- Send crash report checkbox text on the tab crash page -->
-  <string name="tab_crash_send_report">سیْنماق راپورتونو موْزیلایا گؤندر</string>
+  <string name="tab_crash_send_report" tools:ignore="BrandUsage">سیْنماق راپورتونو موْزیلایا گؤندر</string>
   <!-- Close tab button text on the tab crash page -->
   <string name="tab_crash_close">تاغی باغلا</string>
   <!-- Restore tab button text on the tab crash page -->

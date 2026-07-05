@@ -156,7 +156,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s asettaa sinut ohjaimiin.</p>\n<p>Käytä sitä yksityiseen selaamiseen:\n<ul>\n<li>Hae ja selaa suoraan sovelluksessa</li>\n<li>Estä seuranta (tai muokkaa asetuksia salliaksesi seuraimet)</li>\n<li>Poista evästeet ja haku- sekä selaushistoria</li>\n</ul> </p>\n<p>%1$s on Mozillan kehittämä. Tehtävämme on edesauttaa tervettä, avointa Internetiä<br/>\n<a href=\"%2$s\">Lue lisää</a></p>]]></string>
+  <string name="about_content" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s asettaa sinut ohjaimiin.</p>\n<p>Käytä sitä yksityiseen selaamiseen:\n<ul>\n<li>Hae ja selaa suoraan sovelluksessa</li>\n<li>Estä seuranta (tai muokkaa asetuksia salliaksesi seuraimet)</li>\n<li>Poista evästeet ja haku- sekä selaushistoria</li>\n</ul> </p>\n<p>%1$s on Mozillan kehittämä. Tehtävämme on edesauttaa tervettä, avointa Internetiä<br/>\n<a href=\"%2$s\">Lue lisää</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">Lue lisää</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -251,7 +251,7 @@
   <!-- "Hint" text for the "custom autocomplete URL" input field. Shown when the field is empty. -->
   <string name="preference_autocomplete_add_hint">Liitä tai kirjoita osoite</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
-  <string name="preference_autocomplete_add_example2">Esimerkki: mozilla.org</string>
+  <string name="preference_autocomplete_add_example2" tools:ignore="BrandUsage">Esimerkki: mozilla.org</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">Esimerkki: esimerkki.fi</string>
   <!-- Confirmation "snackbar" shown after a new custom autocomplete URL has been added. -->
@@ -323,15 +323,15 @@
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
   <string name="preference_default_browser2">Aseta %1$s oletusselaimeksi</string>
-  <string name="preference_category_mozilla">Mozilla</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">Mozilla</string>
   <string name="preference_mozilla_telemetry2">Lähetä käyttötilastoja</string>
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">Lisätietoja</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-  <string name="preference_mozilla_telemetry_summary2">Mozilla pyrkii keräämään vain tietoja, jotka ovat tarpeellisia %1$sen jakelun ja kehittämisen kannalta.</string>
+  <string name="preference_mozilla_telemetry_summary2" tools:ignore="BrandUsage">Mozilla pyrkii keräämään vain tietoja, jotka ovat tarpeellisia %1$sen jakelun ja kehittämisen kannalta.</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preference_daily_usage_ping_title">Päivittäinen käyttöilmoitus</string>
-  <string name="preference_daily_usage_ping_description">Tämä auttaa Mozillaa arvioimaan aktiivisten käyttäjien määrää.</string>
+  <string name="preference_daily_usage_ping_description" tools:ignore="BrandUsage">Tämä auttaa Mozillaa arvioimaan aktiivisten käyttäjien määrää.</string>
   <string name="preference_daily_usage_ping_learn_more">Lue lisää</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
   <string name="preference_privacy_notice">Tietosuojakäytäntö</string>
@@ -829,7 +829,7 @@
   <!-- Label for button to close the tab -->
   <string name="tab_crash_report_close_tab_button_label">Sulje välilehti</string>
   <!-- Label for the checkbox to send the tab crash report to Mozilla -->
-  <string name="crash_report_send_crash_label">Lähetä kaatumisraportti Mozillalle</string>
+  <string name="crash_report_send_crash_label" tools:ignore="BrandUsage">Lähetä kaatumisraportti Mozillalle</string>
   <!-- Tracking protection bottom sheet -->
 
   <!-- Label for the total number of trackers blocked. %s is the app install date. -->

@@ -156,7 +156,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>A %1$s az Ön kezébe adja az irányítást.</p>\n<p>Használja privát böngészőként:\n<ul>\n<li>Keressen és böngésszen közvetlenül az appban</li>\n<li>Blokkolja a követőket (vagy frissítse a beállításokat az engedélyezéshez)</li>\n<li>Törölje a sütiket és a böngészési előzményeket is</li>\n</ul> </p>\n<p>A %1$s a Mozilla terméke. Küldetésünk az egészséges, nyílt Internet támogatása.<br/>\n<a href=\"%2$s\">Tudjon meg többet</a></p>]]></string>
+  <string name="about_content" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote"><![CDATA[<p>A %1$s az Ön kezébe adja az irányítást.</p>\n<p>Használja privát böngészőként:\n<ul>\n<li>Keressen és böngésszen közvetlenül az appban</li>\n<li>Blokkolja a követőket (vagy frissítse a beállításokat az engedélyezéshez)</li>\n<li>Törölje a sütiket és a böngészési előzményeket is</li>\n</ul> </p>\n<p>A %1$s a Mozilla terméke. Küldetésünk az egészséges, nyílt Internet támogatása.<br/>\n<a href=\"%2$s\">Tudjon meg többet</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">További tudnivalók</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -251,7 +251,7 @@
   <!-- "Hint" text for the "custom autocomplete URL" input field. Shown when the field is empty. -->
   <string name="preference_autocomplete_add_hint">Illessze be, vagy adja meg az webcímet</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
-  <string name="preference_autocomplete_add_example2">Példa: mozilla.org</string>
+  <string name="preference_autocomplete_add_example2" tools:ignore="BrandUsage">Példa: mozilla.org</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">Példa: example.com</string>
   <!-- Confirmation "snackbar" shown after a new custom autocomplete URL has been added. -->
@@ -323,15 +323,15 @@
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
   <string name="preference_default_browser2">A %1$s legyen az alapértelmezett böngésző</string>
-  <string name="preference_category_mozilla">Mozilla</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">Mozilla</string>
   <string name="preference_mozilla_telemetry2">Használati adatok elküldése</string>
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">Tudjon meg többet</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-  <string name="preference_mozilla_telemetry_summary2">A Mozilla arra törekszik, hogy csak azt gyűjtse, ami a %1$s fejlesztéséhez és támogatásához szükséges.</string>
+  <string name="preference_mozilla_telemetry_summary2" tools:ignore="BrandUsage">A Mozilla arra törekszik, hogy csak azt gyűjtse, ami a %1$s fejlesztéséhez és támogatásához szükséges.</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preference_daily_usage_ping_title">Napi használati ping</string>
-  <string name="preference_daily_usage_ping_description">Ez segít a Mozillának az aktív felhasználók megbecslésében.</string>
+  <string name="preference_daily_usage_ping_description" tools:ignore="BrandUsage">Ez segít a Mozillának az aktív felhasználók megbecslésében.</string>
   <string name="preference_daily_usage_ping_learn_more">További tudnivalók</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
   <string name="preference_privacy_notice">Adatvédelmi nyilatkozat</string>
@@ -829,7 +829,7 @@
   <!-- Label for button to close the tab -->
   <string name="tab_crash_report_close_tab_button_label">Lap bezárása</string>
   <!-- Label for the checkbox to send the tab crash report to Mozilla -->
-  <string name="crash_report_send_crash_label">Összeomlási jelentése elküldése a Mozillának</string>
+  <string name="crash_report_send_crash_label" tools:ignore="BrandUsage">Összeomlási jelentése elküldése a Mozillának</string>
   <!-- Tracking protection bottom sheet -->
 
   <!-- Label for the total number of trackers blocked. %s is the app install date. -->
