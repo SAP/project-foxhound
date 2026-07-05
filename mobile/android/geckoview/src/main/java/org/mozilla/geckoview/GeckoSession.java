@@ -7261,6 +7261,13 @@ public class GeckoSession {
       private final String mPrincipal;
 
       /**
+       * The in-flight request id that originated this prompt, used to notify Gecko once the UI has
+       * been shown. Null for {@link ContentPermission}s restored from JSON or {@link
+       * StorageController}, which don't represent live prompts.
+       */
+      private final @Nullable String mRequestId;
+
+      /**
        * Default constructor for ContentPermission. Initializes all fields to their default values.
        */
       protected ContentPermission() {
@@ -7271,12 +7278,14 @@ public class GeckoSession {
         this.value = VALUE_ALLOW;
         this.mPrincipal = "";
         this.contextId = null;
+        this.mRequestId = null;
       }
 
       private ContentPermission(final @NonNull GeckoBundle bundle) {
         this.uri = bundle.getString("uri");
         this.mPrincipal = bundle.getString("principal");
         this.privateMode = bundle.getBoolean("privateMode");
+        this.mRequestId = bundle.getString("requestId");
 
         final String permission = bundle.getString("perm");
         this.permission = convertType(permission);
@@ -7404,6 +7413,28 @@ public class GeckoSession {
           res.add(temp);
         }
         return res;
+      }
+
+      /**
+       * Notify Gecko that this permission prompt has been displayed to the user. This must be
+       * called once per prompt, after the UI has actually been shown. Embedders that present a UI
+       * for {@link PermissionDelegate#onContentPermissionRequest} are expected to invoke this
+       * method.
+       */
+      @ExperimentalGeckoViewApi
+      @AnyThread
+      public void notifyShown() {
+        if (mRequestId == null) {
+          Log.w(
+              LOGTAG,
+              "Tried to notify the engine that a permission of type "
+                  + permission
+                  + " was shown, but found no request id generated. This is an unexpected state.");
+          return;
+        }
+        final GeckoBundle data = new GeckoBundle(1);
+        data.putString("requestId", mRequestId);
+        EventDispatcher.getInstance().dispatch("GeckoView:ContentPermissionShown", data);
       }
 
       /* package */ @NonNull

@@ -13,6 +13,7 @@ import androidx.fragment.app.FragmentTransaction
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
+import mozilla.components.ExperimentalAndroidComponentsApi
 import mozilla.components.browser.state.action.BrowserAction
 import mozilla.components.browser.state.action.ContentAction
 import mozilla.components.browser.state.action.ContentAction.UpdatePermissionHighlightsStateAction
@@ -793,6 +794,55 @@ class SitePermissionsFeatureTest {
         // then
         verify(mockStorage).findSitePermissionsBy(URL, private = selectedTab.content.private)
         verify(sitePermissionFeature).handleRuledFlow(mockPermissionRequest, URL)
+    }
+
+    @OptIn(ExperimentalAndroidComponentsApi::class)
+    @Test
+    fun `GIVEN a prompt is shown WHEN onContentPermissionRequested() THEN notifyShown is called on the permission request`() = runTest {
+        // given
+        val mockPermissionRequest: PermissionRequest = mock {
+            whenever(permissions).thenReturn(listOf(ContentGeoLocation(id = "permission")))
+        }
+        val sitePermissions = SitePermissions(origin = "origin", savedAt = 0)
+        val mockedSitePermissionsDialogFragment = SitePermissionsDialogFragment()
+        doReturn(sitePermissions).`when`(mockStorage).findSitePermissionsBy(URL, private = selectedTab.content.private)
+        doReturn(true).`when`(sitePermissionFeature).shouldApplyRules(any())
+        doReturn(mockedSitePermissionsDialogFragment).`when`(sitePermissionFeature)
+            .handleRuledFlow(mockPermissionRequest, URL)
+
+        // when
+        sitePermissionFeature.onContentPermissionRequested(
+            mockPermissionRequest,
+            URL,
+            this,
+        )
+
+        // then
+        verify(mockPermissionRequest).notifyShown()
+    }
+
+    @OptIn(ExperimentalAndroidComponentsApi::class)
+    @Test
+    fun `GIVEN no prompt is shown WHEN onContentPermissionRequested() THEN notifyShown is not called`() = runTest {
+        // given
+        val mockPermissionRequest: PermissionRequest = mock {
+            whenever(permissions).thenReturn(listOf(ContentGeoLocation(id = "permission")))
+        }
+        val sitePermissions = SitePermissions(origin = "origin", savedAt = 0)
+        doReturn(sitePermissions).`when`(mockStorage).findSitePermissionsBy(URL, private = selectedTab.content.private)
+        doReturn(true).`when`(sitePermissionFeature).shouldApplyRules(any())
+        doReturn(null).`when`(sitePermissionFeature)
+            .handleRuledFlow(mockPermissionRequest, URL)
+
+        // when
+        sitePermissionFeature.onContentPermissionRequested(
+            mockPermissionRequest,
+            URL,
+            this,
+        )
+
+        // then
+        verify(mockPermissionRequest, never()).notifyShown()
     }
 
     @Test

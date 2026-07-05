@@ -8,6 +8,7 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   E10SUtils: "resource://gre/modules/E10SUtils.sys.mjs",
+  EventDispatcher: "resource://gre/modules/Messaging.sys.mjs",
 });
 
 const PERM_ACCESS_FINE_LOCATION = "android.permission.ACCESS_FINE_LOCATION";
@@ -19,8 +20,37 @@ const MAPPED_TO_EXTENSION_PERMISSIONS = [
 ];
 
 export class GeckoViewPermission {
+  // In-flight content permission requests keyed by the id we mint and send to
+  // the Android side, so we can fire notifyShown() once the prompt UI is
+  // actually visible.
+  #pendingShownRequests = new Map();
+
   constructor() {
     this.wrappedJSObject = this;
+    lazy.EventDispatcher.instance.registerListener(this, [
+      "GeckoView:ContentPermissionShown",
+    ]);
+  }
+
+  onEvent(aEvent, aData, aCallback) {
+    if (aEvent === "GeckoView:ContentPermissionShown") {
+      const id = aData?.requestId;
+      const request = id ? this.#pendingShownRequests.get(id) : null;
+      if (request) {
+        // Remove before invoking notifyShown so a duplicate event (or a
+        // misbehaving embedder calling notifyShown() twice) does not
+        // double-count telemetry on the Gecko side.
+        this.#pendingShownRequests.delete(id);
+        try {
+          request.notifyShown();
+        } catch (error) {
+          console.error(
+            "GeckoView:ContentPermissionShown: notifyShown failed:",
+            error
+          );
+        }
+      }
+    }
   }
 
   async prompt(aRequest) {
@@ -131,6 +161,9 @@ export class GeckoViewPermission {
       "GeckoViewPermission"
     );
 
+    const requestId = Services.uuid.generateUUID().toString().slice(1, -1);
+    this.#pendingShownRequests.set(requestId, aRequest);
+
     let allowOrDeny;
     try {
       allowOrDeny = await actor.getContentPermission({
@@ -141,6 +174,7 @@ export class GeckoViewPermission {
         value: perm.capability,
         contextId: principal.originAttributes.geckoViewSessionContextId ?? null,
         privateMode: principal.privateBrowsingId != 0,
+        requestId,
       });
 
       if (allowOrDeny === Services.perms.ALLOW_ACTION) {
@@ -157,6 +191,8 @@ export class GeckoViewPermission {
     } catch (error) {
       console.error("Permission error:", error);
       allowOrDeny = Services.perms.DENY_ACTION;
+    } finally {
+      this.#pendingShownRequests.delete(requestId);
     }
 
     // Manually release the target request here to facilitate garbage collection.

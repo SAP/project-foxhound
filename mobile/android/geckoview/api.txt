@@ -1626,6 +1626,7 @@ package org.mozilla.geckoview {
   public static class GeckoSession.PermissionDelegate.ContentPermission {
     ctor protected ContentPermission();
     method @AnyThread @Nullable public static GeckoSession.PermissionDelegate.ContentPermission fromJson(@NonNull JSONObject);
+    method @AnyThread public void notifyShown();
     method @AnyThread @NonNull public JSONObject toJson();
     field public static final int VALUE_ALLOW = 1;
     field public static final int VALUE_DENY = 2;

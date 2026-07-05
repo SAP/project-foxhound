@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import mozilla.components.ExperimentalAndroidComponentsApi
 import mozilla.components.browser.state.action.ContentAction
 import mozilla.components.browser.state.action.ContentAction.UpdatePermissionHighlightsStateAction
 import mozilla.components.browser.state.action.ContentAction.UpdatePermissionHighlightsStateAction.AutoPlayAudibleBlockingAction
@@ -103,6 +104,7 @@ internal const val PROMPT_FRAGMENT_TAG = "mozac_feature_sitepermissions_prompt_d
  * @property shouldHide Whether the site permissions prompt should be hidden.
  */
 
+@OptIn(ExperimentalAndroidComponentsApi::class) // permissionRequest.notifyShown()
 @Suppress("TooManyFunctions", "LargeClass")
 class SitePermissionsFeature(
     private val context: Context,
@@ -538,6 +540,7 @@ class SitePermissionsFeature(
             // This won't have any effect if we are not in fullscreen.
             exitFullscreenUseCase.invoke(tab.id)
             prompt.show(fragmentManager, PROMPT_FRAGMENT_TAG)
+            permissionRequest.notifyShown()
             prompt
         }
     }
