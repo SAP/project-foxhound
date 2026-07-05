@@ -1027,11 +1027,13 @@ nsExternalHelperAppService::LoadURI(nsIURI* aURI,
                                     bool aHasValidUserGestureActivation,
                                     bool aNewWindowTarget) {
   NS_ENSURE_ARG_POINTER(aURI);
+  NS_ENSURE_ARG_POINTER(aTriggeringPrincipal);
 
   if (XRE_IsContentProcess()) {
     mozilla::dom::ContentChild::GetSingleton()->SendLoadURIExternal(
-        aURI, aTriggeringPrincipal, aRedirectPrincipal, aBrowsingContext,
-        aTriggeredExternally, aHasValidUserGestureActivation, aNewWindowTarget);
+        WrapNotNull(aURI), WrapNotNull(aTriggeringPrincipal),
+        aRedirectPrincipal, aBrowsingContext, aTriggeredExternally,
+        aHasValidUserGestureActivation, aNewWindowTarget);
     return NS_OK;
   }
 
@@ -1099,7 +1101,7 @@ nsExternalHelperAppService::LoadURI(nsIURI* aURI,
   // links can always navigate everywhere, so this is a minor additional
   // restriction, only aiming to prevent some types of spoofing attacks
   // from otherwise disjoint browsingcontext trees.
-  if (aBrowsingContext && aTriggeringPrincipal &&
+  if (aBrowsingContext &&
       // Add-on principals are always allowed:
       !BasePrincipal::Cast(aTriggeringPrincipal)->AddonPolicy() &&
       // As is chrome code:

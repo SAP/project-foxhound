@@ -1182,8 +1182,8 @@ parent:
     async StartVisitedQueries(nullable nsIURI[] uri);
     async SetURITitle(nullable nsIURI uri, nsString title);
 
-    async LoadURIExternal(nullable nsIURI uri,
-                          nullable nsIPrincipal triggeringPrincipal,
+    async LoadURIExternal(nsIURI uri,
+                          nsIPrincipal triggeringPrincipal,
                           nullable nsIPrincipal redirectPrincipal,
                           MaybeDiscardedBrowsingContext browsingContext,
                           bool wasExternallyTriggered,
