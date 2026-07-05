@@ -839,6 +839,11 @@ _cairo_scaled_font_subsets_map_glyph (cairo_scaled_font_subsets_t	*subsets,
     cairo_bool_t has_color;
     cairo_bool_t is_user;
 
+    /* Font backends only ever see the low 24 bits (see
+     * _cairo_scaled_glyph_index); strip any high bits so the index later
+     * passed to the subsetters matches the glyph that was actually loaded. */
+    scaled_font_glyph_index &= 0xffffff;
+
     /* Lookup glyph in unscaled subsets */
     if (subsets->type != CAIRO_SUBSETS_SCALED) {
         key.is_scaled = FALSE;
