@@ -982,11 +982,17 @@ cairo_cff_font_read_fdselect (cairo_cff_font_t *font, unsigned char *p)
     type = *p++;
     if (type == 0)
     {
+        if (p + font->num_glyphs > font->data_end)
+            return CAIRO_INT_STATUS_UNSUPPORTED;
         for (i = 0; i < font->num_glyphs; i++)
             font->fdselect[i] = *p++;
     } else if (type == 3) {
+        if (p + 2 > font->data_end)
+            return CAIRO_INT_STATUS_UNSUPPORTED;
         num_ranges = get_unaligned_be16 (p);
         p += 2;
+        if (p + (3 * num_ranges) + 2 > font->data_end)
+            return CAIRO_INT_STATUS_UNSUPPORTED;
         for  (i = 0; i < num_ranges; i++)
         {
             first = get_unaligned_be16 (p);
