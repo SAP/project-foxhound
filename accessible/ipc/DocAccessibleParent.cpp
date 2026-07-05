@@ -166,10 +166,6 @@ mozilla::ipc::IPCResult DocAccessibleParent::ProcessShowEvent(
 #endif
     }
 
-    if (parent->IsOuterDoc()) {
-      return IPC_FAIL(this, "Cannot attach non-doc to OuterDoc");
-    }
-
     lastParent = parent;
     lastParentID = accData.ParentID();
 
@@ -319,6 +315,21 @@ RemoteAccessible* DocAccessibleParent::CreateAcc(
 bool DocAccessibleParent::AttachChild(RemoteAccessible* aParent,
                                       uint32_t aIndex,
                                       RemoteAccessible* aChild) {
+  if (!aParent || !aChild) {
+    MOZ_ASSERT_UNREACHABLE("Null parent or child");
+    return false;
+  }
+
+  if (aParent->IsOuterDoc()) {
+    MOZ_ASSERT_UNREACHABLE("Cannot attach non-doc to OuterDoc");
+    return false;
+  }
+
+  if (aIndex > aParent->ChildCount()) {
+    MOZ_ASSERT_UNREACHABLE("Invalid index for attached child");
+    return false;
+  }
+
   if (aChild->RemoteParent()) {
     MOZ_ASSERT_UNREACHABLE(
         "Attempt to attach child which already has a parent!");
