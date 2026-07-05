@@ -1631,6 +1631,8 @@ cairo_cff_parse_charstring (cairo_cff_font_t *font,
 
             if (font->is_cid) {
                 fd = font->fdselect[glyph_id];
+                if (fd < 0 || (unsigned int) fd >= font->num_fontdicts)
+		    return CAIRO_INT_STATUS_UNSUPPORTED;
 		sub_num = font->type2_stack_top_value + font->fd_local_sub_bias[fd];
 		if (sub_num < 0 || sub_num >= (int)_cairo_array_num_elements(&font->fd_local_sub_index[fd]))
 		    return CAIRO_INT_STATUS_UNSUPPORTED;
@@ -1726,6 +1728,8 @@ cairo_cff_find_width_and_subroutines_used (cairo_cff_font_t  *font,
     if (!font->is_opentype) {
         if (font->is_cid) {
             fd = font->fdselect[glyph_id];
+            if (fd < 0 || (unsigned int) fd >= font->num_fontdicts)
+                return CAIRO_INT_STATUS_UNSUPPORTED;
             if (font->type2_found_width)
                 width = font->fd_nominal_width[fd] + font->type2_width;
             else
