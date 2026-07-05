@@ -2915,6 +2915,14 @@ bool VideoFrame::Resource::CopyTo(const Format::Plane& aPlane,
     return false;
   }
 
+  const gfx::IntSize surfaceSize = dataSurface->GetSize();
+  if (NS_WARN_IF(aRect.X() < 0 || aRect.Y() < 0 ||
+                 aRect.XMost() > surfaceSize.Width() ||
+                 aRect.YMost() > surfaceSize.Height())) {
+    LOGE("Source surface is smaller than the requested copy rectangle");
+    return false;
+  }
+
   // The mImage's format can be different from mFormat (since Gecko prefers
   // BGRA). To get the data in the matched format, we create a temp buffer
   // holding the image data in that format and then copy them to `aDestination`.
