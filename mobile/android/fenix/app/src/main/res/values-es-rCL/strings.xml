@@ -4070,7 +4070,7 @@
   <string name="microsurvey_sync_title" tools:ignore="BrandUsage,UnusedResources">¿Qué tan satisfecho estás con la experiencia de sincronización en Firefox?</string>
   <!-- Text shown in the survey title for 'describe your experience so far' microsurvey. Note: The word "Firefox" should NOT be translated. -->
   <string name="microsurvey_describe_your_experience_title" tools:ignore="BrandUsage,UnusedResources">Ayúdanos a mejorar Firefox. ¿Cuál de las siguientes opciones describe mejor tu experiencia hasta ahora?</string>
-  <!-- Uninstall Survey -->
+  <!-- Button label shown at the bottom of the uninstall survey -->
   <string name="uninstall_survey_button_label">Enviar comentarios y desinstalar</string>
   <!--
     Accessibility

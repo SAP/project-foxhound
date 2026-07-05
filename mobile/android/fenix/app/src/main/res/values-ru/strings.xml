@@ -3966,6 +3966,8 @@
     %s is a placeholder for the name of the certificate authority that issued the certificate.
   -->
   <string name="connection_security_panel_verified_by">Подтверждено %s</string>
+  <!-- Content description (not visible, for screen readers etc.) for the handle used to drag the protections dashboard to the bottom of the screen and close it. -->
+  <string name="tracker_protections_dashboard_close_handlebar_content_description">Закрыть панель</string>
   <!--
     Text for the connection security panel when the site uses a QWAC.
     %s is a placeholder for the organization for which the certificate was issued.
@@ -4089,7 +4091,25 @@
   <string name="microsurvey_sync_title" tools:ignore="BrandUsage,UnusedResources">Насколько вы удовлетворены синхронизацией в Firefox?</string>
   <!-- Text shown in the survey title for 'describe your experience so far' microsurvey. Note: The word "Firefox" should NOT be translated. -->
   <string name="microsurvey_describe_your_experience_title" tools:ignore="BrandUsage,UnusedResources">Помогите нам улучшить Firefox. Что лучше всего описывает ваш опыт?</string>
-  <!-- Uninstall Survey -->
+  <!--
+    Uninstall Survey
+
+    Title text for the uninstall survey dialog, asking the user for the reason they are removing the app
+  -->
+  <string name="microsurvey_uninstall_survey_title">Ваш отзыв имеет значение. Какова причина удаления?</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_1">Проблемы с веб-страницами</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_2">Проблемы с видео и загрузками</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_3">Проблемы с производительностью</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_4">Проблемы с функциями и дизайном</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_5">Проблемы с приватностью</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_6">Проблемы с оплатой и подпиской</string>
+  <!-- Button label shown at the bottom of the uninstall survey -->
   <string name="uninstall_survey_button_label">Отправить отзыв и удалить</string>
   <!--
     Accessibility

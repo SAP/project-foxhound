@@ -4055,7 +4055,7 @@
   <string name="microsurvey_sync_title" tools:ignore="BrandUsage,UnusedResources">Firefox의 동기화 경험에 얼마나 만족하시나요?</string>
   <!-- Text shown in the survey title for 'describe your experience so far' microsurvey. Note: The word "Firefox" should NOT be translated. -->
   <string name="microsurvey_describe_your_experience_title" tools:ignore="BrandUsage,UnusedResources">Firefox를 개선할 수 있도록 도와주세요. 지금까지의 경험을 가장 잘 설명한 항목은 무엇입니까?</string>
-  <!-- Uninstall Survey -->
+  <!-- Button label shown at the bottom of the uninstall survey -->
   <string name="uninstall_survey_button_label">의견 제출 및 제거</string>
   <!--
     Accessibility

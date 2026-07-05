@@ -3949,6 +3949,8 @@
     %s is a placeholder for the name of the certificate authority that issued the certificate.
   -->
   <string name="connection_security_panel_verified_by">تاییڌ وابیڌه و دست %s</string>
+  <!-- Content description (not visible, for screen readers etc.) for the handle used to drag the protections dashboard to the bottom of the screen and close it. -->
+  <string name="tracker_protections_dashboard_close_handlebar_content_description">بستن داشبورد</string>
   <!--
     Text for the connection security panel when the site uses a QWAC.
     %s is a placeholder for the organization for which the certificate was issued.
@@ -4072,7 +4074,25 @@
   <string name="microsurvey_sync_title" tools:ignore="BrandUsage,UnusedResources">چندؽ ز هوم گوم کردن من Firefox رازی هڌین؟</string>
   <!-- Text shown in the survey title for 'describe your experience so far' microsurvey. Note: The word "Firefox" should NOT be translated. -->
   <string name="microsurvey_describe_your_experience_title" tools:ignore="BrandUsage,UnusedResources">و ایما من بؽڌر وابیڌن Firefox هیاری بڌین. کو موورد بؽڌر اگو ک تجروبه ایسا تا سکو چ بؽڌه؟</string>
-  <!-- Uninstall Survey -->
+  <!--
+    Uninstall Survey
+
+    Title text for the uninstall survey dialog, asking the user for the reason they are removing the app
+  -->
+  <string name="microsurvey_uninstall_survey_title">منشڌ ایسا موهم هڌ. سیچه هونی ای برنومه ن لقو پۊرنیڌن اکۊنین؟</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_1">موشکلا بلگه وبگه</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_2">موشکلا ویدیۉ وو دانلود کزدن</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_3">موشکلا عملکرد</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_4">موشکلا عملکرد وو تراهی</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_5">موشکلا هریم سیخومی</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_6">موشکلا پرداخت وو اشتراک</string>
+  <!-- Button label shown at the bottom of the uninstall survey -->
   <string name="uninstall_survey_button_label">فشناڌن منشڌ وو لقو پۊرنیڌن</string>
   <!--
     Accessibility

@@ -4070,7 +4070,7 @@
   <string name="microsurvey_sync_title" tools:ignore="BrandUsage,UnusedResources">Trope sodisfazion cjatistu cu la esperience di sincronizazion in Firefox?</string>
   <!-- Text shown in the survey title for 'describe your experience so far' microsurvey. Note: The word "Firefox" should NOT be translated. -->
   <string name="microsurvey_describe_your_experience_title" tools:ignore="BrandUsage,UnusedResources">Judinus a miorâ Firefox. Ce opzion rapresentie miôr la tô esperience fintremai cumò?</string>
-  <!-- Uninstall Survey -->
+  <!-- Button label shown at the bottom of the uninstall survey -->
   <string name="uninstall_survey_button_label">Mande une opinion e disinstale</string>
   <!--
     Accessibility

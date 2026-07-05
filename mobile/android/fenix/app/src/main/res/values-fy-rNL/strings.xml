@@ -4072,7 +4072,7 @@
   <string name="microsurvey_sync_title" tools:ignore="BrandUsage,UnusedResources">Hoe tefreden binne jo mei de syngronisaasje-ûnderfining yn Firefox?</string>
   <!-- Text shown in the survey title for 'describe your experience so far' microsurvey. Note: The word "Firefox" should NOT be translated. -->
   <string name="microsurvey_describe_your_experience_title" tools:ignore="BrandUsage,UnusedResources">Help ús Firefox te ferbetterjen. Wat beskriuwt jo ûnderfining oant no ta it bêste?</string>
-  <!-- Uninstall Survey -->
+  <!-- Button label shown at the bottom of the uninstall survey -->
   <string name="uninstall_survey_button_label">Kommentaar yntsjinje en de-ynstallearje</string>
   <!--
     Accessibility

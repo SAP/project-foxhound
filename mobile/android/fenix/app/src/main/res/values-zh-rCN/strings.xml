@@ -4036,7 +4036,7 @@
   <string name="microsurvey_sync_title" tools:ignore="BrandUsage,UnusedResources">您对 Firefox 的同步体验满意度如何？</string>
   <!-- Text shown in the survey title for 'describe your experience so far' microsurvey. Note: The word "Firefox" should NOT be translated. -->
   <string name="microsurvey_describe_your_experience_title" tools:ignore="BrandUsage,UnusedResources">帮助我们改进 Firefox。以下哪项最符合您目前的使用体验？</string>
-  <!-- Uninstall Survey -->
+  <!-- Button label shown at the bottom of the uninstall survey -->
   <string name="uninstall_survey_button_label">提交反馈并卸载</string>
   <!--
     Accessibility

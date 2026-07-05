@@ -3983,6 +3983,8 @@
     %s is a placeholder for the name of the certificate authority that issued the certificate.
   -->
   <string name="connection_security_panel_verified_by">Overil ho %s</string>
+  <!-- Content description (not visible, for screen readers etc.) for the handle used to drag the protections dashboard to the bottom of the screen and close it. -->
+  <string name="tracker_protections_dashboard_close_handlebar_content_description">Zavrieť nástenku</string>
   <!--
     Text for the connection security panel when the site uses a QWAC.
     %s is a placeholder for the organization for which the certificate was issued.
@@ -4106,7 +4108,25 @@
   <string name="microsurvey_sync_title" tools:ignore="BrandUsage,UnusedResources">Ako ste spokojný so synchronizáciou vo Firefoxe?</string>
   <!-- Text shown in the survey title for 'describe your experience so far' microsurvey. Note: The word "Firefox" should NOT be translated. -->
   <string name="microsurvey_describe_your_experience_title" tools:ignore="BrandUsage,UnusedResources">Pomôžte nám vylepšiť Firefox. Ktoré z tvrdení najlepšie vystihuje vašu doterajšiu skúsenosť?</string>
-  <!-- Uninstall Survey -->
+  <!--
+    Uninstall Survey
+
+    Title text for the uninstall survey dialog, asking the user for the reason they are removing the app
+  -->
+  <string name="microsurvey_uninstall_survey_title">Vaša spätná väzba je dôležitá. Prečo odchádzate?</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_1">Problémy s webovou stránkou</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_2">Problémy s videom a sťahovaním</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_3">Problémy s výkonom</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_4">Problémy s funkciami alebo dizajnom</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_5">Problémy súvisiace so súkromím</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_6">Problémy s platbami a predplatným</string>
+  <!-- Button label shown at the bottom of the uninstall survey -->
   <string name="uninstall_survey_button_label">Odoslať spätnú väzbu a odinštalovať</string>
   <!--
     Accessibility
