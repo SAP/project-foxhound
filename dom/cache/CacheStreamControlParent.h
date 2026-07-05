@@ -42,6 +42,8 @@ class CacheStreamControlParent final : public PCacheStreamControlParent,
 
   void AssertWillDelete();
 
+  const cache::Manager* GetManager() const;
+
   void LostIPCCleanup(SafeRefPtr<StreamList> aStreamList);
 
  private:
