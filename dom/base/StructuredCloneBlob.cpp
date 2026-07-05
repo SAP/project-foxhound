@@ -13,7 +13,6 @@
 #include "js/Value.h"
 #include "js/Wrapper.h"
 #include "jsapi.h"
-#include "mozilla/CheckedInt.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/Span.h"
@@ -213,13 +212,8 @@ bool StructuredCloneBlob::WriteStructuredClone(JSContext* aCx,
 bool StructuredCloneBlob::Holder::WriteStructuredClone(
     JSContext* aCx, JSStructuredCloneWriter* aWriter,
     StructuredCloneHolder* aHolder) {
-  const auto& data = mBuffer->data();
-  CheckedUint32 dataSize(data.Size());
-  if (!dataSize.isValid()) {
-    return false;
-  }
-  if (!JS_WriteUint32Pair(aWriter, dataSize.value(),
-                          JS_STRUCTURED_CLONE_VERSION) ||
+  auto& data = mBuffer->data();
+  if (!JS_WriteUint32Pair(aWriter, data.Size(), JS_STRUCTURED_CLONE_VERSION) ||
       !JS_WriteUint32Pair(aWriter, aHolder->BlobImpls().Length(),
                           BlobImpls().Length())) {
     return false;
