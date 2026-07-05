@@ -248,10 +248,13 @@ bool IMEContentObserver::InitWithEditor(nsPresContext& aPresContext,
   if (NS_WARN_IF(!mRootEditableNodeOrTextControlElement)) {
     return false;
   }
-  MOZ_ASSERT_IF(mRootEditableNodeOrTextControlElement->IsInDesignMode(),
+  MOZ_ASSERT_IF(aEditorBase.IsHTMLEditor() &&
+                    mRootEditableNodeOrTextControlElement->IsInDesignMode(),
                 IsForDesignMode());
-  MOZ_ASSERT_IF(!mRootEditableNodeOrTextControlElement->IsInDesignMode(),
+  MOZ_ASSERT_IF(aEditorBase.IsHTMLEditor() &&
+                    !mRootEditableNodeOrTextControlElement->IsInDesignMode(),
                 !IsForDesignMode());
+  MOZ_ASSERT_IF(aEditorBase.IsTextEditor(), !IsForDesignMode());
 
   mEditorBase = &aEditorBase;
 
