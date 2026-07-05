@@ -1775,6 +1775,21 @@ void WebGPUParent::DisableSharedTextureForSwapChain(
   data->mUseSharedTextureInSwapChain = false;
 }
 
+static bool SwapChainFormatMatches(
+    gfx::SurfaceFormat aSurfaceFormat,
+    const ffi::WGPUTextureFormat& aTextureFormat) {
+  switch (aSurfaceFormat) {
+    case gfx::SurfaceFormat::B8G8R8A8:
+      return aTextureFormat.tag == ffi::WGPUTextureFormat_Bgra8Unorm ||
+             aTextureFormat.tag == ffi::WGPUTextureFormat_Bgra8UnormSrgb;
+    case gfx::SurfaceFormat::R8G8B8A8:
+      return aTextureFormat.tag == ffi::WGPUTextureFormat_Rgba8Unorm ||
+             aTextureFormat.tag == ffi::WGPUTextureFormat_Rgba8UnormSrgb;
+    default:
+      return false;
+  }
+}
+
 bool WebGPUParent::EnsureSharedTextureForSwapChain(
     ffi::WGPUSwapChainId aSwapChainId, ffi::WGPUDeviceId aDeviceId,
     ffi::WGPUTextureId aTextureId, uint32_t aWidth, uint32_t aHeight,
@@ -1791,6 +1806,11 @@ bool WebGPUParent::EnsureSharedTextureForSwapChain(
     MOZ_ASSERT_UNREACHABLE("unexpected to be called");
     return false;
   }
+
+  MOZ_RELEASE_ASSERT(aWidth == static_cast<uint32_t>(data->mDesc.size().width));
+  MOZ_RELEASE_ASSERT(aHeight ==
+                     static_cast<uint32_t>(data->mDesc.size().height));
+  MOZ_RELEASE_ASSERT(SwapChainFormatMatches(data->mDesc.format(), aFormat));
 
   // Recycled SharedTexture if it exists.
   if (!data->mRecycledSharedTextures.empty()) {
@@ -1828,6 +1848,11 @@ void WebGPUParent::EnsureSharedTextureForReadBackPresent(
     MOZ_ASSERT_UNREACHABLE("unexpected to be called");
     return;
   }
+
+  MOZ_RELEASE_ASSERT(aWidth == static_cast<uint32_t>(data->mDesc.size().width));
+  MOZ_RELEASE_ASSERT(aHeight ==
+                     static_cast<uint32_t>(data->mDesc.size().height));
+  MOZ_RELEASE_ASSERT(SwapChainFormatMatches(data->mDesc.format(), aFormat));
 
   UniquePtr<SharedTexture> texture =
       SharedTextureReadBackPresent::Create(aWidth, aHeight, aFormat, aUsage);

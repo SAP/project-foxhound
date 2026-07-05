@@ -288,6 +288,9 @@ enum Message<'a> {
         width: i32,
         height: i32,
         format: SurfaceFormat,
+        texture_format: wgt::TextureFormat,
+        usage: wgt::TextureUsages,
+        view_formats: Vec<wgt::TextureFormat>,
         buffer_ids: [id::BufferId; MAX_SWAPCHAIN_BUFFER_COUNT],
         remote_texture_owner_id: RemoteTextureOwnerId,
         use_shared_texture_in_swap_chain: bool,
@@ -482,5 +485,5 @@ impl<'a> TexelCopyBufferLayout<'a> {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct SwapChainId(pub u64);

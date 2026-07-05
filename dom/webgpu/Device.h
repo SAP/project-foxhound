@@ -145,6 +145,9 @@ class Device final : public DOMEventTargetHelper,
   already_AddRefed<Buffer> CreateBuffer(const dom::GPUBufferDescriptor& aDesc,
                                         ErrorResult& aRv);
 
+  static dom::GPUTextureDescriptor SwapChainTextureDescriptor(
+      const dom::GPUCanvasConfiguration& aConfig,
+      const gfx::IntSize& aCanvasSize);
   already_AddRefed<Texture> CreateTextureForSwapChain(
       const dom::GPUCanvasConfiguration* const aConfig,
       const gfx::IntSize& aCanvasSize,
