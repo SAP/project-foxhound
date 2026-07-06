@@ -283,6 +283,11 @@ RemoteAccessible* DocAccessibleParent::CreateAcc(
           "Attempt to move RemoteAccessible which still has a parent!");
       return nullptr;
     }
+    if (aAccData.ID() == mPendingShowChild) {
+      MOZ_ASSERT_UNREACHABLE(
+          "Attempt to move RemoteAccessible which has a pending parent");
+      return nullptr;
+    }
     return newProxy;
   }
 
@@ -421,6 +426,10 @@ mozilla::ipc::IPCResult DocAccessibleParent::ProcessHideEvent(
   ACQUIRE_ANDROID_LOCK
 
   MOZ_ASSERT(CheckDocTree());
+
+  if (mPendingShowChild) {
+    return IPC_FAIL(this, "Hide during split show");
+  }
 
   // We shouldn't actually need this because mAccessibles shouldn't have an
   // entry for the document itself, but it doesn't hurt to be explicit.
