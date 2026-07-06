@@ -2261,9 +2261,6 @@ def check_thread(target, c_compiler):
     if target.os == "Android":
         # The custom dynamic linker doesn't support TLS variables
         return False
-    if target.kernel == "OpenBSD":
-        # OpenBSD doesn't have TLS support, and the test succeeds with clang++
-        return False
     return c_compiler.type != "clang-cl"
 
 
