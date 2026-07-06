@@ -418,7 +418,7 @@ nsresult nsJXLDecoder::AllocateFrameBuffers() {
   }
 
   if (mPixelFormat.value() == PixelFormat::Cmyk8 &&
-      !mKBuffer.resize(size.width * size.height)) {
+      !mKBuffer.resize(size_t(size.width) * size.height)) {
     return NS_ERROR_FAILURE;
   }
 
