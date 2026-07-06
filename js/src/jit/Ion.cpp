@@ -1469,6 +1469,13 @@ bool OptimizeMIR(MIRGenerator* mir) {
       if (!gvn.run(ValueNumberer::DontUpdateAliasAnalysis)) {
         return false;
       }
+
+      if (!EliminatePhis(mir, graph, ConservativeObservability)) {
+        return false;
+      }
+
+      AssertExtendedGraphCoherency(graph);
+
       // And tidy up any empty blocks.
       bool blocksFolded;
       if (!FoldEmptyBlocks(graph, &blocksFolded)) {
