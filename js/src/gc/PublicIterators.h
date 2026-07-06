@@ -33,6 +33,9 @@ class ZonesIter {
  public:
   ZonesIter(gc::GCRuntime* gc, ZoneSelector selector)
       : iterMarker(gc), it(gc->zones().begin()), end(gc->zones().end()) {
+    // Don't use this off the main thread while sweeping zones.
+    MOZ_ASSERT(CurrentThreadCanAccessRuntime(gc->rt) ||
+               gc->state() != gc::State::Finalize);
     if (selector == SkipAtoms) {
       while (!done() && get()->isAtomsZone()) {
         next();

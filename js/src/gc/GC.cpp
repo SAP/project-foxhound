@@ -2372,7 +2372,7 @@ void js::gc::BackgroundDecommitTask::run(AutoLockHelperThreadState& lock) {
 
       // To help minimize the total number of chunks needed over time, sort the
       // available chunks list so that we allocate into more-used chunks first.
-      for (AllZonesIter zone(gc->rt); !zone.done(); zone.next()) {
+      for (AllZonesIter zone(gc); !zone.done(); zone.next()) {
         zone->availableChunks(gcLock).sort();
       }
 

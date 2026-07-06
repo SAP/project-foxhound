@@ -476,12 +476,7 @@ bool GCRuntime::wantBackgroundAllocation(const AutoLockGC& lock) const {
     return false;
   }
 
-  size_t nonEmptyCount = 0;
-  for (AllZonesIter zone(rt); !zone.done(); zone.next()) {
-    nonEmptyCount +=
-        zone->fullChunks(lock).count() + zone->availableChunks(lock).count();
-  }
-  return nonEmptyCount >= 4;
+  return heapSize.bytes() >= ChunkSize * 4;
 }
 
 // Allocate a new arena but don't initialize it.
