@@ -162,6 +162,16 @@ internal fun iPProtectionReducer(
         state.copy(activate = null)
     }
 
+    is IPProtectionAction.CheckAccount -> {
+        if (state.accountState.status == AccountStatus.NeedsAuthorization) {
+            // When we "try again" we signal to the IPProtectionHandler to attempt retrieving an access token.
+            // If that request fails, we catch the exception and return back into a `NeedsAuthorization` state.
+            state.copy(accountState = state.accountState.copy(status = AccountStatus.TryAgain))
+        } else {
+            state
+        }
+    }
+
     is InternalAction -> internalReducer(state, action)
 }
 

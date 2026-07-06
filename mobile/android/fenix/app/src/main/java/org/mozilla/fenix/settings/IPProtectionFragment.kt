@@ -9,6 +9,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -82,6 +83,11 @@ class IPProtectionFragment : Fragment(), SystemInsetsPaddedFragment {
                 .formatPromoDateOrCatch { requireComponents.analytics.crashReporter.submitCaughtException(it) }
                 ?.takeIf { LocalDate.now() <= LocalDate.parse(promoDate) }
         }
+
+        LaunchedEffect(Unit) {
+           requireComponents.ipProtection.store.dispatch(IPProtectionAction.CheckAccount)
+        }
+
         FirefoxTheme {
             IPProtectionScreen(
                 state = state,

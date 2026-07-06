@@ -288,6 +288,24 @@ class IPProtectionReducerTest {
         )
     }
 
+    @Test
+    fun `GIVEN AccountStatus is NeedsAuthorization WHEN CheckAccount is dispatched THEN AccountStatus is TryAgain`() {
+        val initialState = buildIPProtectionState(accountStatus = AccountStatus.NeedsAuthorization)
+
+        val resultState = iPProtectionReducer(initialState, IPProtectionAction.CheckAccount)
+
+        assertEquals(AccountStatus.TryAgain, resultState.accountState.status)
+    }
+
+    @Test
+    fun `GIVEN AccountStatus is not NeedsAuthorization WHEN CheckAccount is dispatched THEN state does not change`() {
+        val initialState = buildIPProtectionState(accountStatus = AccountStatus.EnrolledAndEntitled)
+
+        val resultState = iPProtectionReducer(initialState, IPProtectionAction.CheckAccount)
+
+        assertEquals(initialState, resultState)
+    }
+
     private fun buildIPProtectionState(
         accountStatus: AccountStatus = AccountStatus.Uninitialized,
     ): IPProtectionState {

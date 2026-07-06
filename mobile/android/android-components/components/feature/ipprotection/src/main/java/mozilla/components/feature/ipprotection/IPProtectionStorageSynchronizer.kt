@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import mozilla.components.concept.sync.AccountObserver
 import mozilla.components.concept.sync.AuthFlowError
+import mozilla.components.feature.ipprotection.IPProtectionFxaAuthFlow.Companion.SCOPE_IPPROTECTION
 import mozilla.components.feature.ipprotection.store.IPProtectionAction
 import mozilla.components.feature.ipprotection.store.IPProtectionStore
 import mozilla.components.feature.ipprotection.store.InternalAction
@@ -36,7 +37,7 @@ class IPProtectionStorageSynchronizer(
     val lazyAccountManager: Lazy<FxaAccountManager>,
 ) {
     private val storageStoreSync by lazy { StorageStoreSync(storage, store) }
-    private val fxaAccountStoreSync by lazy { FxaAccountStoreSync(syncStore, store) }
+    private val fxaAccountStoreSync by lazy { FxaAccountStoreSync(syncStore, store, lazyAccountManager) }
 
     /**
      * Initialize the sync.
@@ -67,6 +68,7 @@ internal class StorageStoreSync(
 internal class FxaAccountStoreSync(
     private val syncStore: SyncStore,
     private val ipProtectionStore: IPProtectionStore,
+    private val lazyAccountManager: Lazy<FxaAccountManager>,
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : AccountObserver {
     fun initialize() {
@@ -76,7 +78,13 @@ internal class FxaAccountStoreSync(
                 .distinctUntilChanged()
                 .collect { state ->
                     val mappedState = when (state) {
-                        AccountState.Authenticated -> AccountStatus.Authenticated
+                        AccountState.Authenticated -> {
+                            if (lazyAccountManager.value.containsScope(SCOPE_IPPROTECTION)) {
+                                AccountStatus.Authenticated
+                            } else {
+                                AccountStatus.NeedsAuthorization
+                            }
+                        }
                         AccountState.AuthenticationProblem -> AccountStatus.NeedsAuthentication
                         AccountState.NotAuthenticated -> AccountStatus.Uninitialized
                         AccountState.Unknown,

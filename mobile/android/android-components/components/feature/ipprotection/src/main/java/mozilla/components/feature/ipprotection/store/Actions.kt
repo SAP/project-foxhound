@@ -47,6 +47,12 @@ sealed class IPProtectionAction : Action {
      * Reports that the most recent activate or deactivate request failed.
      */
     object ToggleFailed : IPProtectionAction()
+
+    /**
+     * Checks if an account has already been entitled. If so, this will lead to a token exchange that gives us a new
+     * refresh token with increased scopes. If not, we do nothing.
+     */
+    object CheckAccount : IPProtectionAction()
 }
 
 /**
