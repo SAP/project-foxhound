@@ -149,6 +149,8 @@
   <string name="home_screen_shortcut_open_new_private_tab_2">Приватна вкладка</string>
   <!-- Shortcut action to open Passwords screen -->
   <string name="home_screen_shortcut_passwords">Паролі</string>
+  <!-- Shortcut action to open uninstall survey -->
+  <string name="home_screen_shortcut_uninstall_survey">Чому видаляєте?</string>
   <!--
     Recent Tabs
 
@@ -1972,6 +1974,8 @@
   <string name="webcompat_reporter_label_whats_broken_3">Що не працює?</string>
   <!-- Content description for the icon button that clears the selected broken site reason in the WebCompat Reporter. -->
   <string name="webcompat_reporter_clear_reason_content_description">Очистити вибрану причину</string>
+  <!-- The error message of the description when the user selects "Something else" as the reason, but left the description empty or too short. -->
+  <string name="webcompat_reporter_description_error">Введіть щонайменше 10 символів</string>
   <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_label_whats_broken_2">Що не так?</string>
   <!-- The placeholder text for the dropdown where a user selects a high-level reason why the site is broken. -->
@@ -2454,6 +2458,8 @@
   <string name="preferences_take_survey">Пройти опитування</string>
   <!-- Preference for not taking the short survey. -->
   <string name="preferences_not_take_survey">Ні, дякую</string>
+  <!-- Error message shown in a Toast when the system fails to trigger the device uninstallation prompt. -->
+  <string name="uninstall_survey_error_failed">Не вдалося відкрити системне вікно видалення. Скористайтеся безпосередньо системною дією видалення.</string>
   <!--
     Snackbar
 
@@ -3960,6 +3966,8 @@
     %s is a placeholder for the name of the certificate authority that issued the certificate.
   -->
   <string name="connection_security_panel_verified_by">Засвідчено %s</string>
+  <!-- Content description (not visible, for screen readers etc.) for the handle used to drag the protections dashboard to the bottom of the screen and close it. -->
+  <string name="tracker_protections_dashboard_close_handlebar_content_description">Закрити панель</string>
   <!--
     Text for the connection security panel when the site uses a QWAC.
     %s is a placeholder for the organization for which the certificate was issued.
@@ -4083,6 +4091,26 @@
   <string name="microsurvey_sync_title" tools:ignore="BrandUsage,UnusedResources">Як ви оцінюєте роботу синхронізації у Firefox?</string>
   <!-- Text shown in the survey title for 'describe your experience so far' microsurvey. Note: The word "Firefox" should NOT be translated. -->
   <string name="microsurvey_describe_your_experience_title" tools:ignore="BrandUsage,UnusedResources">Допоможіть нам покращити Firefox. Яке твердження найточніше описує ваш досвід користування?</string>
+  <!--
+    Uninstall Survey
+
+    Title text for the uninstall survey dialog, asking the user for the reason they are removing the app
+  -->
+  <string name="microsurvey_uninstall_survey_title">Ваша думка важлива. Чому ви видаляєте?</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_1">Проблеми з вебсторінками</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_2">Проблеми з відео та завантаженням</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_3">Проблеми з продуктивністю</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_4">Проблеми з функціоналом і дизайном</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_5">Проблеми, пов’язані з приватністю</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_6">Проблеми з платежами та передплатою</string>
+  <!-- Button label shown at the bottom of the uninstall survey -->
+  <string name="uninstall_survey_button_label">Надіслати відгук та видалити</string>
   <!--
     Accessibility
 
@@ -4720,6 +4748,8 @@
   <string name="firefox_labs_feature_enable_dialog_message">Щоб увімкнути цю функцію, перезапустіть %s.</string>
   <!-- The description text that is displayed in the confirmation dialog on the Firefox Labs screen for toggling "off" experimental features. %s is the name of the app (for example "Firefox Nightly") -->
   <string name="firefox_labs_feature_disable_dialog_message">Щоб вимкнути цю функцію, перезапустіть %s.</string>
+  <!-- Helper text shown beneath a Firefox Labs item when it is blocked from being turned on. -->
+  <string name="firefox_labs_feature_conflict">Функція недоступна для випробування.</string>
   <!-- Text displayed on the Firefox Labs screen when there are no Labs experimental features present. -->
   <string name="firefox_labs_no_labs_available_description">Наразі немає експериментальних функцій</string>
 </resources>

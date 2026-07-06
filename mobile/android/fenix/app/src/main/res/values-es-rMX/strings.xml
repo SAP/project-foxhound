@@ -3928,6 +3928,8 @@
     %s is a placeholder for the name of the certificate authority that issued the certificate.
   -->
   <string name="connection_security_panel_verified_by">Verificado por %s</string>
+  <!-- Content description (not visible, for screen readers etc.) for the handle used to drag the protections dashboard to the bottom of the screen and close it. -->
+  <string name="tracker_protections_dashboard_close_handlebar_content_description">Cerrar panel de control</string>
   <!--
     Text for the connection security panel when the site uses a QWAC.
     %s is a placeholder for the organization for which the certificate was issued.
@@ -4051,6 +4053,24 @@
   <string name="microsurvey_sync_title" tools:ignore="BrandUsage,UnusedResources">¿Qué tan satisfactoria es la experiencia de sincronización en Firefox?</string>
   <!-- Text shown in the survey title for 'describe your experience so far' microsurvey. Note: The word "Firefox" should NOT be translated. -->
   <string name="microsurvey_describe_your_experience_title" tools:ignore="BrandUsage,UnusedResources">Ayúdanos a mejorar Firefox. ¿Qué opción describe mejor tu experiencia hasta ahora?</string>
+  <!--
+    Uninstall Survey
+
+    Title text for the uninstall survey dialog, asking the user for the reason they are removing the app
+  -->
+  <string name="microsurvey_uninstall_survey_title">Tu opinión es importante. ¿Por qué estás desinstalando la aplicación?</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_1">Problemas con la página web</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_2">Problemas de vídeo y descarga</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_3">Problemas de rendimiento</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_4">Problemas de función y diseño</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_5">Cuestiones relacionadas con la privacidad</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_6">Problemas de pago y suscripción</string>
   <!--
     Accessibility
 

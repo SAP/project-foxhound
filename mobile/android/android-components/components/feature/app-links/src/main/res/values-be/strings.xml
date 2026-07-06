@@ -23,6 +23,8 @@
   <string name="mozac_feature_applinks_normal_confirm_dialog_message">Хочаце выйсці з %s, каб паглядзець гэтае змесціва?</string>
   <!-- Opens the selected time -->
   <string name="mozac_feature_applinks_confirm_dialog_confirm">Адкрыць</string>
+  <!-- Opens the selected app link -->
+  <string name="mozac_feature_applinks_confirm_dialog_confirm_2">Адкрыць у праграме</string>
   <!-- Cancels the prompt -->
   <string name="mozac_feature_applinks_confirm_dialog_deny">Адмена</string>
   <!-- The label of the checkbox that, depending of user's choice, can change the Open links in apps setting -->

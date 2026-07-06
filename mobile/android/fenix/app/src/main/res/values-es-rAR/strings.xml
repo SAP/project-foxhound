@@ -4079,9 +4079,9 @@
 
     Title text for the uninstall survey dialog, asking the user for the reason they are removing the app
   -->
-  <string name="microsurvey_uninstall_survey_title">Tu opinión es importante. ¿Por qué está desinstalando?</string>
+  <string name="microsurvey_uninstall_survey_title">Tu opinión es importante. ¿Por qué estás desinstalando?</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_1">Problemas con la página web</string>
+  <string name="uninstall_survey_option_1">Problemas con las páginas web</string>
   <!-- Uninstall survey answer option -->
   <string name="uninstall_survey_option_2">Problemas con videos y descargas</string>
   <!-- Uninstall survey answer option -->

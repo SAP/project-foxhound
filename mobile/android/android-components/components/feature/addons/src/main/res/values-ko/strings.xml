@@ -172,11 +172,11 @@
   <!-- The text shown when an extension requests the userScripts permission, near the usual description of the userScripts permission -->
   <string name="mozac_feature_addons_permissions_user_scripts_extra_warning">확인되지 않은 스크립트는 보안 및 개인 정보 보호에 위험이 될 수 있습니다. 신뢰할 수 있는 확장 기능이나 출처의 스크립트만 실행하세요.</string>
   <!-- The sentence used when the extension has data collection permissions. %1$s is a formatted list of permissions. -->
-  <string name="mozac_feature_addons_permissions_required_data_collection_description_2">개발자가 밝힌 이 확장 기능의 수집 권한: %1$s</string>
+  <string name="mozac_feature_addons_permissions_required_data_collection_description_2">개발자가 이 확장 기능이 수집한다고 밝힌 항목: %1$s</string>
   <!-- The sentence used when the developer of an extension has explicitly stated that they do not collect any data collection. -->
-  <string name="mozac_feature_addons_permissions_none_required_data_collection_description">개발자가 이 확장 기능은 데이터 수집이 필요하지 않다고 합니다.</string>
+  <string name="mozac_feature_addons_permissions_none_required_data_collection_description">개발자는 이 확장 기능이 데이터 수집을 요구하지 않는다고 밝히고 있습니다.</string>
   <!-- The sentence used when the extension requests new data collection permissions. %1$s is a formatted list of permissions. -->
-  <string name="mozac_feature_addons_permissions_data_collection_optional_description">개발자가 밝힌 이 확장 기능의 수집 권한: %1$s</string>
+  <string name="mozac_feature_addons_permissions_data_collection_optional_description">개발자가 확장 기능이 수집을 원한다고 밝힌 항목: %1$s</string>
   <!-- Description for text button that expands the list of domain permissions -->
   <string name="mozac_feature_addons_permissions_show_all_sites">모든 사이트 보기</string>
   <!-- Description for text button that hides the majority of the list of domain permissions -->
@@ -332,7 +332,7 @@
   <!-- The heading for the permissions section in the system notification shown when an add-on has an update that requires user confirmation. %1$s is a list of sentences. -->
   <string name="mozac_feature_addons_updater_notification_heading_permissions">새 필수 권한: %1$s</string>
   <!-- The heading for the data collection permission section in the system notification shown when an add-on has an update that requires user confirmation. %1$s is a list of permissions. -->
-  <string name="mozac_feature_addons_updater_notification_heading_data_collection_permissions">새 필수 데이터 수집: 개발자가 확장 기능이 %1$s 권한을 수집할 것이라고 합니다.</string>
+  <string name="mozac_feature_addons_updater_notification_heading_data_collection_permissions">새 필수 데이터 수집: 개발자는 확장 기능이 %1$s 권한을 수집할 것이라고 밝히고 있습니다.</string>
   <!-- Name of the "notification channel" used for displaying a notification for updating an extension. See https://developer.android.com/training/notify-user/channels -->
   <string name="mozac_feature_addons_updater_notification_channel_2">확장 기능 업데이트</string>
   <!-- Name of the "notification channel" used for displaying a notification for new supported add-ons. See https://developer.android.com/training/notify-user/channels -->
