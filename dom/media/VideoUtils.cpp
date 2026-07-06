@@ -228,13 +228,14 @@ bool IsValidVideoRegion(const gfx::IntSize& aFrame,
          aFrame.height <= PlanarYCbCrImage::MAX_DIMENSION &&
          aFrame.width * aFrame.height <= MAX_VIDEO_WIDTH * MAX_VIDEO_HEIGHT &&
          aPicture.width > 0 &&
-         aPicture.width <= PlanarYCbCrImage::MAX_DIMENSION &&
+         aPicture.width <= PlanarYCbCrImage::MAX_DIMENSION && aPicture.x >= 0 &&
          aPicture.x < PlanarYCbCrImage::MAX_DIMENSION &&
          aPicture.x + aPicture.width < PlanarYCbCrImage::MAX_DIMENSION &&
-         aPicture.height > 0 &&
+         aPicture.XMost() <= aFrame.width && aPicture.height > 0 &&
          aPicture.height <= PlanarYCbCrImage::MAX_DIMENSION &&
-         aPicture.y < PlanarYCbCrImage::MAX_DIMENSION &&
+         aPicture.y >= 0 && aPicture.y < PlanarYCbCrImage::MAX_DIMENSION &&
          aPicture.y + aPicture.height < PlanarYCbCrImage::MAX_DIMENSION &&
+         aPicture.YMost() <= aFrame.height &&
          aPicture.width * aPicture.height <=
              MAX_VIDEO_WIDTH * MAX_VIDEO_HEIGHT &&
          aDisplay.width > 0 &&

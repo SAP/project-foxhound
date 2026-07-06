@@ -20,6 +20,7 @@
 #include "XiphExtradata.h"
 #include "gfx2DGlue.h"
 #include "gfxUtils.h"
+#include "mozilla/CheckedInt.h"
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/SharedThreadPool.h"
@@ -526,26 +527,28 @@ nsresult WebMDemuxer::ReadMetadata() {
 
       mInfo.mVideo.mHDRMetadata = ParseWebMMasteringMetadata(params);
 
-      // Picture region, taking into account cropping, before scaling
-      // to the display size.
-      unsigned int cropH = params.crop_right + params.crop_left;
-      unsigned int cropV = params.crop_bottom + params.crop_top;
-      gfx::IntRect pictureRect(params.crop_left, params.crop_top,
-                               params.width - cropH, params.height - cropV);
-
-      // If the cropping data appears invalid then use the frame data
-      if (pictureRect.width <= 0 || pictureRect.height <= 0 ||
-          pictureRect.x < 0 || pictureRect.y < 0) {
-        pictureRect.x = 0;
-        pictureRect.y = 0;
-        pictureRect.width = params.width;
-        pictureRect.height = params.height;
+      CheckedInt<uint32_t> cropH =
+          CheckedInt<uint32_t>(params.crop_left) + params.crop_right;
+      CheckedInt<uint32_t> cropV =
+          CheckedInt<uint32_t>(params.crop_top) + params.crop_bottom;
+      if (!cropH.isValid() || !cropV.isValid() ||
+          cropH.value() >= params.width || cropV.value() >= params.height) {
+        WEBM_DEBUG("Invalid crop values left: %u right: %u top: %u bottom: %u",
+                   params.crop_left, params.crop_right, params.crop_top,
+                   params.crop_bottom);
+        continue;
       }
 
       // Validate the container-reported frame and pictureRect sizes. This
       // ensures that our video frame creation code doesn't overflow.
       gfx::IntSize displaySize(params.display_width, params.display_height);
       gfx::IntSize frameSize(params.width, params.height);
+      const uint32_t croppedWidth = params.width - cropH.value();
+      const uint32_t croppedHeight = params.height - cropV.value();
+      gfx::IntRect pictureRect(AssertedCast<int32_t>(params.crop_left),
+                               AssertedCast<int32_t>(params.crop_top),
+                               AssertedCast<int32_t>(croppedWidth),
+                               AssertedCast<int32_t>(croppedHeight));
       if (!IsValidVideoRegion(frameSize, pictureRect, displaySize)) {
         // Video track's frame sizes will overflow. Ignore the video track.
         continue;
