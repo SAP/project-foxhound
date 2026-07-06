@@ -1226,6 +1226,33 @@ static void InitNamespaceOrSourceBinding(JSContext* cx,
   env->setSlot(prop->slot(), obj);
 }
 
+static bool ComputeNamespaceBindings(JSContext* cx,
+                                     Handle<ModuleObject*> module,
+                                     Handle<ModuleNamespaceObject*> ns) {
+  Rooted<JSAtom*> name(cx);
+  Rooted<Value> resolution(cx);
+  Rooted<ResolvedBindingObject*> binding(cx);
+  Rooted<ModuleObject*> importedModule(cx);
+  Rooted<JSAtom*> bindingName(cx);
+  for (JSAtom* atom : ns->exports()) {
+    name = atom;
+
+    if (!ModuleResolveExport(cx, module, name, &resolution)) {
+      return false;
+    }
+
+    MOZ_ASSERT(IsResolvedBinding(cx, resolution));
+    binding = &resolution.toObject().as<ResolvedBindingObject>();
+    importedModule = binding->module();
+    bindingName = binding->bindingName();
+    if (!ns->addBinding(cx, name, importedModule, bindingName)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 struct AtomComparator {
   bool operator()(JSAtom* a, JSAtom* b, bool* lessOrEqualp) {
     int32_t result = CompareStrings(a, b);
@@ -1261,25 +1288,9 @@ static ModuleNamespaceObject* ModuleNamespaceCreate(
   }
 
   // Pre-compute all binding mappings now instead of on each access.
-  Rooted<JSAtom*> name(cx);
-  Rooted<Value> resolution(cx);
-  Rooted<ResolvedBindingObject*> binding(cx);
-  Rooted<ModuleObject*> importedModule(cx);
-  Rooted<JSAtom*> bindingName(cx);
-  for (JSAtom* atom : ns->exports()) {
-    name = atom;
-
-    if (!ModuleResolveExport(cx, module, name, &resolution)) {
-      return nullptr;
-    }
-
-    MOZ_ASSERT(IsResolvedBinding(cx, resolution));
-    binding = &resolution.toObject().as<ResolvedBindingObject>();
-    importedModule = binding->module();
-    bindingName = binding->bindingName();
-    if (!ns->addBinding(cx, name, importedModule, bindingName)) {
-      return nullptr;
-    }
+  if (!ComputeNamespaceBindings(cx, module, ns)) {
+    module->clearNamespaceOnFailure();
+    return nullptr;
   }
 
   // Step 10. Return M.
