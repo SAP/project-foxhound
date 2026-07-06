@@ -81,6 +81,9 @@ const ENABLED_REGIONS_DEFAULT = [
   ["PH", ["en-*"]],
   ["US", ["en-*"]],
 ];
+const FAILSAFE_THROTTLE_ID = "failsafe";
+const SOFT_THROTTLE_ID = "soft";
+
 XPCOMUtils.defineLazyPreferenceGetter(
   lazy,
   "supportedRegions",
@@ -110,6 +113,27 @@ XPCOMUtils.defineLazyPreferenceGetter(
   false
 );
 
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "maxChunkTimeMs",
+  "places.semanticHistory.maxChunkTimeMs",
+  300
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "maxChunkTimeMsFailsafe",
+  "places.semanticHistory.maxChunkTimeMsFailsafe",
+  500
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "minEntriesBeforeThrottle",
+  "places.semanticHistory.minEntriesBeforeThrottle",
+  1000
+);
+
 // Time between deferred task executions.
 const DEFERRED_TASK_INTERVAL_MS = 3000;
 // Maximum time to wait for an idle before the task is executed anyway.
@@ -119,6 +143,15 @@ const DEFAULT_CHUNK_SIZE = Services.prefs.getIntPref(
   "places.semanticHistory.defaultBatchChunksize",
   25
 );
+const MIN_CHUNK_SIZE = 10;
+
+// Minimum number of embeddings required before semantic search is enabled.
+const COMPLETED_EMBEDDINGS_MINIMUM = 10;
+
+// Number of recent chunk durations kept to decide whether to throttle indexing.
+const CHUNK_LATENCY_MONITORING_WINDOW = 9;
+// How often (in update-task runs) to report the embeddings count to telemetry.
+const GLEAN_REPORT_DB_SIZE_FREQUENCY = 40;
 const ONE_MiB = 1024 * 1024;
 // minimum title length threshold; Usage len(title || description) > MIN_TITLE_LENGTH
 const MIN_TITLE_LENGTH = 4;
@@ -138,6 +171,7 @@ class PlacesSemanticHistoryManager {
   #changeThresholdCount;
   #distanceThreshold;
   #finalized = false;
+  #chunkSize = DEFAULT_CHUNK_SIZE;
   #updateTask = null;
   #prevPagesRankChangedCount = 0;
   #pendingUpdates = true;
@@ -150,6 +184,9 @@ class PlacesSemanticHistoryManager {
   #shutdownProgress = { state: "Not started" };
   #deferredTaskInterval = DEFERRED_TASK_INTERVAL_MS;
   #lastMaxChunksCount = 0;
+  #recentChunkTimes = [];
+  #indexingBlocked = false;
+  #reportDbSizeModCounter = 0;
 
   /**
    * Checks if a value is an array or a typed array.
@@ -333,19 +370,15 @@ class PlacesSemanticHistoryManager {
   }
 
   /**
-   * Checks whether the semantic-history vector DB is *sufficiently populated*.
+   * Checks whether the semantic-history vector DB holds the minimum number of
+   * embeddings required to enable semantic search.
    *
-   * We look at the **top N** Places entries (N = `#rowLimit`, ordered by
-   * `#samplingAttrib`) and count how many of them already have an embedding in
-   * `vec_history_mapping`.  If **more than completionThreshold %** are *missing* we consider the
-   * DB **not ready** and set to true when the completionThreshold reaches
-   *
-   * The boolean result is memoised in `this.enoughEntries`; subsequent
-   * calls return that cached value to avoid repeating the query.
+   * The result is memoised in `this.enoughEntries` once the minimum is reached;
+   * subsequent calls return that cached value to avoid repeating the query.
    *
    * @returns {Promise<boolean>}
-   *   `true`  – **not enough** entries yet (pending / total ≥ completionThreshold)
-   *   `false` – DB is sufficiently populated (pending / total < completionThreshold)
+   *   `true` once at least `COMPLETED_EMBEDDINGS_MINIMUM` embeddings exist,
+   *   `false` while the DB is still below that minimum.
    */
   async hasSufficientEntriesForSearching() {
     if (this.enoughEntries) {
@@ -354,47 +387,18 @@ class PlacesSemanticHistoryManager {
     }
     let conn = await this.getConnection();
 
-    // Compute total candidates and how many of them updated with vectors.
+    // Count how many embeddings we currently have.
     const [row] = await conn.execute(
-      `
-      WITH top_places AS (
-        SELECT url_hash FROM moz_places
-        WHERE title NOTNULL
-          AND length(title || ifnull(description,'')) > :min_title_length
-          AND last_visit_date NOTNULL
-          AND frecency > 0
-        ORDER BY ${this.#samplingAttrib} DESC
-        LIMIT :rowLimit
-      )
-      SELECT
-        (SELECT COUNT(*) FROM top_places) AS total,
-        (SELECT COUNT(*) FROM top_places tp
-         JOIN vec_history_mapping map USING (url_hash)) AS completed
-      `,
-      {
-        rowLimit: this.#rowLimit,
-        min_title_length: MIN_TITLE_LENGTH,
-      }
+      `SELECT COUNT(*) AS completed FROM vec_history_mapping`
     );
-
-    const total = row.getResultByName("total");
     const completed = row.getResultByName("completed");
-    const ratio = total ? completed / total : 0;
 
-    const completionThreshold = Services.prefs.getFloatPref(
-      "places.semanticHistory.completionThreshold",
-      0.5
-    );
-    // Ready once ≥ completionThreshold % completed.
-    this.enoughEntries = ratio >= completionThreshold;
+    this.enoughEntries = completed > COMPLETED_EMBEDDINGS_MINIMUM;
 
     if (this.enoughEntries) {
       lazy.logger.debug(
-        `Semantic-DB status — completed: ${completed}/${total} ` +
-          `(${(ratio * 100).toFixed(1)} %). ` +
-          (this.enoughEntries
-            ? "Threshold met; update task can run at normal cadence."
-            : "Below threshold; updater remains armed for frequent updates.")
+        `Semantic-DB ready — ${completed} embeddings; update task can run at ` +
+          `normal cadence.`
       );
     }
 
@@ -479,12 +483,17 @@ class PlacesSemanticHistoryManager {
    *
    * This is invoked whenever the `"pages-rank-changed"` or
    * `"history-cleared"` event is observed.
-   * It re-arms the DeferredTask for updates if not finalized.
+   * It re-arms the DeferredTask for updates if not finalized and indexing has
+   * not been blocked by the failsafe.
    *
    * @private
    */
   async onPagesRankChanged() {
-    if (this.#updateTask && !this.#updateTask.isFinalized) {
+    if (
+      this.#updateTask &&
+      !this.#updateTask.isFinalized &&
+      !this.#indexingBlocked
+    ) {
       lazy.logger.trace("Arm update task");
       this.#updateTask.arm();
     }
@@ -493,6 +502,79 @@ class PlacesSemanticHistoryManager {
   // getter for testing purposes
   getUpdateTaskLatency() {
     return this.#updateTaskLatency;
+  }
+
+  /**
+   * Records the duration of the last processed chunk, keeping only the most
+   * recent CHUNK_LATENCY_MONITORING_WINDOW samples.
+   *
+   * @param {number} durationMS Chunk processing duration in milliseconds.
+   */
+  #recordChunkTime(durationMS) {
+    this.#recentChunkTimes.push(durationMS);
+    if (this.#recentChunkTimes.length > CHUNK_LATENCY_MONITORING_WINDOW) {
+      this.#recentChunkTimes.shift();
+    }
+  }
+
+  /**
+   * Decides whether background indexing should stop advancing because recent
+   * chunks have been too slow, based on the last
+   * CHUNK_LATENCY_MONITORING_WINDOW durations.
+   *
+   * The failsafe is a hard brake: if half or more of the recent chunks exceed
+   * `maxChunkTimeMsFailsafe`, indexing stops regardless of how much is stored
+   * and is not restarted for the rest of the session.
+   * The soft threshold only applies once the DB holds more than
+   * `minEntriesBeforeThrottle` embeddings, so slow machines keep going until the
+   * feature is usable.
+   *
+   * @param {OpenedConnection} conn a SQLite connection to the database.
+   * @returns {Promise<?string>}
+   *   `FAILSAFE_THROTTLE_ID` or `SOFT_THROTTLE_ID` when indexing should be
+   *   throttled, otherwise `null`.
+   */
+  async #shouldThrottleIndexing(conn) {
+    if (this.#recentChunkTimes.length < CHUNK_LATENCY_MONITORING_WINDOW) {
+      return null;
+    }
+
+    const majority = Math.ceil(CHUNK_LATENCY_MONITORING_WINDOW / 2);
+    let countOver = threshold =>
+      this.#recentChunkTimes.filter(ms => ms > threshold).length;
+
+    if (countOver(lazy.maxChunkTimeMsFailsafe) >= majority) {
+      return FAILSAFE_THROTTLE_ID;
+    }
+
+    if (countOver(lazy.maxChunkTimeMs) >= majority) {
+      const [row] = await conn.execute(
+        `SELECT COUNT(*) AS c FROM vec_history_mapping`
+      );
+      if (row.getResultByName("c") > lazy.minEntriesBeforeThrottle) {
+        return SOFT_THROTTLE_ID;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Reports the number of stored embeddings to telemetry, roughly once every
+   * GLEAN_REPORT_DB_SIZE_FREQUENCY update-task runs to avoid querying the DB on
+   * every run.
+   *
+   * @param {OpenedConnection} conn a SQLite connection to the database.
+   */
+  async #maybeReportEntriesCount(conn) {
+    if (this.#reportDbSizeModCounter++ % GLEAN_REPORT_DB_SIZE_FREQUENCY == 0) {
+      const [row] = await conn.execute(
+        `SELECT COUNT(*) AS c FROM vec_history_mapping`
+      );
+      Glean.places.databaseSemanticHistoryNumEntries.set(
+        row.getResultByName("c")
+      );
+    }
   }
 
   /**
@@ -543,6 +625,8 @@ class PlacesSemanticHistoryManager {
             return;
           }
 
+          await this.#maybeReportEntriesCount(conn);
+
           this.#prevPagesRankChangedCount = pagesRankChangedCount;
           const startTime = ChromeUtils.now();
 
@@ -570,14 +654,16 @@ class PlacesSemanticHistoryManager {
               Glean.places.semanticHistoryChunkCalculateTime.start();
 
             let chunksCount =
-              Math.ceil(addCount / DEFAULT_CHUNK_SIZE) +
-              Math.ceil(deleteCount / DEFAULT_CHUNK_SIZE);
+              Math.ceil(addCount / this.#chunkSize) +
+              Math.ceil(deleteCount / this.#chunkSize);
             if (chunksCount > this.#lastMaxChunksCount) {
               this.#lastMaxChunksCount = chunksCount;
               Glean.places.semanticHistoryMaxChunksCount.set(chunksCount);
             }
 
+            const chunkStart = ChromeUtils.now();
             await this.updateVectorDB(conn, addRows, deleteRows);
+            this.#recordChunkTime(ChromeUtils.now() - chunkStart);
             ChromeUtils.addProfilerMarker(
               "updateVectorDB",
               startTime,
@@ -589,13 +675,47 @@ class PlacesSemanticHistoryManager {
             );
           }
 
-          if (
-            addCount > DEFAULT_CHUNK_SIZE ||
-            deleteCount > DEFAULT_CHUNK_SIZE
-          ) {
-            // There's still entries to update, re-arm the task.
-            this.#pendingUpdates = true;
-            this.#updateTask.arm();
+          if (addCount > this.#chunkSize || deleteCount > this.#chunkSize) {
+            // There's still entries to update, but recent chunks may have been
+            // too slow.
+            const throttle = await this.#shouldThrottleIndexing(conn);
+            if (throttle) {
+              // Capture the samples for logging before resetting the window, so
+              // the next decision is based on the new chunk size's performance.
+              const recentTimes = this.#recentChunkTimes.join(", ");
+              this.#recentChunkTimes = [];
+              Glean.places.semanticHistoryIndexingStopped[throttle].add(1);
+              this.#pendingUpdates = true;
+              if (throttle == FAILSAFE_THROTTLE_ID) {
+                // Hard stop: block indexing for the rest of the session. The
+                // task will not be re-armed by Places observer events.
+                this.#indexingBlocked = true;
+                lazy.logger.debug(
+                  `Blocking indexing (failsafe); recent chunk times: ` +
+                    `${recentTimes} ms.`
+                );
+                return;
+              }
+              // Soft throttle: halve the chunk size (down to MIN_CHUNK_SIZE) so
+              // the next run, re-armed by the usual Places observer events, does
+              // less work. This reduction persists until the service restarts.
+              if (this.#chunkSize > MIN_CHUNK_SIZE) {
+                this.#chunkSize = Math.max(
+                  MIN_CHUNK_SIZE,
+                  Math.floor(this.#chunkSize / 2)
+                );
+                lazy.logger.debug(
+                  `Reducing chunk size to ${this.#chunkSize}; recent chunk ` +
+                    `times: ${recentTimes} ms.`
+                );
+              }
+              return;
+            }
+            if (!this.#indexingBlocked) {
+              // There's still entries to update, re-arm the task.
+              this.#pendingUpdates = true;
+              this.#updateTask.arm();
+            }
             return;
           }
 
@@ -677,7 +797,7 @@ class PlacesSemanticHistoryManager {
       {
         rowLimit: this.#rowLimit,
         min_title_length: MIN_TITLE_LENGTH,
-        chunkSize: DEFAULT_CHUNK_SIZE,
+        chunkSize: this.#chunkSize,
       }
     );
 
@@ -733,7 +853,7 @@ class PlacesSemanticHistoryManager {
       {
         rowLimit: this.#rowLimit,
         min_title_length: MIN_TITLE_LENGTH,
-        chunkSize: DEFAULT_CHUNK_SIZE,
+        chunkSize: this.#chunkSize,
       }
     );
 

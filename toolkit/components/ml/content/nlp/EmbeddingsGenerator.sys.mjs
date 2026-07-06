@@ -23,6 +23,7 @@
  * Note: The "engine" referenced in this module is specifically an ML engine
  * used for feature extraction and embedding generation.
  */
+import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
 const lazy = {};
@@ -192,15 +193,33 @@ function resolveEngineOptions(embeddingType, embeddingSize) {
 }
 
 /**
- * Get the type of the embedding we're using for Places
- * (embedding vs contexual) based on config/Nimbus prefs
+ * Returns true if user is on Mac or Windows as part of a best effort to not
+ * use onnx-wasm for contextual (transformer based) embeddings.
+ * Separate function to support testing.
+ *
+ * TODO Bug #2039862 We may able to add linux support
+ */
+function isMacOrWindows() {
+  return AppConstants.platform === "macosx" || AppConstants.platform === "win";
+}
+
+/**
+ * Get the type of embedding we're using for Places (static vs contextual)
+ * based on config/Nimbus prefs. Contextual embeddings require the native ONNX
+ * runtime, so they're only selected when it is available; otherwise we fall
+ * back to static embeddings.
+ *
+ * @returns {string} One of the EMBEDDING_TYPE values.
  */
 function resolvePlacesEmbeddingType() {
   const val = Services.prefs.getStringPref(
     PREF_PLACES_EMBEDDING_TYPE,
     EMBEDDING_TYPE.STATIC
   );
-  return val === EMBEDDING_TYPE.CONTEXTUAL
+  // We make a best effort to not use onnx-wasm engine. There is no
+  // reliable check without trying to use it. Our focus is Mac/Windows
+  // for contextual embeddings until onnx-native has wider Linux adoption.
+  return val === EMBEDDING_TYPE.CONTEXTUAL && isMacOrWindows()
     ? EMBEDDING_TYPE.CONTEXTUAL
     : EMBEDDING_TYPE.STATIC;
 }

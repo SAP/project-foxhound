@@ -337,6 +337,23 @@ places:
       - fx-search-telemetry@mozilla.com
     expires: never
 
+  database_semantic_history_num_entries:
+    type: quantity
+    description: >
+      PLACES: Number of entries (embeddings) stored in the semantic history
+      database. Reported occasionally (approx after every 40 major updates).
+    unit: entries
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2048511
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2048511
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - mak@mozilla.com
+      - fx-search-telemetry@mozilla.com
+    expires: never
+
   expiration_steps_to_clean:
     type: custom_distribution
     description: >
@@ -466,6 +483,27 @@ places:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1971120
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1971120
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - mak@mozilla.com
+      - fx-search-telemetry@mozilla.com
+    expires: never
+
+  semantic_history_indexing_stopped:
+    type: labeled_counter
+    description: >
+      Number of times background semantic-history indexing stopped advancing
+      because recent chunks were too slow. The "failsafe" label counts the hard
+      brake; the "soft" label counts stops gated on the minimum number of
+      embeddings.
+    labels:
+      - failsafe
+      - soft
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2048511
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2048511
     data_sensitivity:
       - technical
     notification_emails:

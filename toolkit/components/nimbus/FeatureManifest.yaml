@@ -587,14 +587,6 @@ urlbar:
         branch: user
         pref: places.semanticHistory.featureGate
       description: use semanticHistory Search feature.
-    semanticHistoryCompletionThreshold:
-      type: string
-      setPref:
-        branch: user
-        pref: places.semanticHistory.completionThreshold
-      description: >-
-        Fraction (0.0 – 1.0) of top Places rows that must have embeddings
-        before semantic-history search is enabled. 0.5 = 50 %.
     semanticHistoryDefaultBatchChunksize:
       type: int
       setPref:
@@ -603,6 +595,35 @@ urlbar:
       description: >-
         The batch chunk size for updates for vectorDB
         defaulted at 25.
+    semanticHistoryMaxChunkTimeMs:
+      type: int
+      setPref:
+        branch: user
+        pref: places.semanticHistory.maxChunkTimeMs
+      description: >-
+        Soft per-chunk time threshold (ms) for background indexing. If the
+        median of the last 9 chunk durations exceeds this and the database
+        already holds more than `semanticHistoryMinEntriesBeforeThrottle`
+        embeddings, indexing stops advancing until next places event.
+    semanticHistoryMaxChunkTimeMsFailsafe:
+      type: int
+      setPref:
+        branch: user
+        pref: places.semanticHistory.maxChunkTimeMsFailsafe
+      description: >-
+        Failsafe per-chunk time threshold (ms) for background indexing. If half
+        or more of the last 9 chunk durations exceed this, indexing stops
+        advancing, regardless of how many embeddings exist, until restart.
+    semanticHistoryMinEntriesBeforeThrottle:
+      type: int
+      setPref:
+        branch: user
+        pref: places.semanticHistory.minEntriesBeforeThrottle
+      description: >-
+        Minimum number of embeddings that must exist before the soft
+        `semanticHistoryMaxChunkTimeMs` threshold can stop indexing. Below this
+        count indexing keeps going even when slow, so the feature reaches a
+        usable state. Defaulted at 1000.
     semanticHistoryDistanceThreshold:
       type: string
       setPref:
