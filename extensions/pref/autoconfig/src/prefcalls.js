@@ -37,6 +37,16 @@ function defaultPref(prefName, value) {
   try {
     var prefBranch = Services.prefs.getDefaultBranch(null);
     if (typeof value == "string") {
+      // Unwrap the legacy homepage form that the localizable-pref reader used
+      // to handle (bug 1490339). Match it exactly so we don't touch deliberate
+      // data: URLs.
+      var legacyPrefix = "data:text/plain,browser.startup.homepage=";
+      if (
+        prefName == "browser.startup.homepage" &&
+        value.startsWith(legacyPrefix)
+      ) {
+        value = value.substring(legacyPrefix.length);
+      }
       if (gIsUTF8) {
         prefBranch.setStringPref(prefName, value);
         return;

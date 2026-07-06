@@ -42,6 +42,16 @@ function run_test() {
     );
     equal("defaultpref", prefs.getStringPref("_autoconfig_.test.defaultpref"));
 
+    equal(
+      "http://www.example.com/",
+      prefs.getStringPref("browser.startup.homepage")
+    );
+
+    equal(
+      "data:text/plain,_autoconfig_.test.datapref=datapref",
+      prefs.getStringPref("_autoconfig_.test.datapref")
+    );
+
     ok(prefs.prefIsLocked("_autoconfig_.test.lockpref"));
     equal("lockpref", prefs.getStringPref("_autoconfig_.test.lockpref"));
 
