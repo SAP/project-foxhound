@@ -17,7 +17,6 @@ import mozilla.components.feature.ipprotection.store.state.IPProtectionState
 import mozilla.components.lib.state.helpers.AbstractBinding
 import mozilla.components.service.fxa.manager.FxaAccountManager
 import mozilla.components.service.fxa.manager.SCOPE_PROFILE
-import mozilla.components.service.fxa.manager.SCOPE_SESSION
 import mozilla.components.service.fxa.manager.SCOPE_SYNC
 
 /**
@@ -69,7 +68,7 @@ class IPProtectionFxaAuthFlow(
                     val url = accountManager.beginAuthentication(
                         pairingUrl = null,
                         entrypoint = entrypoint,
-                        authScopes = setOf(SCOPE_IPPROTECTION, SCOPE_PROFILE, SCOPE_SYNC, SCOPE_SESSION),
+                        authScopes = setOf(SCOPE_IPPROTECTION, SCOPE_PROFILE, SCOPE_SYNC),
                         // We don't get passwordles-login here for authentication,
                         // we send this for FxA consistency.
                         service = "vpn",
