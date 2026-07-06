@@ -192,25 +192,29 @@ bool FenceD3D11::Wait(ID3D11Device* aDevice) {
   }
 
   RefPtr<ID3D11Fence> fence;
-  auto it = mWaitFenceMap.find(aDevice);
-  if (it == mWaitFenceMap.end()) {
-    RefPtr<ID3D11Device5> d3d11_5;
-    auto hr = aDevice->QueryInterface(__uuidof(ID3D11Device5),
-                                      getter_AddRefs(d3d11_5));
-    if (FAILED(hr)) {
-      gfxCriticalNoteOnce << "Failed to get ID3D11Device5: " << gfx::hexa(hr);
-      return false;
+  {
+    MutexAutoLock lock(mMutex);
+    auto it = mWaitFenceMap.find(aDevice);
+    if (it == mWaitFenceMap.end()) {
+      RefPtr<ID3D11Device5> d3d11_5;
+      auto hr = aDevice->QueryInterface(__uuidof(ID3D11Device5),
+                                        getter_AddRefs(d3d11_5));
+      if (FAILED(hr)) {
+        gfxCriticalNoteOnce << "Failed to get ID3D11Device5: " << gfx::hexa(hr);
+        return false;
+      }
+      hr = d3d11_5->OpenSharedFence(
+          mHandle->GetHandle(), __uuidof(ID3D11Fence),
+          (void**)(ID3D11Fence**)getter_AddRefs(fence));
+      if (FAILED(hr)) {
+        gfxCriticalNoteOnce << "Opening fence shared handle failed "
+                            << gfx::hexa(hr);
+        return false;
+      }
+      mWaitFenceMap.emplace(aDevice, fence);
+    } else {
+      fence = it->second;
     }
-    hr = d3d11_5->OpenSharedFence(mHandle->GetHandle(), __uuidof(ID3D11Fence),
-                                  (void**)(ID3D11Fence**)getter_AddRefs(fence));
-    if (FAILED(hr)) {
-      gfxCriticalNoteOnce << "Opening fence shared handle failed "
-                          << gfx::hexa(hr);
-      return false;
-    }
-    mWaitFenceMap.emplace(aDevice, fence);
-  } else {
-    fence = it->second;
   }
 
   if (!fence) {
