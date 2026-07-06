@@ -723,6 +723,38 @@ add_task(async function test_resolve_error_id_nss_fallthrough() {
   _testOnlyClearRegistry();
 });
 
+add_task(async function test_dns_not_found_what_can_you_do_items() {
+  const { initializeRegistry, getErrorConfig, _testOnlyClearRegistry } =
+    ChromeUtils.importESModule(REGISTRY_URL);
+
+  _testOnlyClearRegistry();
+  initializeRegistry();
+
+  const config = getErrorConfig("dnsNotFound");
+  Assert.ok(config, "dnsNotFound should be registered");
+
+  const items = config.customNetError?.whatCanYouDoItems;
+  Assert.ok(
+    Array.isArray(items),
+    "dnsNotFound customNetError should have a whatCanYouDoItems array"
+  );
+  Assert.equal(items.length, 3, "whatCanYouDoItems should have 3 entries");
+  Assert.ok(
+    items.includes("neterror-http-empty-response"),
+    "whatCanYouDoItems should include neterror-http-empty-response"
+  );
+  Assert.ok(
+    items.includes("neterror-dns-not-found-hint-check-network-2"),
+    "whatCanYouDoItems should include neterror-dns-not-found-hint-check-network-2"
+  );
+  Assert.ok(
+    items.includes("neterror-dns-not-found-hint-firewall-2"),
+    "whatCanYouDoItems should include neterror-dns-not-found-hint-firewall-2"
+  );
+
+  _testOnlyClearRegistry();
+});
+
 add_task(async function test_sec_error_ca_cert_invalid_registered() {
   const { initializeRegistry, getErrorConfig, _testOnlyClearRegistry } =
     ChromeUtils.importESModule(REGISTRY_URL);
