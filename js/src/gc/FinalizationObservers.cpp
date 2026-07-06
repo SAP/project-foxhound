@@ -655,7 +655,6 @@ bool GCRuntime::isFinalizationObserverTarget(const Value& target) {
   return observers && observers->isTarget(target);
 }
 
-/* static */
 bool GCRuntime::relocateFinalizationObserverTarget(const Value& oldTarget,
                                                    const Value& newTarget) {
   CheckTargetValue(oldTarget);
@@ -674,12 +673,17 @@ bool GCRuntime::relocateFinalizationObserverTarget(const Value& oldTarget,
     return true;
   }
 
-  // Update the target stored in each WeakRefObject, skipping dying objects.
+  // Update the target stored in each WeakRefObject.
   for (auto iter = weakRefList.iter(); !iter.done(); iter.next()) {
     auto* weakRef = &iter.get()->as<WeakRefObject>();
-    if (!IsAboutToBeFinalizedUnbarriered(weakRef)) {
-      MOZ_ASSERT(weakRef->target() == oldTarget);
-      weakRef->setTarget(newTarget);
+    MOZ_ASSERT(weakRef->target() == oldTarget);
+    weakRef->setTarget(newTarget);
+    // The post barrier may add a store buffer entry but since these objects are
+    // weakly held we don't know if they will survive GC. Therefore we need to
+    // set a flag to ensure we clear out the nursery before doing any sweeping.
+    if (weakRef->zone()->wasGCStarted() && weakRef->isTenured() &&
+        !newTarget.toGCThing()->isTenured()) {
+      storeBuffer().setMayHavePointersToDeadCells();
     }
   }
 

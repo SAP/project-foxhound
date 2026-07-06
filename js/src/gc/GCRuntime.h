@@ -750,8 +750,8 @@ class GCRuntime {
 
   static bool isFinalizationObserverTarget(const Value& target);
 
-  static bool relocateFinalizationObserverTarget(const Value& oldTarget,
-                                                 const Value& newTarget);
+  bool relocateFinalizationObserverTarget(const Value& oldTarget,
+                                          const Value& newTarget);
 
   static void clearWeakRefTargets(JS::Compartment* source, const Value& target);
   static void clearWeakRefTargets(const CompartmentFilter& sourceFilter,
