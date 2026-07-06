@@ -2120,6 +2120,9 @@
     },
     {
       "base": {
+        "aliases": [
+          "ecosia"
+        ],
         "classification": "general",
         "name": "Ecosia",
         "partnerCode": "mzl",
@@ -2148,9 +2151,9 @@
       },
       "id": "e8e4a7e3-aead-43e3-887d-4064a186bd70",
       "identifier": "ecosia",
-      "last_modified": 1734364924960,
+      "last_modified": 1783024776556,
       "recordType": "engine",
-      "schema": 1734220806364,
+      "schema": 1782777609128,
       "variants": [
         {
           "environment": {
@@ -8420,5 +8423,5 @@
       "schema": 1707824831520
     }
   ],
-  "timestamp": 1778165854657
+  "timestamp": 1783024776556
 }

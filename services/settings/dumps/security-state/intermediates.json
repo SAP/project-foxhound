@@ -196,19 +196,6 @@
       "last_modified": 1781405822973
     },
     {
-      "schema": 1781402368870,
-      "derHash": "zcRga2loxtZf+2G4T605BhJ8M+x+rLsLiyCziXZ+ag8=",
-      "attachment": {
-        "hash": "bb569bead2be17998f5679c7b25c9815535102f8f680414edfdfa98bfef000a3",
-        "size": 2406,
-        "filename": "3WCxbXvGATWyI5Irv7QJuBCFfcTJtVouKWZM8AyYMyE=.pem",
-        "location": "security-state-staging/intermediates/20260614015929--770b6cfc-f8df-4c86-876b-eb4010e56e4f--929a0943-fb21-478e-96b7-158cf07b0783.pem",
-        "mimetype": "application/x-pem-file"
-      },
-      "id": "770b6cfc-f8df-4c86-876b-eb4010e56e4f",
-      "last_modified": 1781405822969
-    },
-    {
       "schema": 1781272783885,
       "derHash": "vGx3VWl1lFksIs4fjHCF08Sb9BsSamZx/l7xD53o79Y=",
       "attachment": {
@@ -22810,24 +22797,6 @@
       "last_modified": 1666486623083
     },
     {
-      "schema": 1666270087163,
-      "derHash": "2nOKR07nRzyWmey6jrX0g62pZ5iBhaBZdcS6DAGzlVk=",
-      "subject": "CN=CFCA DV OCA,O=China Financial Certification Authority,C=CN",
-      "subjectDN": "MFUxCzAJBgNVBAYTAkNOMTAwLgYDVQQKDCdDaGluYSBGaW5hbmNpYWwgQ2VydGlmaWNhdGlvbiBBdXRob3JpdHkxFDASBgNVBAMMC0NGQ0EgRFYgT0NB",
-      "whitelist": false,
-      "attachment": {
-        "hash": "7f0388d9dbe44b8309b49af6bc57cbb9d6bcdecd52e63a0224fe0aaa48f21fd9",
-        "size": 2020,
-        "filename": "a3jzvw9CT6-ZtuS70fb8B8cu5T5zTulOjkR9ebqiaxc=.pem",
-        "location": "security-state-staging/intermediates/da5b57f9-5a82-4c18-a7b9-af8d2654de55.pem",
-        "mimetype": "application/x-pem-file"
-      },
-      "pubKeyHash": "a3jzvw9CT6+ZtuS70fb8B8cu5T5zTulOjkR9ebqiaxc=",
-      "crlite_enrolled": false,
-      "id": "bd831e0b-483b-4c5f-98d9-156c61ccb3cd",
-      "last_modified": 1666270623205
-    },
-    {
       "schema": 1665967729988,
       "derHash": "9fGowE5c8P22eN0nmZRGPkhQjENJZDsNksv9dSP2xAo=",
       "subject": "CN=Bloomberg TLS CA,O=Bloomberg LP,C=US",
@@ -29236,5 +29205,5 @@
       "last_modified": 1559865884636
     }
   ],
-  "timestamp": 1782442622750
+  "timestamp": 1783220222778
 }
