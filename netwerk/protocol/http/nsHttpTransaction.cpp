@@ -1433,6 +1433,12 @@ void nsHttpTransaction::Close(nsresult reason) {
   MaybeCancelFallbackTimer();
 
   MOZ_ASSERT(OnSocketThread(), "not on socket thread");
+
+  if (mTokenBucketCancel) {
+    mTokenBucketCancel->Cancel(reason);
+    mTokenBucketCancel = nullptr;
+  }
+
   if (reason == NS_BINDING_RETARGETED) {
     LOG(("  close %p skipped due to ERETARGETED\n", this));
     return;
@@ -1444,11 +1450,6 @@ void nsHttpTransaction::Close(nsresult reason) {
   }
 
   NotifyTransactionObserver(reason);
-
-  if (mTokenBucketCancel) {
-    mTokenBucketCancel->Cancel(reason);
-    mTokenBucketCancel = nullptr;
-  }
 
   // report the reponse is complete if not already reported
   if (!mResponseIsComplete) {
