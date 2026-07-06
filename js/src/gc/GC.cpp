@@ -3394,6 +3394,7 @@ void GCRuntime::beginMarkPhase(AutoGCSession& session) {
 
   MOZ_ASSERT(!hasDelayedMarking());
   MOZ_ASSERT(!hasAnyDeferredWeakMaps());
+  haveAllImplicitEdges_ = true;
   for (auto& marker : markers) {
     marker->start();
   }
