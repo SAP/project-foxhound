@@ -722,23 +722,27 @@ cairo_type1_font_subset_decrypt_charstring (const unsigned char *in, int size, u
     }
 }
 
-static const unsigned char *
-cairo_type1_font_subset_decode_integer (const unsigned char *p, int *integer)
+static cairo_status_t
+cairo_type1_font_subset_decode_integer (const unsigned char **p, const unsigned char *end, int *integer)
 {
-    if (*p <= 246) {
-        *integer = *p++ - 139;
-    } else if (*p <= 250) {
-        *integer = (p[0] - 247) * 256 + p[1] + 108;
-        p += 2;
-    } else if (*p <= 254) {
-        *integer = -(p[0] - 251) * 256 - p[1] - 108;
-        p += 2;
+    const unsigned char *pp = *p;
+    if (*pp <= 246 && pp + 1 <= end) {
+        *integer = *pp - 139;
+        *p += 1;
+    } else if (*pp <= 250 && pp + 2 <= end) {
+        *integer = (pp[0] - 247) * 256 + pp[1] + 108;
+        *p += 2;
+    } else if (*pp <= 254 && pp + 2 <= end) {
+        *integer = -(pp[0] - 251) * 256 - pp[1] - 108;
+        *p += 2;
+    } else if (pp + 5 <= end) {
+        *integer = ((uint32_t)pp[1] << 24) | (pp[2] << 16) | (pp[3] << 8) | pp[4];
+        *p += 5;
     } else {
-        *integer = ((uint32_t)p[1] << 24) | (p[2] << 16) | (p[3] << 8) | p[4];
-        p += 5;
+        return CAIRO_INT_STATUS_UNSUPPORTED;
     }
 
-    return p;
+    return CAIRO_STATUS_SUCCESS;
 }
 
 static cairo_status_t
@@ -963,7 +967,9 @@ cairo_type1_font_subset_parse_charstring (cairo_type1_font_subset_t *font,
             /* integer argument */
 	    if (font->build_stack.sp < TYPE1_STACKSIZE) {
 		int val;
-		p = cairo_type1_font_subset_decode_integer (p, &val);
+		status = cairo_type1_font_subset_decode_integer (&p, end, &val);
+		if (unlikely (status))
+		    goto cleanup;
 		font->build_stack.stack[font->build_stack.sp++] = val;
 	    } else {
 		status = CAIRO_INT_STATUS_UNSUPPORTED;
