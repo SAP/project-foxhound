@@ -2451,6 +2451,8 @@
   <string name="preferences_take_survey">Иштирок дар саволнома</string>
   <!-- Preference for not taking the short survey. -->
   <string name="preferences_not_take_survey">Не, ташаккур</string>
+  <!-- Error message shown in a Toast when the system fails to trigger the device uninstallation prompt. -->
+  <string name="uninstall_survey_error_failed">Дархости низоми барномавӣ барои лағв кардани насб кушода нашуд, лутфан, аз амали низоми барномавӣ барои лағв кардани насб бевосита истифода баред.</string>
   <!--
     Snackbar
 

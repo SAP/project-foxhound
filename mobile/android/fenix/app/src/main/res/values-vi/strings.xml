@@ -1955,6 +1955,8 @@
   <string name="webcompat_reporter_label_whats_broken_3">Điều gì hoạt động không đúng?</string>
   <!-- Content description for the icon button that clears the selected broken site reason in the WebCompat Reporter. -->
   <string name="webcompat_reporter_clear_reason_content_description">Xoá lý do đã chọn</string>
+  <!-- The error message of the description when the user selects "Something else" as the reason, but left the description empty or too short. -->
+  <string name="webcompat_reporter_description_error">Vui lòng nhập ít nhất 10 ký tự</string>
   <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_label_whats_broken_2">Cái gì bị hỏng?</string>
   <!-- The placeholder text for the dropdown where a user selects a high-level reason why the site is broken. -->
@@ -3925,6 +3927,8 @@
     %s is a placeholder for the name of the certificate authority that issued the certificate.
   -->
   <string name="connection_security_panel_verified_by">Đã xác minh bởi %s</string>
+  <!-- Content description (not visible, for screen readers etc.) for the handle used to drag the protections dashboard to the bottom of the screen and close it. -->
+  <string name="tracker_protections_dashboard_close_handlebar_content_description">Đóng bảng điều khiển</string>
   <!--
     Text for the connection security panel when the site uses a QWAC.
     %s is a placeholder for the organization for which the certificate was issued.
@@ -4048,6 +4052,24 @@
   <string name="microsurvey_sync_title" tools:ignore="BrandUsage,UnusedResources">Bạn hài lòng với trải nghiệm đồng bộ hóa trong Firefox như thế nào?</string>
   <!-- Text shown in the survey title for 'describe your experience so far' microsurvey. Note: The word "Firefox" should NOT be translated. -->
   <string name="microsurvey_describe_your_experience_title" tools:ignore="BrandUsage,UnusedResources">Giúp chúng tôi cải thiện Firefox. Trải nghiệm của bạn cho đến nay được mô tả như thế nào?</string>
+  <!--
+    Uninstall Survey
+
+    Title text for the uninstall survey dialog, asking the user for the reason they are removing the app
+  -->
+  <string name="microsurvey_uninstall_survey_title">Ý kiến ​​phản hồi của bạn rất quan trọng. Tại sao bạn gỡ cài đặt?</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_1">Sự cố về trang web</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_2">Sự cố về video và tải xuống</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_3">Vấn đề về hiệu năng</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_4">Vấn đề về chức năng và thiết kế</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_5">Vấn đề liên quan đến quyền riêng tư</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_6">Vấn đề về thanh toán và gói đăng ký</string>
   <!-- Button label shown at the bottom of the uninstall survey -->
   <string name="uninstall_survey_button_label">Gửi phản hồi và gỡ cài đặt</string>
   <!--
@@ -4687,6 +4709,8 @@
   <string name="firefox_labs_feature_enable_dialog_message">Để bật tính năng này, hãy khởi động lại %s.</string>
   <!-- The description text that is displayed in the confirmation dialog on the Firefox Labs screen for toggling "off" experimental features. %s is the name of the app (for example "Firefox Nightly") -->
   <string name="firefox_labs_feature_disable_dialog_message">Để tắt tính năng này, hãy khởi động lại %s.</string>
+  <!-- Helper text shown beneath a Firefox Labs item when it is blocked from being turned on. -->
+  <string name="firefox_labs_feature_conflict">Tính năng hiện chưa khả dụng để dùng thử.</string>
   <!-- Text displayed on the Firefox Labs screen when there are no Labs experimental features present. -->
   <string name="firefox_labs_no_labs_available_description">Chưa có tính năng thử nghiệm nào để thử bây giờ</string>
 </resources>

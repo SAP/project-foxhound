@@ -149,6 +149,8 @@
   <string name="home_screen_shortcut_open_new_private_tab_2">Nový anonymní panel</string>
   <!-- Shortcut action to open Passwords screen -->
   <string name="home_screen_shortcut_passwords">Hesla</string>
+  <!-- Shortcut action to open uninstall survey -->
+  <string name="home_screen_shortcut_uninstall_survey">Odinstalovat, proč?</string>
   <!--
     Recent Tabs
 

@@ -3949,6 +3949,8 @@
     %s is a placeholder for the name of the certificate authority that issued the certificate.
   -->
   <string name="connection_security_panel_verified_by">Doğrulayan: %s</string>
+  <!-- Content description (not visible, for screen readers etc.) for the handle used to drag the protections dashboard to the bottom of the screen and close it. -->
+  <string name="tracker_protections_dashboard_close_handlebar_content_description">Kontrol panelini kapat</string>
   <!--
     Text for the connection security panel when the site uses a QWAC.
     %s is a placeholder for the organization for which the certificate was issued.
@@ -4072,6 +4074,24 @@
   <string name="microsurvey_sync_title" tools:ignore="BrandUsage,UnusedResources">Firefox’taki eşitleme özelliğinden ne kadar memnunsunuz?</string>
   <!-- Text shown in the survey title for 'describe your experience so far' microsurvey. Note: The word "Firefox" should NOT be translated. -->
   <string name="microsurvey_describe_your_experience_title" tools:ignore="BrandUsage,UnusedResources">Firefox’u geliştirmemize yardım edin. Şimdiye kadarki deneyiminizi hangisi en iyi şekilde tanımlar?</string>
+  <!--
+    Uninstall Survey
+
+    Title text for the uninstall survey dialog, asking the user for the reason they are removing the app
+  -->
+  <string name="microsurvey_uninstall_survey_title">Geri bildiriminiz bizim için önemli. Neden kaldırıyorsunuz?</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_1">Web sayfası sorunları</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_2">Video ve indirme sorunları</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_3">Performans sorunları</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_4">İşlev ve tasarım sorunları</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_5">Gizlilikle ilgili sorunlar</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_6">Ödeme ve abonelik sorunları</string>
   <!-- Button label shown at the bottom of the uninstall survey -->
   <string name="uninstall_survey_button_label">Geri bildirim gönder ve kaldır</string>
   <!--

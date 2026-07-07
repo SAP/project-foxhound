@@ -3949,6 +3949,8 @@
     %s is a placeholder for the name of the certificate authority that issued the certificate.
   -->
   <string name="connection_security_panel_verified_by">%s ਵਲੋਂ ਤਸਦੀਕ ਕੀਤਾ</string>
+  <!-- Content description (not visible, for screen readers etc.) for the handle used to drag the protections dashboard to the bottom of the screen and close it. -->
+  <string name="tracker_protections_dashboard_close_handlebar_content_description">ਡੈਸ਼ਬੋਰਡ ਨੂੰ ਬੰਦ ਕਰੋ</string>
   <!--
     Text for the connection security panel when the site uses a QWAC.
     %s is a placeholder for the organization for which the certificate was issued.
@@ -4072,6 +4074,24 @@
   <string name="microsurvey_sync_title" tools:ignore="BrandUsage,UnusedResources">Firefox ਵਿੱਚ ਸਿੰਕ ਤਜਰਬੇ ਨਾਲ ਤੁਸੀਂ ਕਿੰਨੇ ਸੰਤੁਸ਼ਟ ਹੋ?</string>
   <!-- Text shown in the survey title for 'describe your experience so far' microsurvey. Note: The word "Firefox" should NOT be translated. -->
   <string name="microsurvey_describe_your_experience_title" tools:ignore="BrandUsage,UnusedResources">Firefox ਨੂੰ ਵਧੀਆ ਬਣਾਉਣ ਲਈ ਸਾਡੀ ਮਦਦ ਕਰੋ। ਹੁਣ ਤੱਕ ਦੇ ਤੁਹਾਡੇ ਤਜਰਬੇ ਨੂੰ ਕੀ ਵਧੀਆ ਦਰਸਾਉਂਦਾ ਹੈ?</string>
+  <!--
+    Uninstall Survey
+
+    Title text for the uninstall survey dialog, asking the user for the reason they are removing the app
+  -->
+  <string name="microsurvey_uninstall_survey_title">ਤੁਹਾਡੇ ਸੁਝਾਅ ਸਾਡੇ ਲਈ ਅਸਰ ਰੱਖਦੇ ਹਨ। ਤੁਸੀਂ ਅਣ-ਇੰਸਟਾਲ ਕਿਉਂ ਕਰ ਰਹੇ ਹੋ?</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_1">ਵੈੱਬ-ਸਫ਼ੇ ਨਾਲ ਮਸਲੇ</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_2">ਵੀਡੀਓ ਅਤੇ ਡਾਊਨੋਲਡ ਮਸਲੇ</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_3">ਕਾਰਗੁਜ਼ਾਰੀ ਸੰਬੰਧੀ ਮਸਲੇ</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_4">ਫੰਕਸ਼ਨ ਅਤੇ ਡਿਜ਼ਾਇਨ ਮਸਲੇ</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_5">ਪਰਦੇਦਾਰੀ ਨਾਲ ਸੰਬੰਧਿਤ ਮਸਲੇ</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_6">ਭੁਗਤਾਨ ਅਤੇ ਮੈਂਬਰੀ ਮਸਲੇ</string>
   <!-- Button label shown at the bottom of the uninstall survey -->
   <string name="uninstall_survey_button_label">ਸੁਝਾਅ ਭੇਜੋ ਅਤੇ ਅਣ-ਇੰਸਟਾਲ ਕਰੋ</string>
   <!--
