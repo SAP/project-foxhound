@@ -39,6 +39,11 @@ support-files = [
 
 ["browser_sma_ipprotection_enroll.js"]
 
+["browser_sma_launch_on_login.js"]
+run-if = [
+  "os == 'win'",
+]
+
 ["browser_sma_open_about_page.js"]
 
 ["browser_sma_open_awesome_bar.js"]

@@ -575,3 +575,15 @@ If the current tab is already in a tab group, this action creates a new tab and 
 Enrolls the user in IP Protection. Initiates a Firefox Accounts sign-in flow if needed, then enrolls and entitles the user, and opens the IP Protection panel.
 
 - args: (none)
+
+### `CONFIRM_LAUNCH_ON_LOGIN`
+
+Configures Firefox to launch on Windows login.
+
+- args: (none)
+
+### `REMOVE_LAUNCH_ON_LOGIN`
+
+Removes Firefox from Windows login items.
+
+- args: (none)

@@ -458,6 +458,30 @@
           "properties": {
             "type": {
               "type": "string",
+              "enum": ["CONFIRM_LAUNCH_ON_LOGIN"]
+            }
+          },
+          "required": ["type"],
+          "additionalProperties": false,
+          "description": "Configure Firefox to launch on Windows login"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": ["REMOVE_LAUNCH_ON_LOGIN"]
+            }
+          },
+          "required": ["type"],
+          "additionalProperties": false,
+          "description": "Remove Firefox from Windows login items"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
               "enum": ["SET_DEFAULT_BROWSER"]
             }
           },

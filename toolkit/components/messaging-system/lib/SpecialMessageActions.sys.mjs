@@ -861,6 +861,13 @@ export const SpecialMessageActions = {
         await WindowsLaunchOnLogin.createLaunchOnLogin();
         break;
       }
+      case "REMOVE_LAUNCH_ON_LOGIN": {
+        const { WindowsLaunchOnLogin } = ChromeUtils.importESModule(
+          "resource://gre/modules/WindowsLaunchOnLogin.sys.mjs"
+        );
+        await WindowsLaunchOnLogin.removeLaunchOnLogin();
+        break;
+      }
       case "CREATE_GROUP_FROM_CURRENT_TAB": {
         let tab =
           window.gBrowser.getTabForBrowser(browser) ??
