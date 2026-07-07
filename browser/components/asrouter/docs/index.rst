@@ -81,6 +81,7 @@ Current templates include\:
 .. toctree::
   :maxdepth: 1
 
+  action-only
   moments-page
   feature-callout
   contextual-feature-recommendation
