@@ -5,6 +5,296 @@
         "blocked": [],
         "unblocked": [],
         "softblocked": [
+          "@online-internet-speed-test:6.4001",
+          "mdmok.a.mm.a.l0.6@gmail.com:1.0.0",
+          "tabsampler@example.com:1.0",
+          "{c3cb5906-967d-4286-9b83-b02249d81cfc}:1.3",
+          "{b5cf1ecb-fb66-4d0f-8965-61e57dd19b5c}:0.3.1",
+          "fox-decoupling-toggle@festo.com:1.2.1",
+          "fox-decoupling-toggle@festo.com:1.2.2",
+          "fox-decoupling-toggle@festo.com:1.2.3",
+          "fox-decoupling-toggle@festo.com:1.2.4",
+          "fox-decoupling-toggle@festo.com:1.2.5",
+          "fox-decoupling-toggle@festo.com:1.2.6",
+          "fox-decoupling-toggle@festo.com:1.2.7",
+          "fox-decoupling-toggle@festo.com:1.2.8",
+          "{4973c520-85e8-4ca2-9ca8-aab96a29d9f2}:1.0",
+          "{4973c520-85e8-4ca2-9ca8-aab96a29d9f2}:1.1",
+          "decodificar-personal@example.com:1.0",
+          "{646d0f04-a0e4-481c-806f-fb3e5f6896af}:1.0",
+          "{646d0f04-a0e4-481c-806f-fb3e5f6896af}:1.1",
+          "extension@resumestailor.com:1.0.0",
+          "extension@resumestailor.com:1.0.1",
+          "extension@resumestailor.com:1.1.0",
+          "slopscan-webext@kity.wtf:1.0",
+          "baseline@deacon.com:0.1.0",
+          "eagle-importer-fix@local-dev:3.4",
+          "baseline@deacon.com:0.1.1",
+          "video-touch-controller@local.extension:1.2",
+          "fast-tag-snap@webtools.example:9.14.22",
+          "fast-tag-snap@webtools.example:9.21.30",
+          "paws@reltim.org:0.1.2.1",
+          "paws@reltim.org:0.1.3",
+          "paws@reltim.org:0.1.3.1",
+          "paws@reltim.org:0.1.4",
+          "chatgpt-lag-fixer-unlocked@local:2.1.6",
+          "chronio-url-saver@chronioapp.com:1.3.3",
+          "chronio-url-saver@chronioapp.com:1.3.4",
+          "chronio-url-saver@chronioapp.com:1.3.5",
+          "chronio-url-saver@chronioapp.com:1.3.6",
+          "chronio-url-saver@chronioapp.com:1.3.7",
+          "chronio-url-saver@chronioapp.com:1.3.8",
+          "chronio-url-saver@chronioapp.com:1.3.9",
+          "knockoff-kk@selfhosted.local:0.1.0",
+          "comix-downloader@n3uralcreativity.github.io:4.2.2",
+          "visual-list-comparator@example.com:1.0.0",
+          "hmis-visual-enhancement@clintjohnson:0.9.3",
+          "MySkladExtension@Name1:1.14",
+          "antitwitch@extension:1.3.0",
+          "antitwitch@extension:1.2.0",
+          "antitwitch@extension:1.1.1",
+          "antitwitch@extension:1.1.0"
+        ]
+      },
+      "schema": 1783427793006,
+      "key_format": "{guid}:{version}",
+      "stash_time": 1783449308645,
+      "id": "0324aa27-9f91-4a1a-a5d9-dd84f69c49b1",
+      "last_modified": 1783449414301
+    },
+    {
+      "stash": {
+        "blocked": [
+          "flex-lab-save@foxplugin.co:6.10.24",
+          "flex-lab-save@foxplugin.co:7.10.30",
+          "flex-lab-save@foxplugin.co:8.10.30",
+          "adb@adb-x.net:1.2",
+          "adab@adb-x.net:1.2"
+        ],
+        "unblocked": [],
+        "softblocked": [
+          "tab-read-time@tabs.extension:1.0",
+          "DHL@bobbomers.nl:1.0.0",
+          "DHL@bobbomers.nl:1.0.1",
+          "corner-reminder@local:1.0.1",
+          "corner-reminder@local:1.0.0",
+          "DHL@bobbomers.nl:1.0.2",
+          "extension_plc_site_ID2@example.com:1.3",
+          "extension_plc_site_ID3@example.com:1.4",
+          "ytdlp-runner@pseudostage:1.0.0",
+          "ytdlp-runner@pseudostage:1.0.1",
+          "health-capsule-doctor-assistant-universal@yuxin:1.1",
+          "health-capsule-doctor-assistant-universal@yuxin:1.2",
+          "bmb-extension@converted.local:0.1.6",
+          "bmb-extension@converted.local:0.1.7",
+          "{74E779F3-B261-4C7E-B840-77563010FCE6}:0.1.8",
+          "deseret-title-plus@fix.page.private:0.1.8",
+          "google-scholar-pdf-reader@example.local:0.5.2",
+          "api-sender@example.com:1.0",
+          "example@addon-example.com:1.0",
+          "example2@addon-example.com:2.0",
+          "jira-hide-persons@smartaudit:1.0",
+          "teams-participants-extractor@example.com:1.0",
+          "block-youtube@example.local:1.0",
+          "block-youtube@example.local:1.1",
+          "block-youtube@example.local:1.2",
+          "{f04ed1c7-a071-455b-bfb2-cedeaca9e2cb}:2.0"
+        ]
+      },
+      "schema": 1783406192048,
+      "key_format": "{guid}:{version}",
+      "stash_time": 1783427706632,
+      "id": "a871a7b5-0317-4439-8c7f-6b769d5da047",
+      "last_modified": 1783427792615
+    },
+    {
+      "stash": {
+        "blocked": [],
+        "unblocked": [],
+        "softblocked": [
+          "scroll-ocr-overlay@charleszhang:1.5.18",
+          "scroll-ocr-overlay@charleszhang:1.5.22",
+          "bidassist@pilotbidpro.com:1.1.0",
+          "tactile-web-early@example.com:1.3.1",
+          "scroll-ocr-overlay@charleszhang:1.5.25",
+          "{46651213-495c-4bea-84d1-474a4f26f573}:1.0.0",
+          "manga-visual-bookmarks@extension:1.2",
+          "0wl@princengare.github.io:0.1.0"
+        ]
+      },
+      "schema": 1783384617394,
+      "key_format": "{guid}:{version}",
+      "stash_time": 1783406106630,
+      "id": "dc1a4166-d08e-47aa-9715-ae7c4d3d01b5",
+      "last_modified": 1783406191851
+    },
+    {
+      "stash": {
+        "blocked": [],
+        "unblocked": [],
+        "softblocked": [
+          "{b6721929-e3ec-4cdc-964a-cb38904adf24}:0.0.18",
+          "{b6721929-e3ec-4cdc-964a-cb38904adf24}:0.0.16",
+          "{b6721929-e3ec-4cdc-964a-cb38904adf24}:0.0.14",
+          "{b6721929-e3ec-4cdc-964a-cb38904adf24}:0.0.13",
+          "{b6721929-e3ec-4cdc-964a-cb38904adf24}:0.0.12",
+          "{b6721929-e3ec-4cdc-964a-cb38904adf24}:0.0.11",
+          "{8c739e61-4665-4b27-892a-383aea9c7c77}:1.30.17",
+          "{8c739e61-4665-4b27-892a-383aea9c7c77}:1.30.16",
+          "{8c739e61-4665-4b27-892a-383aea9c7c77}:1.30.15",
+          "{8c739e61-4665-4b27-892a-383aea9c7c77}:1.30.13",
+          "{8c739e61-4665-4b27-892a-383aea9c7c77}:1.30.11",
+          "{8c739e61-4665-4b27-892a-383aea9c7c77}:1.30.9",
+          "{8c739e61-4665-4b27-892a-383aea9c7c77}:1.30.2",
+          "{8c739e61-4665-4b27-892a-383aea9c7c77}:1.30.10",
+          "claude-usage@local.extension:1.0.0",
+          "{d694e83c-e52d-4aa1-8bf3-952c3d5c8bef}:1.0",
+          "{8c739e61-4665-4b27-892a-383aea9c7c77}:1.30.26",
+          "{8c739e61-4665-4b27-892a-383aea9c7c77}:1.30.22",
+          "{4c663351-fbfd-4fc2-9c0c-1066e2da8fc0}:2.1.4",
+          "dinopolicy-youtube-whitelist@local:0.1.1",
+          "dinopolicy-youtube-whitelist@local:0.1.2",
+          "dinopolicy-youtube-whitelist@local:0.1.3",
+          "dinopolicy-youtube-whitelist@local:0.1.4",
+          "appong-bridge@4apps.io:0.1.10"
+        ]
+      },
+      "schema": 1783363006034,
+      "key_format": "{guid}:{version}",
+      "stash_time": 1783384516405,
+      "id": "abe3b337-8c1a-4819-acba-2336c874c573",
+      "last_modified": 1783384617145
+    },
+    {
+      "stash": {
+        "blocked": [],
+        "unblocked": [],
+        "softblocked": [
+          "bluesign-extractor@local.tool:1.7",
+          "bluesign-extractor@local.tool:1.8",
+          "ferie-xitf@lbacchet:1.2.0",
+          "ferie-xitf@lbacchet:1.2.1",
+          "viewport-size-inspector@evomark.co.uk:1.1.0",
+          "floating-note@example.com:1.0",
+          "{4deb8e0b-6d9f-4bfd-b520-7e08a2703e7c}:1.0.7",
+          "fast-contact-linker@local.addon:1.6",
+          "qbridge@local.nopublish:0.1.0",
+          "scroll-ocr-overlay@charleszhang:1.5.12",
+          "scroll-ocr-overlay@charleszhang:1.5.13",
+          "greythr-tracker@greythr-extension:1.1.5",
+          "scroll-ocr-overlay@charleszhang:1.5.14",
+          "scroll-ocr-overlay@charleszhang:1.5.16",
+          "scroll-ocr-overlay@charleszhang:1.5.17",
+          "magnetgrabber@pimmy.local:1.0.0",
+          "ytdlp_local_downloader@yourdomain.com:1.1",
+          "ytdlp_local_downloader@yourdomain.com:1.2",
+          "start-page@makadip.github:1.0.0"
+        ]
+      },
+      "schema": 1783341415227,
+      "key_format": "{guid}:{version}",
+      "stash_time": 1783362906753,
+      "id": "04393c4e-2d2a-45fe-a2d3-9e34b44cf7f2",
+      "last_modified": 1783363005670
+    },
+    {
+      "stash": {
+        "blocked": [
+          "gear-save-tip@extrakits.example:5.5.5",
+          "gear-save-tip@extrakits.example:11.10.10"
+        ],
+        "unblocked": [],
+        "softblocked": [
+          "timetracker@daj.co.jp:1.0.0",
+          "scroll-ocr-overlay@charleszhang:1.5.9",
+          "scroll-ocr-overlay@charleszhang:1.5.10",
+          "{810be5a8-0fc3-4e02-834b-4ce9e797708f}:1.0",
+          "tabautorefresh@alexander-pilz.de:1.0",
+          "scroll-ocr-overlay@charleszhang:1.5.11",
+          "{89dacfe7-22fd-4274-b63b-0d6111b1e577}:6.0.3",
+          "{89dacfe7-22fd-4274-b63b-0d6111b1e577}:6.0.4",
+          "linxoextract@lesprost.fr:1.8.3",
+          "linxoextract@lesprost.fr:1.8.2",
+          "linxoextract@lesprost.fr:1.8.1",
+          "linxoextract@lesprost.fr:2.0.0",
+          "gmail-open-tracker@stefanodelia:1.0.0",
+          "teams-office-redirect@yannick.local:0.5.1",
+          "twitch-vod-downloader@voddownloader.com:3.26",
+          "scoutfetch@scouting:1.8.0",
+          "linxoextract@lesprost.fr:2.1",
+          "dev-ai-bridge-v3@local.agent:3.0.1",
+          "dev-ai-bridge-v3@local.agent:3.1.0",
+          "github-chinese-localization@caodan.io:2.3.5",
+          "betterhelper@temporary-addon.local:2.109.0",
+          "{d29ff586-c1d3-4a20-9ce1-29c0299bb757}:1.0"
+        ]
+      },
+      "schema": 1783319790668,
+      "key_format": "{guid}:{version}",
+      "stash_time": 1783341309203,
+      "id": "e08ad57e-a225-4a54-8f18-53a2be92c945",
+      "last_modified": 1783341414976
+    },
+    {
+      "stash": {
+        "blocked": [],
+        "unblocked": [],
+        "softblocked": [
+          "{2bb089ea-6ae9-4c05-8258-006fe2ff5d22}:0.1",
+          "enhancer@goldenfox.com:26.1.0",
+          "prism-ai-dungeon@zoocata:0.7.0",
+          "ynu-task-check@example.local:1.0.0",
+          "prism-ai-dungeon@zoocata:0.7.2",
+          "prism-ai-dungeon@zoocata:0.7.3",
+          "prism-ai-dungeon@zoocata:0.7.4",
+          "prism-ai-dungeon@zoocata:0.7.5",
+          "GrabLargestImageFromTabs@OpenAddons.null:2.0",
+          "prism-ai-dungeon@zoocata:0.7.7",
+          "{54c203b1-e57c-46ce-9ab8-dc59619eaf4f}:2.0",
+          "{ee312389-4a55-4d49-aa90-2fe1bdcd4971}:1.0",
+          "{ee312389-4a55-4d49-aa90-2fe1bdcd4971}:2.0",
+          "{8c536207-83b8-4ff0-abcf-5df2cc8b199d}:1.0",
+          "{8c536207-83b8-4ff0-abcf-5df2cc8b199d}:2.0",
+          "e6-button-reorder@loogguitars.com:1.0",
+          "e6-button-reorder@loogguitars.com:1.1",
+          "{e0d16eb7-8f52-4f9f-a93a-12246f2a4305}:1.0",
+          "scroll-ocr-overlay@charleszhang:1.5.8"
+        ]
+      },
+      "schema": 1783298204419,
+      "key_format": "{guid}:{version}",
+      "stash_time": 1783319705668,
+      "id": "d1e1e04c-3b1c-4659-96d9-ed36618ceeed",
+      "last_modified": 1783319790491
+    },
+    {
+      "stash": {
+        "blocked": [],
+        "unblocked": [],
+        "softblocked": [
+          "{06f37c63-b15d-46fc-9199-490e382e531b}:1.0",
+          "xianyu-goofish-assistant@gloqqa:1.0.10",
+          "{8cf62b6b-5896-414c-b752-2d1c494f01cd}:1.0",
+          "{1f188f71-8766-4fa2-86e5-c85abdc93be5}:1.3.2",
+          "{e655cd88-db72-416e-9b52-56575bdaa44d}:1.0.0",
+          "{cfd327a7-690e-4276-b2a1-423845870d4f}:1.0.0",
+          "{81c454e7-3178-4b1d-9e81-617b0563194e}:1.22.1pre6421",
+          "epaper-eink-mode@ddd4be.paper:1.3.1",
+          "clipae@extensao:1.1",
+          "discord-message-deleter@ext.com:1.0.0"
+        ]
+      },
+      "schema": 1783276635262,
+      "key_format": "{guid}:{version}",
+      "stash_time": 1783298107104,
+      "id": "2380b2fd-e81f-4880-ba1c-5deb7e9951e9",
+      "last_modified": 1783298204149
+    },
+    {
+      "stash": {
+        "blocked": [],
+        "unblocked": [],
+        "softblocked": [
           "scroll-ocr-overlay@charleszhang:1.5.7",
           "passmgr@maxime.projets:1.0.0",
           "{8c739e61-4665-4b27-892a-383aea9c7c77}:1.29.92",
@@ -7548,5 +7838,5 @@
       "last_modified": 1780511939812
     }
   ],
-  "timestamp": 1783276634954
+  "timestamp": 1783449414301
 }

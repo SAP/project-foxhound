@@ -1,6 +1,274 @@
 {
   "data": [
     {
+      "kind": "params",
+      "model": "qwen3-235b-a22b-instruct-2507-maas",
+      "schema": 1782944343312,
+      "feature": "chat",
+      "modules": [
+        {
+          "name": "identity",
+          "version": "1.0"
+        },
+        {
+          "name": "model-details",
+          "version": "1.0"
+        },
+        {
+          "name": "style",
+          "version": "1.0"
+        },
+        {
+          "name": "skills",
+          "version": "1.0"
+        },
+        {
+          "name": "trust-and-safety",
+          "version": "1.0"
+        },
+        {
+          "name": "response-rules",
+          "version": "1.0"
+        },
+        {
+          "name": "browser-context",
+          "version": "1.0"
+        }
+      ],
+      "purpose": "chat",
+      "version": "9.0",
+      "is_default": true,
+      "owner_name": "Alibaba",
+      "parameters": "{\"temperature\": 1.0}",
+      "service_type": "ai",
+      "model_choice_id": "2",
+      "id": "chat--params--qwen3-235b-a22b-instruct-2507-maas--v9",
+      "last_modified": 1783446046199
+    },
+    {
+      "kind": "params",
+      "model": "mistral-small-2603",
+      "schema": 1782944343312,
+      "feature": "chat",
+      "modules": [
+        {
+          "name": "identity",
+          "version": "1.0"
+        },
+        {
+          "name": "model-details",
+          "version": "1.0"
+        },
+        {
+          "name": "style",
+          "version": "1.0"
+        },
+        {
+          "name": "skills",
+          "version": "1.0"
+        },
+        {
+          "name": "trust-and-safety",
+          "version": "1.0"
+        },
+        {
+          "name": "response-rules",
+          "version": "1.0"
+        },
+        {
+          "name": "browser-context",
+          "version": "1.0"
+        }
+      ],
+      "purpose": "chat",
+      "version": "9.0",
+      "is_default": false,
+      "owner_name": "Mistral",
+      "parameters": "{\"temperature\": 1.0}",
+      "service_type": "ai",
+      "id": "chat--params--mistral-small-2603--v9",
+      "last_modified": 1783446046196
+    },
+    {
+      "kind": "params",
+      "model": "gpt-oss-120b",
+      "schema": 1782944343312,
+      "feature": "chat",
+      "modules": [
+        {
+          "name": "identity",
+          "version": "1.0"
+        },
+        {
+          "name": "model-details",
+          "version": "1.0"
+        },
+        {
+          "name": "style",
+          "version": "1.0"
+        },
+        {
+          "name": "skills",
+          "version": "1.0"
+        },
+        {
+          "name": "trust-and-safety",
+          "version": "1.0"
+        },
+        {
+          "name": "response-rules",
+          "version": "1.0"
+        },
+        {
+          "name": "browser-context",
+          "version": "1.0"
+        }
+      ],
+      "purpose": "chat",
+      "version": "9.0",
+      "is_default": false,
+      "owner_name": "OpenAI",
+      "parameters": "{\"temperature\": 1.0}",
+      "service_type": "ai",
+      "model_choice_id": "3",
+      "id": "chat--params--gpt-oss-120b--v9",
+      "last_modified": 1783446046193
+    },
+    {
+      "kind": "params",
+      "model": "generic",
+      "schema": 1782944343312,
+      "feature": "chat",
+      "modules": [
+        {
+          "name": "identity",
+          "version": "1.0"
+        },
+        {
+          "name": "model-details",
+          "version": "1.0"
+        },
+        {
+          "name": "style",
+          "version": "1.0"
+        },
+        {
+          "name": "skills",
+          "version": "1.0"
+        },
+        {
+          "name": "trust-and-safety",
+          "version": "1.0"
+        },
+        {
+          "name": "response-rules",
+          "version": "1.0"
+        },
+        {
+          "name": "browser-context",
+          "version": "1.0"
+        }
+      ],
+      "purpose": "chat",
+      "version": "9.1",
+      "is_default": false,
+      "owner_name": "",
+      "parameters": "{\"temperature\": 1.0}",
+      "service_type": "ai",
+      "model_choice_id": "0",
+      "id": "chat--params--generic--v9",
+      "last_modified": 1783446046190
+    },
+    {
+      "kind": "params",
+      "model": "gemini-3.1-flash-lite",
+      "schema": 1782944343312,
+      "feature": "chat",
+      "modules": [
+        {
+          "name": "identity",
+          "version": "1.0"
+        },
+        {
+          "name": "model-details",
+          "version": "1.0"
+        },
+        {
+          "name": "style",
+          "version": "1.0"
+        },
+        {
+          "name": "skills",
+          "version": "1.0"
+        },
+        {
+          "name": "trust-and-safety",
+          "version": "1.0"
+        },
+        {
+          "name": "response-rules",
+          "version": "1.0"
+        },
+        {
+          "name": "browser-context",
+          "version": "1.0"
+        }
+      ],
+      "purpose": "chat",
+      "version": "9.0",
+      "is_default": false,
+      "owner_name": "Google",
+      "parameters": "{\"temperature\": 1.0}",
+      "service_type": "ai",
+      "model_choice_id": "1",
+      "id": "chat--params--gemini-3-1-flash-lite--v9",
+      "last_modified": 1783446046188
+    },
+    {
+      "kind": "params",
+      "model": "gemini-2.5-flash-lite",
+      "schema": 1782944343312,
+      "feature": "chat",
+      "modules": [
+        {
+          "name": "identity",
+          "version": "1.0"
+        },
+        {
+          "name": "model-details",
+          "version": "1.0"
+        },
+        {
+          "name": "style",
+          "version": "1.0"
+        },
+        {
+          "name": "skills",
+          "version": "1.0"
+        },
+        {
+          "name": "trust-and-safety",
+          "version": "1.0"
+        },
+        {
+          "name": "response-rules",
+          "version": "1.0"
+        },
+        {
+          "name": "browser-context",
+          "version": "1.0"
+        }
+      ],
+      "purpose": "chat",
+      "version": "9.0",
+      "is_default": false,
+      "owner_name": "Google",
+      "parameters": "{\"temperature\": 1.0}",
+      "service_type": "ai",
+      "id": "chat--params--gemini-2-5-flash-lite--v9",
+      "last_modified": 1783446046185
+    },
+    {
       "kind": "skill",
       "name": "privacy-policy",
       "model": "generic",
@@ -43,94 +311,6 @@
       "version": "1.0",
       "id": "chat--response-rules--generic--v1",
       "last_modified": 1782943596786
-    },
-    {
-      "kind": "params",
-      "model": "qwen3-235b-a22b-instruct-2507-maas",
-      "schema": 1782331669779,
-      "feature": "chat",
-      "purpose": "chat",
-      "version": "8.0",
-      "is_default": true,
-      "owner_name": "Alibaba",
-      "parameters": "{\"temperature\": 1.0}",
-      "service_type": "ai",
-      "model_choice_id": "2",
-      "id": "chat--params--qwen3-235b-a22b-instruct-2507-maas--v8",
-      "last_modified": 1782943596782
-    },
-    {
-      "kind": "params",
-      "model": "mistral-small-2603",
-      "schema": 1782331669779,
-      "feature": "chat",
-      "purpose": "chat",
-      "version": "8.0",
-      "is_default": false,
-      "owner_name": "Mistral",
-      "parameters": "{\"temperature\": 1.0}",
-      "service_type": "ai",
-      "id": "chat--params--mistral-small-2603--v8",
-      "last_modified": 1782943596779
-    },
-    {
-      "kind": "params",
-      "model": "gpt-oss-120b",
-      "schema": 1782331669779,
-      "feature": "chat",
-      "purpose": "chat",
-      "version": "8.0",
-      "is_default": false,
-      "owner_name": "OpenAI",
-      "parameters": "{\"temperature\": 1.0}",
-      "service_type": "ai",
-      "model_choice_id": "3",
-      "id": "chat--params--gpt-oss-120b--v8",
-      "last_modified": 1782943596775
-    },
-    {
-      "kind": "params",
-      "model": "generic",
-      "schema": 1782331669779,
-      "feature": "chat",
-      "purpose": "chat",
-      "version": "8.0",
-      "is_default": false,
-      "owner_name": "",
-      "parameters": "{\"temperature\": 1.0}",
-      "service_type": "ai",
-      "model_choice_id": "0",
-      "id": "chat--params--generic--v8",
-      "last_modified": 1782943596772
-    },
-    {
-      "kind": "params",
-      "model": "gemini-3.1-flash-lite",
-      "schema": 1782331669779,
-      "feature": "chat",
-      "purpose": "chat",
-      "version": "8.0",
-      "is_default": false,
-      "owner_name": "Google",
-      "parameters": "{\"temperature\": 1.0}",
-      "service_type": "ai",
-      "model_choice_id": "1",
-      "id": "chat--params--gemini-3-1-flash-lite--v8",
-      "last_modified": 1782943596768
-    },
-    {
-      "kind": "params",
-      "model": "gemini-2.5-flash-lite",
-      "schema": 1782331669779,
-      "feature": "chat",
-      "purpose": "chat",
-      "version": "8.0",
-      "is_default": false,
-      "owner_name": "Google",
-      "parameters": "{\"temperature\": 1.0}",
-      "service_type": "ai",
-      "id": "chat--params--gemini-2-5-flash-lite--v8",
-      "last_modified": 1782943596764
     },
     {
       "kind": "module",
@@ -2203,5 +2383,5 @@
       "last_modified": 1771607375493
     }
   ],
-  "timestamp": 1782943596800
+  "timestamp": 1783446046199
 }
