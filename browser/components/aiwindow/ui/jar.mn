@@ -82,3 +82,5 @@ browser.jar:
   content/browser/aiwindow/components/ai-action-result.css          (components/ai-action-result/ai-action-result.css)
   content/browser/aiwindow/components/smartwindow-smartbar-glow.mjs (components/smartwindow-smartbar-glow/smartwindow-smartbar-glow.mjs)
   content/browser/aiwindow/components/smartwindow-smartbar-glow.css (components/smartwindow-smartbar-glow/smartwindow-smartbar-glow.css)
+  content/browser/aiwindow/components/smartwindow-topsites.mjs       (components/smartwindow-topsites/smartwindow-topsites.mjs)
+  content/browser/aiwindow/components/smartwindow-topsites.css       (components/smartwindow-topsites/smartwindow-topsites.css)

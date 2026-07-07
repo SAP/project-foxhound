@@ -25,9 +25,10 @@
     "heading"
     "smartbar"
     "prompts"
+    "topsites"
     "."
     "footer";
-  grid-template-rows: 0 1fr auto auto auto 1fr auto;
+  grid-template-rows: 0 1fr auto auto auto auto 1fr auto;
   align-content: stretch;
 }
 
@@ -271,10 +272,19 @@ moz-button.close-sidebar-button {
 
 smartwindow-heading {
   grid-area: heading;
+
+  :host(.chat-active) & {
+    display: none;
+  }
 }
 
-:host(.chat-active) smartwindow-heading {
-  display: none;
+smartwindow-topsites {
+  grid-area: topsites;
+  width: 100%;
+
+  :host(.chat-active) & {
+    display: none;
+  }
 }
 
 smartwindow-footer {

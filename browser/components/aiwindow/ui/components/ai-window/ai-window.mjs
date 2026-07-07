@@ -9,6 +9,8 @@ import "chrome://browser/content/aiwindow/components/smartwindow-prompts.mjs";
 // eslint-disable-next-line import/no-unassigned-import
 import "chrome://browser/content/aiwindow/components/smartwindow-promo.mjs";
 // eslint-disable-next-line import/no-unassigned-import
+import "chrome://browser/content/aiwindow/components/smartwindow-topsites.mjs";
+// eslint-disable-next-line import/no-unassigned-import
 import "chrome://browser/content/aiwindow/components/kit-mention.mjs";
 
 const { XPCOMUtils } = ChromeUtils.importESModule(
@@ -36,6 +38,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "moz-src:///browser/components/aiwindow/ui/modules/FeedbackModal.sys.mjs",
   ChatConversation:
     "moz-src:///browser/components/aiwindow/ui/modules/ChatConversation.sys.mjs",
+  TopSites: "resource:///modules/topsites/TopSites.sys.mjs",
+  URILoadingHelper: "resource:///modules/URILoadingHelper.sys.mjs",
   MEMORIES_FLAG_SOURCE:
     "moz-src:///browser/components/aiwindow/ui/modules/ChatEnums.sys.mjs",
   MESSAGE_ROLE:
@@ -144,8 +148,10 @@ const PREF_CUSTOM_ENDPOINT = "browser.smartwindow.customEndpoint";
 const TAB_FAVICON_CHAT =
   "chrome://browser/content/aiwindow/assets/ask-icon.svg";
 const PREF_CHAT_INTERACTION_COUNT = "browser.smartwindow.chat.interactionCount";
+const PREF_HIDE_TOP_SITES = "browser.smartwindow.hideTopSites";
 const MAX_INTERACTION_COUNT = 1000;
 const MAX_SIDEBAR_STARTER_CACHE_KEYS = 20;
+const MAX_TOP_SITES = 8;
 
 // 1-6 are MLPA spec codes; 7 is set locally for Fastly-blocked 406s.
 const ERROR_TELEMETRY_NAME_BY_CODE = {
@@ -198,6 +204,8 @@ export class AIWindow extends MozLitElement {
     isGenerating: { type: Boolean, state: true },
     availableModels: { type: Object, state: true },
     selectedModelId: { type: String, state: true },
+    topSites: { type: Array, state: true },
+    startersResolved: { type: Boolean, state: true },
   };
 
   #browser;
@@ -392,6 +400,13 @@ export class AIWindow extends MozLitElement {
       true,
       () => this.#syncMemoriesButtonUI()
     );
+    XPCOMUtils.defineLazyPreferenceGetter(
+      this,
+      "hideTopSitesPref",
+      PREF_HIDE_TOP_SITES,
+      false,
+      () => this.#syncTopSites()
+    );
 
     this.userPrompt = "";
     this.#browser = null;
@@ -403,6 +418,8 @@ export class AIWindow extends MozLitElement {
 
     this.mode = this.#detectModeFromContext();
     this.showStarters = false;
+    this.topSites = [];
+    this.startersResolved = false;
     this.showFooter = this.mode === MODE.FULLPAGE;
     this.promoMessage = null;
     this.showDisclaimer = this.mode !== MODE.FULLPAGE;
@@ -1004,6 +1021,8 @@ export class AIWindow extends MozLitElement {
     // so it can trigger the initial starter prompts loading
     this.#swapConversation(this.#conversation);
 
+    this.#syncTopSites();
+
     await this.#loadPendingConversation().catch(error => {
       console.error(
         `loadPendingConversation() error: ${error.toString()}, \nstack: ${error.stack}`
@@ -1108,7 +1127,7 @@ export class AIWindow extends MozLitElement {
     this.#starterPromptsAbortController = abortController;
 
     if (clear) {
-      this.#renderStarterPrompts([]);
+      this.#renderStarterPrompts([], false);
     }
 
     let starters = [];
@@ -1193,9 +1212,12 @@ export class AIWindow extends MozLitElement {
    * Sets the starters data and shows the prompts element.
    *
    * @param {Array<{text: string, type: string}>} starters - Array of starter prompt objects
+   * @param {boolean} [resolved=true] - Whether starter loading has settled;
+   *   false for the transient clear before an async load, which keeps Top
+   *   Sites hidden until the prompts row is ready.
    * @private
    */
-  #renderStarterPrompts(starters) {
+  #renderStarterPrompts(starters, resolved = true) {
     if (!this.isConnected) {
       return;
     }
@@ -1203,11 +1225,93 @@ export class AIWindow extends MozLitElement {
     this.#starters = this.#conversation?.messages?.length ? [] : starters;
     this.showStarters = !!this.#starters.length;
 
+    // Gate Top Sites on starter resolution so the prompts row and Top Sites
+    // render in the same update, avoiding a layout shift where Top Sites
+    // paint first and then jump down once the prompts row is inserted above.
+    if (resolved) {
+      this.startersResolved = true;
+    }
+
     if (this.showStarters) {
       this.onQuickPromptDisplayed(this.#starters.length);
     }
     this.requestUpdate();
   }
+
+  /**
+   * Loads the user's Top Sites and renders a single row of them below the
+   * Smartbar in fullpage mode. TopSites.getSites() already excludes sponsored
+   * sites; we only keep the first MAX_TOP_SITES entries to fit a single row.
+   *
+   * @private
+   */
+  /**
+   * Loads or clears Top Sites based on the current mode and the
+   * hideTopSites pref. Invoked on connect and whenever the pref changes
+   * so every open AI window reflects the new value.
+   *
+   * @private
+   */
+  #syncTopSites() {
+    if (this.mode === MODE.FULLPAGE) {
+      Glean.smartWindow.topsitesEnabled.set(!this.hideTopSitesPref);
+    }
+
+    if (this.mode === MODE.FULLPAGE && !this.hideTopSitesPref) {
+      // Only the visible tab can exhibit the prompts-row layout shift, so gate
+      // its Top Sites on starter resolution (see #renderStarterPrompts).
+      // Background tabs are hidden and never reload starters on tab switch, so
+      // reveal their Top Sites immediately to avoid leaving them blank.
+      if (this.ownerDocument.hidden) {
+        this.startersResolved = true;
+      }
+      this.#loadTopSites();
+    } else {
+      this.topSites = [];
+    }
+  }
+
+  async #loadTopSites() {
+    let sites = [];
+    try {
+      sites = await lazy.TopSites.getSites();
+    } catch (e) {
+      lazy.log.error("[TopSites] Failed to load top sites:", e);
+    }
+
+    if (!this.isConnected) {
+      return;
+    }
+
+    this.topSites = (sites ?? [])
+      .filter(site => site?.url)
+      .slice(0, MAX_TOP_SITES);
+
+    if (this.topSites.length) {
+      Glean.smartWindow.topsitesImpression.record({
+        visible_topsites: this.topSites.length,
+      });
+    }
+  }
+
+  /**
+   * Navigates the current tab to the selected Top Site.
+   *
+   * @param {CustomEvent} event - The site-selected event
+   * @private
+   */
+  #handleTopSiteSelected = event => {
+    const { url, position } = event.detail;
+    const win = this.#topChromeWindow;
+    if (!url || !win) {
+      return;
+    }
+    Glean.smartWindow.topsitesClick.record({
+      position,
+      visible_topsites: this.topSites.length,
+    });
+    lazy.URILoadingHelper.openTrustedLinkIn(win, url, "current");
+  };
 
   /**
    * Helper method to get or create the smartbar element
@@ -2808,6 +2912,15 @@ export class AIWindow extends MozLitElement {
                     @SmartWindowPrompt:prompt-selected=${this
                       .#handlePromptSelected}
                   ></smartwindow-prompts>
+                `
+              : ""}
+            ${this.startersResolved
+              ? html`
+                  <smartwindow-topsites
+                    .sites=${this.topSites}
+                    @SmartWindowTopSites:site-selected=${this
+                      .#handleTopSiteSelected}
+                  ></smartwindow-topsites>
                 `
               : ""}
           `}
