@@ -1180,9 +1180,8 @@ RefPtr<StyleSheetParsePromise> StyleSheet::ParseSheet(
   // @import rules are disallowed due to this decision:
   // https://github.com/WICG/construct-stylesheets/issues/119#issuecomment-588352418
   // We may allow @import rules again in the future.
-  auto allowImportRules = SelfOrAncestorIsConstructed()
-                              ? StyleAllowImportRules::No
-                              : StyleAllowImportRules::Yes;
+  auto allowImportRules =
+      IsConstructed() ? StyleAllowImportRules::No : StyleAllowImportRules::Yes;
   if (aLoadData->get()->mRecordErrors) {
     MOZ_ASSERT(NS_IsMainThread());
     RefPtr<StyleStylesheetContents> contents =
@@ -1274,9 +1273,8 @@ void StyleSheet::ParseSheetSync(
     return eCompatibility_FullStandards;
   }();
 
-  auto allowImportRules = SelfOrAncestorIsConstructed()
-                              ? StyleAllowImportRules::No
-                              : StyleAllowImportRules::Yes;
+  auto allowImportRules =
+      IsConstructed() ? StyleAllowImportRules::No : StyleAllowImportRules::Yes;
 
   Inner().mContents =
       Servo_StyleSheet_FromUTF8Bytes(

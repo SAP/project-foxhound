@@ -204,7 +204,7 @@ nsresult ServoCSSRuleList::InsertRule(const nsACString& aRule,
   mStyleSheet->WillDirty();
 
   css::Loader* loader = nullptr;
-  auto allowImportRules = mStyleSheet->SelfOrAncestorIsConstructed()
+  auto allowImportRules = mStyleSheet->IsConstructed()
                               ? StyleAllowImportRules::No
                               : StyleAllowImportRules::Yes;
 

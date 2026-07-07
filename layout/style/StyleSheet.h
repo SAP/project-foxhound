@@ -380,12 +380,6 @@ class StyleSheet final : public nsICSSLoaderObserver, public nsWrapperCache {
   // subtree. It can be cheaper than walking the whole list of stylesheets.
   bool IsDirectlyAssociatedTo(dom::DocumentOrShadowRoot&) const;
 
-  // True if any of this sheet's ancestors were created through the
-  // Constructable StyleSheets API
-  bool SelfOrAncestorIsConstructed() const {
-    return OutermostSheet().IsConstructed();
-  }
-
   // Ture if the sheet's constructor document matches the given document
   bool ConstructorDocumentMatches(const dom::Document& aDocument) const {
     return mConstructorDocument == &aDocument;
