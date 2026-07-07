@@ -1407,3 +1407,13 @@ The number of days since the most recent crash, as recorded in the [dump files c
 ```ts
 declare const daysSinceLastCrash: Promise<number|null>;
 ```
+
+### `isLaunchOnLogin`
+
+`true` if this Firefox launch was initiated by the OS on login. Detected via the `-os-autostart` command-line flag, which is only injected by the Windows launch-on-login paths. This attribute is always `false` on macOS and Linux. It also will not detect cases where a user has manually added Firefox to OS-level login items outside of Firefox's own launch-on-login setting.
+
+#### Definition
+
+```ts
+declare const isLaunchOnLogin: boolean;
+```

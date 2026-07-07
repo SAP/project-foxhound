@@ -61,6 +61,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   AttributionCode:
     "moz-src:///browser/components/attribution/AttributionCode.sys.mjs",
   BackupService: "resource:///modules/backup/BackupService.sys.mjs",
+  BrowserInitState: "resource:///modules/BrowserGlue.sys.mjs",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
   ClientEnvironment: "resource://normandy/lib/ClientEnvironment.sys.mjs",
   CustomizableUI:
@@ -1571,6 +1572,15 @@ const TargetingGetters = {
       const mostRecent = Math.max(...crashes.map(c => c.date));
       return Math.floor((Date.now() - mostRecent) / (24 * 60 * 60 * 1000));
     });
+  },
+
+  /**
+   * Whether this Firefox launch was initiated by the OS on login.
+   *
+   * @returns {boolean}
+   */
+  get isLaunchOnLogin() {
+    return lazy.BrowserInitState.isLaunchOnLogin;
   },
 };
 
