@@ -31,6 +31,17 @@ ChromeUtils.defineLazyGetter(lazy, "SearchModeSwitcherL10n", () => {
   return new Localization(["browser/browser.ftl"]);
 });
 
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "settingsRedesignEnabled",
+  "browser.settings-redesign.enabled",
+  true
+);
+
 // Default icon used for engines that do not have icons loaded.
 const DEFAULT_ENGINE_ICON =
   "chrome://browser/skin/search-engine-placeholder@2x.png";
@@ -437,12 +448,20 @@ export class SearchModeSwitcher {
     let searchEngines = (await lazy.SearchService.getVisibleEngines()).filter(
       engine => !engine.hideOneOffButton
     );
-    this.#engines = searchEngines.concat(
-      lazy.UrlbarUtils.LOCAL_SEARCH_MODES.filter(
-        engine =>
-          this.#input.sapName == "urlbar" && lazy.UrlbarPrefs.get(engine.pref)
-      )
-    );
+
+    if (this.#input.sapName != "urlbar") {
+      this.#engines = searchEngines;
+    } else {
+      // After the settings redesign we no longer use the prefs to hide local
+      // search modes. Hence when the settings redesign is enabled we show
+      // all local search modes regardless of the prefs.
+      this.#engines = searchEngines.concat(
+        lazy.UrlbarUtils.LOCAL_SEARCH_MODES.filter(
+          engine =>
+            lazy.settingsRedesignEnabled || lazy.UrlbarPrefs.get(engine.pref)
+        )
+      );
+    }
   }
 
   async updateSearchIcon() {

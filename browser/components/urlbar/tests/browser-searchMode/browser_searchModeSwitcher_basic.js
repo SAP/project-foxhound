@@ -1054,63 +1054,114 @@ add_task(async function search_engines_with_accel_updown() {
   await BrowserTestUtils.closeWindow(win);
 });
 
-add_task(async function footer_separator_visibility() {
-  if (!Services.prefs.getBoolPref("browser.nova.enabled", false)) {
-    // Proton has only one separator, so ignore this test.
-    info("Skipping because Nova is disabled");
-    return;
+add_task(
+  {
+    skip_if: () =>
+      // Proton has only one separator, so ignore this test.
+      !Services.prefs.getBoolPref("browser.nova.enabled", false) ||
+      // Settings redesign changes means that the local search modes cannot be
+      // hidden, hence this test doesn't apply.
+      Services.prefs.getBoolPref("browser.settings-redesign.enabled", false),
+  },
+  async function footer_separator_visibility() {
+    let popup = await UrlbarTestUtils.openSearchModeSwitcher(window);
+    let installedSeparator = popup.querySelector(
+      ".searchmode-switcher-panel-installed-engine-separator"
+    );
+    let footerSeparator = popup.querySelector(
+      ".searchmode-switcher-panel-footer-separator"
+    );
+    Assert.notEqual(
+      footerSeparator.previousElementSibling,
+      installedSeparator,
+      "There are items between the separators"
+    );
+    Assert.ok(
+      BrowserTestUtils.isVisible(footerSeparator),
+      "Footer separator is visible when there are items between the separators"
+    );
+
+    let onClose = UrlbarTestUtils.searchModeSwitcherPopupClosed(window);
+    EventUtils.synthesizeKey("KEY_Escape");
+    await onClose;
+
+    info("Disable all local search modes");
+    await SpecialPowers.pushPrefEnv({
+      set: [
+        ["browser.urlbar.shortcuts.bookmarks", false],
+        ["browser.urlbar.shortcuts.tabs", false],
+        ["browser.urlbar.shortcuts.history", false],
+        ["browser.urlbar.shortcuts.actions", false],
+      ],
+    });
+
+    popup = await UrlbarTestUtils.openSearchModeSwitcher(window);
+    installedSeparator = popup.querySelector(
+      ".searchmode-switcher-panel-installed-engine-separator"
+    );
+    footerSeparator = popup.querySelector(
+      ".searchmode-switcher-panel-footer-separator"
+    );
+    Assert.equal(
+      footerSeparator.previousElementSibling,
+      installedSeparator,
+      "There are no items between the separators"
+    );
+    Assert.ok(
+      BrowserTestUtils.isHidden(footerSeparator),
+      "Footer separator is hidden when there are no items between the separators"
+    );
+
+    onClose = UrlbarTestUtils.searchModeSwitcherPopupClosed(window);
+    EventUtils.synthesizeKey("KEY_Escape");
+    await onClose;
+    await SpecialPowers.popPrefEnv();
   }
+);
 
-  let popup = await UrlbarTestUtils.openSearchModeSwitcher(window);
-  let installedSeparator = popup.querySelector(
-    ".searchmode-switcher-panel-installed-engine-separator"
-  );
-  let footerSeparator = popup.querySelector(
-    ".searchmode-switcher-panel-footer-separator"
-  );
-  Assert.notEqual(
-    footerSeparator.previousElementSibling,
-    installedSeparator,
-    "There are items between the separators"
-  );
-  Assert.ok(
-    BrowserTestUtils.isVisible(footerSeparator),
-    "Footer separator is visible when there are items between the separators"
-  );
-
-  let onClose = UrlbarTestUtils.searchModeSwitcherPopupClosed(window);
-  EventUtils.synthesizeKey("KEY_Escape");
-  await onClose;
-
-  info("Disable all local search modes");
+add_task(async function hideLocalSearchModes() {
   await SpecialPowers.pushPrefEnv({
-    set: [
-      ["browser.urlbar.shortcuts.bookmarks", false],
-      ["browser.urlbar.shortcuts.tabs", false],
-      ["browser.urlbar.shortcuts.history", false],
-      ["browser.urlbar.shortcuts.actions", false],
-    ],
+    set: [["browser.urlbar.shortcuts.bookmarks", false]],
   });
 
-  popup = await UrlbarTestUtils.openSearchModeSwitcher(window);
-  installedSeparator = popup.querySelector(
-    ".searchmode-switcher-panel-installed-engine-separator"
-  );
-  footerSeparator = popup.querySelector(
-    ".searchmode-switcher-panel-footer-separator"
-  );
-  Assert.equal(
-    footerSeparator.previousElementSibling,
-    installedSeparator,
-    "There are no items between the separators"
-  );
+  // Seperate call, so that it can be popped on its own.
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.settings-redesign.enabled", false]],
+  });
+
+  let popup = await UrlbarTestUtils.openSearchModeSwitcher(window);
   Assert.ok(
-    BrowserTestUtils.isHidden(footerSeparator),
-    "Footer separator is hidden when there are no items between the separators"
+    !BrowserTestUtils.isVisible(gURLBar.view.panel),
+    "The UrlbarView is not visible"
   );
 
-  onClose = UrlbarTestUtils.searchModeSwitcherPopupClosed(window);
+  Assert.ok(
+    !popup.querySelector(".search-button-bookmarks"),
+    "Should not have found the local search mode for bookmarks"
+  );
+
+  let popupHidden = UrlbarTestUtils.searchModeSwitcherPopupClosed(window);
   EventUtils.synthesizeKey("KEY_Escape");
-  await onClose;
+  await popupHidden;
+
+  // When the redesign is enabled, the engine should be shown regardless of the
+  // one-off setting.
+  await SpecialPowers.popPrefEnv();
+
+  popup = await UrlbarTestUtils.openSearchModeSwitcher(window);
+  Assert.ok(
+    !BrowserTestUtils.isVisible(gURLBar.view.panel),
+    "The UrlbarView is not visible"
+  );
+
+  Assert.ok(
+    popup.querySelector(".search-button-bookmarks"),
+    "Should have found the local search mode for bookmarks when settings redesign is enabled"
+  );
+
+  popupHidden = UrlbarTestUtils.searchModeSwitcherPopupClosed(window);
+  EventUtils.synthesizeKey("KEY_Escape");
+  await popupHidden;
+
   await SpecialPowers.popPrefEnv();
 });
