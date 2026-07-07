@@ -50,11 +50,27 @@ public final class SampleBuffer implements Parcelable {
     return mSharedMem != null ? mSharedMem.getSize() : 0;
   }
 
+  private void checkBounds(
+      final int offset, final int size, final int inCapacity, final int outCapacity)
+      throws IOException {
+    if (mSharedMem == null || !mSharedMem.isValid()) {
+      throw new IOException("Invalid state.");
+    }
+    if (offset < 0 || size < 0) {
+      throw new IOException("Illegal source offset/size");
+    }
+    final long inEnd = (long) offset + size;
+    if (inEnd > inCapacity || size > outCapacity) {
+      throw new IOException("Out-of-bound: buffer too small.");
+    }
+  }
+
   public void readFromByteBuffer(final ByteBuffer src, final int offset, final int size)
       throws IOException {
     if (!src.isDirect()) {
       throw new IOException("SharedMemBuffer only support reading from direct byte buffer.");
     }
+    checkBounds(offset, size, src.capacity(), capacity());
     try {
       nativeReadFromDirectBuffer(src, mSharedMem.getPointer(), offset, size);
       mSharedMem.flush();
@@ -72,6 +88,7 @@ public final class SampleBuffer implements Parcelable {
     if (!dest.isDirect()) {
       throw new IOException("SharedMemBuffer only support writing to direct byte buffer.");
     }
+    checkBounds(offset, size, capacity(), dest.capacity());
     try {
       nativeWriteToDirectBuffer(mSharedMem.getPointer(), dest, offset, size);
     } catch (final NullPointerException e) {
@@ -83,16 +100,18 @@ public final class SampleBuffer implements Parcelable {
       long src, ByteBuffer dest, int offset, int size);
 
   @WrapForJNI(exceptionMode = "nsresult")
-  public void nativeCopy(final long dest, final int offset, final int size) throws IOException {
-    if (mSharedMem == null || !mSharedMem.isValid()) {
-      throw new IOException("Invalid state.");
+  public void nativeCopy(final long dest, final int destCapacity, final int offset, final int size)
+      throws IOException {
+    if (dest == 0) {
+      throw new IOException("Null destination pointer.");
     }
-    if (offset + size > mSharedMem.getSize()) {
-      throw new IOException("Out-of-bound: buffer too small.");
-    }
+    checkBounds(offset, size, capacity(), destCapacity);
     try {
-      final long src = mSharedMem.getPointer() + offset;
-      nativeMemcpy(dest, src, size);
+      final long src = mSharedMem.getPointer();
+      if (src == 0) {
+        throw new IOException("Shared memory not mapped.");
+      }
+      nativeMemcpy(dest, src + offset, size);
     } catch (final NullPointerException e) {
       throw new IOException(e);
     }

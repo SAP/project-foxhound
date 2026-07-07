@@ -276,8 +276,8 @@ static RefPtr<MediaByteBuffer> ExtractCodecConfig(
   auto config = MakeRefPtr<MediaByteBuffer>(aSize);
   config->SetLength(aSize);
   NS_ENSURE_SUCCESS(
-      aBuffer->NativeCopy(reinterpret_cast<jlong>(config->Elements()), aOffset,
-                          aSize),
+      aBuffer->NativeCopy(reinterpret_cast<jlong>(config->Elements()),
+                          config->Length(), aOffset, aSize),
       nullptr);
   if (!aAsAVCC) {
     return config;
@@ -385,7 +385,7 @@ RefPtr<MediaRawData> AndroidDataEncoder::GetOutputData(
   }
 
   NS_ENSURE_SUCCESS(aBuffer->NativeCopy(reinterpret_cast<jlong>(writer->Data()),
-                                        aOffset, aSize),
+                                        writer->Size(), aOffset, aSize),
                     nullptr);
   output->mKeyframe = aIsKeyFrame;
 
@@ -421,7 +421,7 @@ RefPtr<MediaRawData> AndroidDataEncoder::GetOutputDataH264(
 
   NS_ENSURE_SUCCESS(
       aBuffer->NativeCopy(reinterpret_cast<jlong>(writer->Data() + prependSize),
-                          aOffset, aSize),
+                          writer->Size() - prependSize, aOffset, aSize),
       nullptr);
 
   if (asAVCC && !AnnexB::ConvertSampleToAVCC(output, avccHeader)) {
