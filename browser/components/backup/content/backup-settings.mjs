@@ -137,7 +137,6 @@ export default class BackupSettings extends MozLitElement {
             bubbles: true,
             composed: true,
             detail: {
-              backupFile: event.detail.backupFile,
               backupPassword: event.detail.backupPassword,
               source: "preferences",
             },
@@ -265,6 +264,19 @@ export default class BackupSettings extends MozLitElement {
     }
   }
 
+  handleLocationPickerClick(e) {
+    // Let clicks on the "show" button through.
+    let showButton = this.shadowRoot?.querySelector("#backup-location-show");
+    if (showButton && e.composedPath().includes(showButton)) {
+      return;
+    }
+
+    // Override the built-in moz-input-folder file picker with our own in the
+    // parent process to avoid propogating the picked path between actors.
+    e.stopPropagation();
+    this.handleEditBackupLocation();
+  }
+
   handleShowBackupLocation() {
     this.dispatchEvent(
       new CustomEvent("BackupUI:ShowBackupLocation", {
@@ -273,19 +285,14 @@ export default class BackupSettings extends MozLitElement {
     );
   }
 
-  handleEditBackupLocation(event) {
-    let newPath = event.target.value;
-    let currentPath = this.backupServiceState.backupDirPath;
-
-    // If the same directory was chosen, this is a no-op
-    if (!Cu.isInAutomation && newPath === PathUtils.parent(currentPath)) {
-      return;
-    }
-
+  handleEditBackupLocation() {
     this.dispatchEvent(
-      new CustomEvent("BackupUI:EditBackupLocation", {
+      new CustomEvent("BackupUI:ShowFilepicker", {
         bubbles: true,
-        detail: { path: newPath },
+        detail: {
+          win: window.browsingContext,
+          alsoDeleteLastBackup: true,
+        },
       })
     );
   }
@@ -353,7 +360,10 @@ export default class BackupSettings extends MozLitElement {
         id="last-backup-location"
         data-l10n-id="settings-data-backup-last-backup-location2"
         .value=${backupDirPath}
-        @change=${this.handleEditBackupLocation}
+        @click=${{
+          handleEvent: e => this.handleLocationPickerClick(e),
+          capture: true,
+        }}
       >
         <moz-button
           id="backup-location-show"

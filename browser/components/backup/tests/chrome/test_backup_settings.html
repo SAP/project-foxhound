@@ -232,33 +232,29 @@
     });
 
     /**
-     * Test that the "Edit" button fires the right event.
+     * Test that handleEditBackupLocation dispatches ShowFilepicker with
+     * alsoDeleteLastBackup.
      */
     add_task(async function test_editLocation() {
       let settings = document.getElementById("test-backup-settings");
       let content = document.getElementById("content");
 
-      const backupDirPath = "Some/Expected/Path";
       settings.backupServiceState = createBackupServiceState({
         scheduledBackupsEnabled: true,
-        backupDirPath,
+        backupDirPath: "Some/Expected/Path",
       });
-
       await settings.updateComplete;
 
-      let locationInput = settings.shadowRoot.getElementById("last-backup-location");
-      let locationEditButton = locationInput.chooseFolderButtonEl;
-      ok(locationEditButton, "Backup location edit button exists.");
-
-      let sawEditEvent = BrowserTestUtils.waitForEvent(content, "BackupUI:EditBackupLocation");
-
-      // Simulate what happens after user selects a new folder in the file picker
-      const newPath = "Some/New/Path";
-      locationInput.value = newPath;
-      locationInput.dispatchEvent(new Event("change", { bubbles: true }));
-
-      let event = await sawEditEvent;
-      is(event.detail.path, newPath, "Event should contain the new path");
+      let sawShowFilepicker = BrowserTestUtils.waitForEvent(
+        content,
+        "BackupUI:ShowFilepicker"
+      );
+      settings.handleEditBackupLocation();
+      let event = await sawShowFilepicker;
+      ok(
+        event.detail.alsoDeleteLastBackup,
+        "Event should have alsoDeleteLastBackup flag"
+      );
     });
 
     /**

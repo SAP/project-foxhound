@@ -143,9 +143,27 @@ export class BackupUIParent extends JSWindowActorParent {
       return await this.#triggerCreateBackup({ reason: "manual" });
     } else if (message.name == "EnableScheduledBackups") {
       try {
-        let { parentDirPath, password, source } = message.data;
-        if (parentDirPath) {
-          await this.#bs.setParentDirPath(parentDirPath);
+        let { password, source } = message.data;
+
+        // Persist the default backup directory path to the pref if the user
+        // hasn't explicitly chosen one. We do this here rather than in
+        // actorCreated() to avoid mutating the browser.backup.location pref
+        // as a side effect of opening about:preferences.
+        if (!this.#bs.state.backupDirPath) {
+          let defaultPath = lazy.BackupService.DEFAULT_PARENT_DIR_PATH;
+          if (defaultPath) {
+            await this.#bs.setParentDirPath(defaultPath);
+          }
+        }
+
+        if (!this.#bs.state.backupDirPath) {
+          lazy.logConsole.error(
+            "No backup directory path set when enabling scheduled backups."
+          );
+          return {
+            success: false,
+            errorCode: lazy.ERRORS.UNKNOWN,
+          };
         }
 
         if (password) {
@@ -172,7 +190,8 @@ export class BackupUIParent extends JSWindowActorParent {
       await this.#bs.cleanupBackupFiles();
       this.#bs.setScheduledBackups(false, source);
     } else if (message.name == "ShowFilepicker") {
-      let { win, filter, existingBackupPath } = message.data;
+      let { win, filter, existingBackupPath, alsoDeleteLastBackup } =
+        message.data;
 
       let fp = Cc["@mozilla.org/filepicker;1"].createInstance(Ci.nsIFilePicker);
 
@@ -187,9 +206,14 @@ export class BackupUIParent extends JSWindowActorParent {
 
       if (existingBackupPath) {
         try {
-          let folder = await IOUtils.getFile(existingBackupPath);
-          // IOUtils.getFile creates the parent directory, so it should exist.
-          fp.displayDirectory = folder.parent;
+          let parentPath = PathUtils.parent(existingBackupPath);
+          if (await IOUtils.exists(parentPath)) {
+            let dir = Cc["@mozilla.org/file/local;1"].createInstance(
+              Ci.nsIFile
+            );
+            dir.initWithPath(parentPath);
+            fp.displayDirectory = dir;
+          }
         } catch (_) {
           // If the path isn't valid, don't bother setting the displayDirectory.
         }
@@ -204,6 +228,20 @@ export class BackupUIParent extends JSWindowActorParent {
       let path = fp.file.path;
       let iconURL = this.#bs.getIconFromFilePath(path);
       let filename = PathUtils.filename(path);
+
+      if (!filter) {
+        if (alsoDeleteLastBackup) {
+          try {
+            await this.#bs.deleteLastBackup();
+          } catch (e) {
+            lazy.logConsole.error(
+              "Error deleting last backup while editing the backup location.",
+              e
+            );
+          }
+        }
+        await this.#bs.setParentDirPath(path);
+      }
 
       return {
         path,
@@ -229,7 +267,12 @@ export class BackupUIParent extends JSWindowActorParent {
       const window = this.browsingContext.topChromeWindow;
       this.#bs.filePickerForRestore(window);
     } else if (message.name == "RestoreFromBackupFile") {
-      let { backupFile, backupPassword, restoreType, source } = message.data;
+      let { backupPassword, restoreType, source } = message.data;
+      let backupFile = this.#bs.state.backupFileToRestore;
+      if (!backupFile) {
+        lazy.logConsole.error("No backup file to restore from in state.");
+        return { success: false, errorCode: lazy.ERRORS.UNKNOWN };
+      }
       try {
         await this.#bs.recoverFromBackupArchive(
           backupFile,
@@ -273,9 +316,6 @@ export class BackupUIParent extends JSWindowActorParent {
       return await this.#triggerCreateBackup({ reason: "encryption" });
     } else if (message.name == "ShowBackupLocation") {
       this.#bs.showBackupLocation();
-    } else if (message.name == "EditBackupLocation") {
-      const path = message.data?.path;
-      this.#bs.editBackupLocation(path);
     } else if (message.name == "QuitCurrentProfile") {
       // Notify windows that a quit has been requested.
       let cancelQuit = Cc["@mozilla.org/supports-PRBool;1"].createInstance(

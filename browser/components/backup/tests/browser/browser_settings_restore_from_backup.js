@@ -244,11 +244,6 @@ add_task(async function test_restore_from_backup() {
 
     await restorePromise.then(e => {
       Assert.equal(
-        e.detail.backupFile,
-        mockBackupFile.path,
-        "Event should contain the file path"
-      );
-      Assert.equal(
         e.detail.backupPassword,
         "h-*@Vfge3_hGxdpwqr@w",
         "Event should contain the password"
@@ -359,6 +354,15 @@ add_task(async function test_restore_in_progress() {
       "backup.html"
     );
 
+    let originalState = bs.state;
+    sandbox.stub(bs, "state").get(() => ({
+      ...originalState,
+      backupFileToRestore: mockBackupFilePath,
+      backupFileInfo: {
+        date: new Date(0),
+      },
+    }));
+
     restoreFromBackup.backupServiceState = {
       ...restoreFromBackup.backupServiceState,
       backupFileToRestore: mockBackupFilePath,
@@ -432,6 +436,54 @@ add_task(async function test_restore_in_progress() {
     );
 
     await quitObservedPromise;
+
+    sandbox.restore();
+  });
+});
+
+add_task(async function test_restore_fails_without_backup_in_state() {
+  await BrowserTestUtils.withNewTab("about:preferences#sync", async browser => {
+    let sandbox = sinon.createSandbox();
+    let bs = getAndMaybeInitBackupService();
+
+    let recoverStub = sandbox.stub(bs, "recoverFromBackupArchive").resolves();
+
+    let originalState = bs.state;
+    sandbox.stub(bs, "state").get(() => ({
+      ...originalState,
+      backupFileToRestore: null,
+    }));
+
+    let { restoreFromBackup, settings } =
+      await initializedBackupWidgets(browser);
+
+    restoreFromBackup.backupServiceState = {
+      ...restoreFromBackup.backupServiceState,
+      backupFileToRestore: "/fake/path.html",
+      backupFileInfo: { date: new Date() },
+    };
+    await restoreFromBackup.updateComplete;
+
+    Assert.ok(
+      !restoreFromBackup.confirmButtonEl.disabled,
+      "Confirm button should not be disabled."
+    );
+
+    let restorePromise = BrowserTestUtils.waitForEvent(
+      window,
+      "BackupUI:RestoreFromBackupFile"
+    );
+    restoreFromBackup.confirmButtonEl.click();
+    await restorePromise;
+
+    Assert.ok(
+      !recoverStub.called,
+      "recoverFromBackupArchive should not be called when state has no backup file."
+    );
+    Assert.ok(
+      settings.restoreFromBackupDialogEl.open,
+      "Restore dialog should still be open."
+    );
 
     sandbox.restore();
   });
