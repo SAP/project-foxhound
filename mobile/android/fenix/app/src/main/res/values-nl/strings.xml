@@ -4074,6 +4074,24 @@
   <string name="microsurvey_sync_title" tools:ignore="BrandUsage,UnusedResources">Hoe tevreden bent u met de synchronisatie-ervaring in Firefox?</string>
   <!-- Text shown in the survey title for 'describe your experience so far' microsurvey. Note: The word "Firefox" should NOT be translated. -->
   <string name="microsurvey_describe_your_experience_title" tools:ignore="BrandUsage,UnusedResources">Help ons Firefox te verbeteren. Wat beschrijft uw ervaring tot nu toe het beste?</string>
+  <!--
+    Uninstall Survey
+
+    Title text for the uninstall survey dialog, asking the user for the reason they are removing the app
+  -->
+  <string name="microsurvey_uninstall_survey_title">Uw feedback is belangrijk. Waarom de-installeert u?</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_1">Problemen met webpagina’s</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_2">Video- en downloadproblemen</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_3">Prestatieproblemen</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_4">Functie- en ontwerpproblemen</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_5">Privacygerelateerde problemen</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_6">Betalings- en abonnementsproblemen</string>
   <!-- Button label shown at the bottom of the uninstall survey -->
   <string name="uninstall_survey_button_label">Feedback indienen en de-installeren</string>
   <!--

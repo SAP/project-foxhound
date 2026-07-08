@@ -4075,6 +4075,26 @@
   <!-- Text shown in the survey title for 'describe your experience so far' microsurvey. Note: The word "Firefox" should NOT be translated. -->
   <string name="microsurvey_describe_your_experience_title" tools:ignore="BrandUsage,UnusedResources">Ба мо барои беҳтар кардани браузери «Firefox» кумак расонед. Кадом банд таҷрибаи беҳтарини шуморо тавсиф мекунад?</string>
   <!--
+    Uninstall Survey
+
+    Title text for the uninstall survey dialog, asking the user for the reason they are removing the app
+  -->
+  <string name="microsurvey_uninstall_survey_title">Изҳори назари шумо муҳим аст. Сабаби лағв кардани насби барнома дар чӣ аст?</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_1">Мушкилиҳо бо саҳифаҳои сомона</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_2">Мушкилиҳо бо видео ва боргириҳо</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_3">Мушкилиҳо бо самаранокӣ</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_4">Мушкилиҳо бо вазифаҳо ва намуди зоҳирӣ</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_5">Мушкилиҳои марбут ба махфият</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_6">Мушкилиҳо бо пардохт ва обуна</string>
+  <!-- Button label shown at the bottom of the uninstall survey -->
+  <string name="uninstall_survey_button_label">Ирсоли изҳори назар ва лағв кардани насб</string>
+  <!--
     Accessibility
 
     Content description for the survey application icon. Note: The word "Firefox" should NOT be translated.
@@ -4711,6 +4731,8 @@
   <string name="firefox_labs_feature_enable_dialog_message">Барои фаъол кардани ин хусусият, «%s»-ро аз нав оғоз кунед.</string>
   <!-- The description text that is displayed in the confirmation dialog on the Firefox Labs screen for toggling "off" experimental features. %s is the name of the app (for example "Firefox Nightly") -->
   <string name="firefox_labs_feature_disable_dialog_message">Барои хомӯш кардани ин хусусият, «%s»-ро аз нав оғоз кунед.</string>
+  <!-- Helper text shown beneath a Firefox Labs item when it is blocked from being turned on. -->
+  <string name="firefox_labs_feature_conflict">Ин хусусият барои санҷиш дастнорас аст.</string>
   <!-- Text displayed on the Firefox Labs screen when there are no Labs experimental features present. -->
   <string name="firefox_labs_no_labs_available_description">Дар айни замон ягон хусусияти озмоишӣ барои санҷиш дастрас нест</string>
 </resources>

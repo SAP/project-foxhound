@@ -4081,7 +4081,7 @@
   -->
   <string name="microsurvey_uninstall_survey_title">Votre avis compte. Pourquoi effectuez-vous la désinstallation\u00a0?</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_1">Problèmes de pages web</string>
+  <string name="uninstall_survey_option_1">Problèmes avec des pages web</string>
   <!-- Uninstall survey answer option -->
   <string name="uninstall_survey_option_2">Problèmes de vidéo et de téléchargement</string>
   <!-- Uninstall survey answer option -->
@@ -4483,7 +4483,7 @@
   <!-- Round name shown on the sports widget for the quarter-finals stage in the soccer tournament. -->
   <string name="sports_widget_quarter_final">Quarts de finale</string>
   <!-- Round name shown on the sports widget for the semi-finals stage in the soccer tournament. -->
-  <string name="sports_widget_semi_final">Demi-finale</string>
+  <string name="sports_widget_semi_final">Demi-finales</string>
   <!-- Round name shown on the sports widget for the final stage in the soccer tournament. -->
   <string name="sports_widget_final">Finale</string>
   <!-- Round name shown on the sports widget for the bronze final stage in the soccer tournament. -->
