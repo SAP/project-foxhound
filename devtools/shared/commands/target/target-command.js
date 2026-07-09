@@ -748,6 +748,9 @@ class TargetCommand extends EventEmitter {
           // We just updated the targetFront title and url, force a refresh
           // so that the EvaluationContext selector update them.
           this.store.dispatch(refreshTargets());
+
+          // Emit an helpful event to keep track of all target's url/title changes
+          this.emit("target-location-updated", targetFront);
         }
       }
     }
