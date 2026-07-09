@@ -75,6 +75,16 @@
   <string name="mozac_summarize_settings_shake_to_summarize">Shakê guendâ nāgi’hiaj rū’û’ nuguan’an</string>
   <!-- Description for the shake to summarize toggle in settings -->
   <string name="mozac_summarize_settings_shake_to_summarize_description">Nāgunan’ ānèj ané aga’ nan da’ nāgi’hiaj rū’u si nūguàn’ pâjina.</string>
+  <!-- Label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity">Sī dusiki’ ta’ut man</string>
+  <!-- Description for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_description">Dūsiki’ man da’ nāgi’hiaj rū’u nuguan’an.</string>
+  <!-- Low option label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_low">Dòj</string>
+  <!-- Medium option label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_medium">Dā’āj</string>
+  <!-- High option label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_high">Yākàn</string>
   <!-- Message for summary by model, %1$s is the name of the model that is being displayed -->
   <string name="mozac_feature_summarize_summary_model">Sa nagi’hiaj rū’u nuguan’an huin %1$s</string>
   <!-- Disclaimer message -->

@@ -4018,7 +4018,7 @@
   -->
   <string name="connection_security_panel_verified_by">Wedi\'i wirio gan %s</string>
   <!-- Content description (not visible, for screen readers etc.) for the handle used to drag the protections dashboard to the bottom of the screen and close it. -->
-  <string name="tracker_protections_dashboard_close_handlebar_content_description">Cau\'r dangosfwrdd</string>
+  <string name="tracker_protections_dashboard_close_handlebar_content_description">Cau\'r bwrdd gwaith</string>
   <!--
     Text for the connection security panel when the site uses a QWAC.
     %s is a placeholder for the organization for which the certificate was issued.
@@ -4151,7 +4151,7 @@
   <!-- Uninstall survey answer option -->
   <string name="uninstall_survey_option_1">Materion tudalen we</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_2">Materion fideo a lawrlwytho</string>
+  <string name="uninstall_survey_option_2">Materion fideo a llwytho i lawr</string>
   <!-- Uninstall survey answer option -->
   <string name="uninstall_survey_option_3">Materion perfformiad</string>
   <!-- Uninstall survey answer option -->

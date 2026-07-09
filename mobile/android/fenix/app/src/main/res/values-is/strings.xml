@@ -1946,6 +1946,8 @@
   <string name="webcompat_reporter_label_whats_broken_3">Hvað virkar ekki?</string>
   <!-- Content description for the icon button that clears the selected broken site reason in the WebCompat Reporter. -->
   <string name="webcompat_reporter_clear_reason_content_description">Hreinsa valda ástæðu</string>
+  <!-- The error message of the description when the user selects "Something else" as the reason, but left the description empty or too short. -->
+  <string name="webcompat_reporter_description_error">Settu inn að minnsta kosti 10 stafi</string>
   <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_label_whats_broken_2">Hvað er bilað?</string>
   <!-- The placeholder text for the dropdown where a user selects a high-level reason why the site is broken. -->
@@ -3924,6 +3926,8 @@
     %s is a placeholder for the name of the certificate authority that issued the certificate.
   -->
   <string name="connection_security_panel_verified_by">Sannvottað af: %s</string>
+  <!-- Content description (not visible, for screen readers etc.) for the handle used to drag the protections dashboard to the bottom of the screen and close it. -->
+  <string name="tracker_protections_dashboard_close_handlebar_content_description">Loka stjórnborði</string>
   <!--
     Text for the connection security panel when the site uses a QWAC.
     %s is a placeholder for the organization for which the certificate was issued.
@@ -4047,6 +4051,26 @@
   <string name="microsurvey_sync_title" tools:ignore="BrandUsage,UnusedResources">Hversu ánægð/ur ertu með samstillingareiginleikana í Firefox?</string>
   <!-- Text shown in the survey title for 'describe your experience so far' microsurvey. Note: The word "Firefox" should NOT be translated. -->
   <string name="microsurvey_describe_your_experience_title" tools:ignore="BrandUsage,UnusedResources">Hjálpaðu okkur að bæta Firefox. Hvað lýsir best upplifun þinni hingað til?</string>
+  <!--
+    Uninstall Survey
+
+    Title text for the uninstall survey dialog, asking the user for the reason they are removing the app
+  -->
+  <string name="microsurvey_uninstall_survey_title">Ábendingar þínar skipta máli. Af hverju ertu að taka þetta út?</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_1">Vandamál með vefsíður</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_2">Vandamál með myndskeið og niðurhal</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_3">Vandamál með afköst</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_4">Vandamál varðandi virkni og hönnun</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_5">Persónuverndartengd vandamál</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_6">Greiðslu- og áskriftarvandamál</string>
+  <!-- Button label shown at the bottom of the uninstall survey -->
+  <string name="uninstall_survey_button_label">Senda inn ábendingar og fjarlægja</string>
   <!--
     Accessibility
 
@@ -4684,6 +4708,8 @@
   <string name="firefox_labs_feature_enable_dialog_message">Til að virkja þennan eiginleika skaltu endurræsa %s.</string>
   <!-- The description text that is displayed in the confirmation dialog on the Firefox Labs screen for toggling "off" experimental features. %s is the name of the app (for example "Firefox Nightly") -->
   <string name="firefox_labs_feature_disable_dialog_message">Til að slökkva á þessum eiginleika skaltu endurræsa %s.</string>
+  <!-- Helper text shown beneath a Firefox Labs item when it is blocked from being turned on. -->
+  <string name="firefox_labs_feature_conflict">Ekki er hægt að prófa eiginleikann.</string>
   <!-- Text displayed on the Firefox Labs screen when there are no Labs experimental features present. -->
   <string name="firefox_labs_no_labs_available_description">Engir tilraunaeiginleikar til að prófa núna</string>
 </resources>
