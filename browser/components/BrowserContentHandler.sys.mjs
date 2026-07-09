@@ -30,20 +30,16 @@ ChromeUtils.defineESModuleGetters(lazy, {
 });
 
 /**
- * Whether `openBrowserWindow` should open the window as Smart Window.
- * Composes the shared `AIWindow.shouldOpenAsSmartWindow()` check (feature
- * state) with the BCH-specific gates: don't force smart when a private
- * window was explicitly requested, and require a synchronous signal that
- * the user previously signed in (the FxA check itself is async; we
- * approximate it via the ToS consent timestamp, which is set on first
- * successful sign-in). If the user has since signed out, Smart Window
- * still opens and `onFirstWindowReady` re-verifies via FxA and prompts
- * sign-in as needed.
- *
- * Note this does NOT check `SessionStartup.willRestore()` — that's only
- * relevant for the startup window (to avoid a smart → classic flash when
- * SessionStore is about to restore the previously saved window type), and
- * is gated at the call site for the startup path.
+ * Whether `openBrowserWindow` should open the window as Smart Window: the
+ * feature is on and set as default, it's not an explicitly private window, and
+ * the user previously signed in (approximated synchronously via the ToS consent
+ * timestamp; the async FxA check happens later in `onFirstWindowReady`, which
+ * prompts sign-in if they've since signed out). It deliberately avoids
+ * `SessionStartup.willRestore()`/`sessionType`: called this early, before the
+ * session file is read, that getter memoizes NO_SESSION and SessionStore then
+ * discards the session it was about to restore. Restore keeps the saved window
+ * type (`restoreWindowFeatures`); Smart-by-default only forces brand-new
+ * windows. See bug 2052953.
  *
  * @param {boolean} forcePrivate
  * @returns {boolean}
@@ -302,13 +298,7 @@ function openBrowserWindow(
 ) {
   const isStartup =
     cmdLine && cmdLine.state == Ci.nsICommandLine.STATE_INITIAL_LAUNCH;
-  // SessionStore restores the previously saved window type on startup;
-  // suppress the smart-window decision here to avoid a smart → classic flash
-  // when the saved state was classic. Only relevant for the startup window —
-  // windows opened mid-session aren't subject to session-restore overrides.
-  const openAsSmart =
-    canOpenAsSmartWindow(forcePrivate) &&
-    !(isStartup && lazy.SessionStartup.willRestore());
+  const openAsSmart = canOpenAsSmartWindow(forcePrivate);
 
   let args;
   if (!urlOrUrlList) {

@@ -745,9 +745,13 @@
         let firstURI = Array.isArray(uriToLoad) ? uriToLoad[0] : uriToLoad;
 
         if (!this._allowTransparentBrowser) {
+          // firstURI may be a Promise (uriToLoadPromise still resolving while
+          // SessionStore restores) or empty; only build a URI from a real
+          // string, otherwise default to transparent like the no-URI case.
           browser.toggleAttribute(
             "transparent",
             !firstURI ||
+              typeof firstURI != "string" ||
               AIWindow.isAIWindowContentPage(Services.io.newURI(firstURI))
           );
         }

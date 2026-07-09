@@ -6756,8 +6756,23 @@ var SessionStoreInternal = {
     var isTaskbarTab =
       aWindow.document.documentElement.hasAttribute("taskbartab");
 
+    // A restored window keeps its saved type: Classic stays Classic and Smart
+    // stays Smart, for both automatic (startup.page=3 / crash) and manual
+    // "Restore previous session" restores.
+    // The only exception is the new startup window when Smart Window is the user's
+    // default and we are NOT auto-restoring a session.
+    // aOptions.firstWindow is set only for the initial startup window (manual
+    // restores don't set it), and willRestore() is true only for automatic
+    // restore / crash recovery — so this forces Smart for a genuinely new
+    // default startup window, never for a window restored from a saved session.
+    const isNewDefaultStartupWindow =
+      aOptions.firstWindow &&
+      !lazy.SessionStartup.willRestore() &&
+      lazy.AIWindow.shouldOpenAsSmartWindow();
     const shouldBeAIWindow =
-      !!aWinData.isAIWindow && lazy.AIWindow.isAIWindowEnabled();
+      isNewDefaultStartupWindow ||
+      (!!aWinData.isAIWindow && lazy.AIWindow.isAIWindowEnabled());
+
     const trigger = aOptions.trigger ?? "open_browser";
 
     if (lazy.AIWindow.isAIWindowActive(aWindow) !== shouldBeAIWindow) {
