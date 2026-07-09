@@ -105,7 +105,12 @@ void DMABUFTextureHostOGL::PushResourceUpdates(
       }
       // XXX Add RGBA handling. Temporary hack to avoid crash
       // With BGRA format setting, rendering works without problem.
-      wr::ImageDescriptor descriptor(GetSize(), mSurface->GetFormat());
+      auto format = wr::SurfaceFormatToImageFormat(mSurface->GetFormat());
+      if (NS_WARN_IF(!format)) {
+        return;
+      }
+      wr::ImageDescriptor descriptor(GetSize(), *format,
+                                     wr::ToOpacityType(mSurface->GetFormat()));
       (aResources.*method)(aImageKeys[0], descriptor, aExtID, imageType, 0,
                            /* aNormalizedUvs */ false);
       break;
@@ -117,10 +122,10 @@ void DMABUFTextureHostOGL::PushResourceUpdates(
       }
       wr::ImageDescriptor descriptor0(
           gfx::IntSize(mSurface->GetWidth(0), mSurface->GetHeight(0)),
-          gfx::SurfaceFormat::A8);
+          wr::ImageFormat::R8, wr::OpacityType::HasAlphaChannel);
       wr::ImageDescriptor descriptor1(
           gfx::IntSize(mSurface->GetWidth(1), mSurface->GetHeight(1)),
-          gfx::SurfaceFormat::R8G8);
+          wr::ImageFormat::RG8, wr::OpacityType::Opaque);
       (aResources.*method)(aImageKeys[0], descriptor0, aExtID, imageType, 0,
                            /* aNormalizedUvs */ false);
       (aResources.*method)(aImageKeys[1], descriptor1, aExtID, imageType, 1,
@@ -134,10 +139,10 @@ void DMABUFTextureHostOGL::PushResourceUpdates(
       }
       wr::ImageDescriptor descriptor0(
           gfx::IntSize(mSurface->GetWidth(0), mSurface->GetHeight(0)),
-          gfx::SurfaceFormat::A8);
+          wr::ImageFormat::R8, wr::OpacityType::HasAlphaChannel);
       wr::ImageDescriptor descriptor1(
           gfx::IntSize(mSurface->GetWidth(1), mSurface->GetHeight(1)),
-          gfx::SurfaceFormat::A8);
+          wr::ImageFormat::R8, wr::OpacityType::HasAlphaChannel);
       (aResources.*method)(aImageKeys[0], descriptor0, aExtID, imageType, 0,
                            /* aNormalizedUvs */ false);
       (aResources.*method)(aImageKeys[1], descriptor1, aExtID, imageType, 1,
@@ -154,10 +159,10 @@ void DMABUFTextureHostOGL::PushResourceUpdates(
       }
       wr::ImageDescriptor descriptor0(
           gfx::IntSize(mSurface->GetWidth(0), mSurface->GetHeight(0)),
-          gfx::SurfaceFormat::A16);
+          wr::ImageFormat::R16, wr::OpacityType::HasAlphaChannel);
       wr::ImageDescriptor descriptor1(
           gfx::IntSize(mSurface->GetWidth(1), mSurface->GetHeight(1)),
-          gfx::SurfaceFormat::R16G16);
+          wr::ImageFormat::RG16, wr::OpacityType::HasAlphaChannel);
       (aResources.*method)(aImageKeys[0], descriptor0, aExtID, imageType, 0,
                            /* aNormalizedUvs */ false);
       (aResources.*method)(aImageKeys[1], descriptor1, aExtID, imageType, 1,
