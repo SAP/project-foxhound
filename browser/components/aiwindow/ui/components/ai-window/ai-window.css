@@ -98,6 +98,9 @@
 }
 
 #ai-window-smartbar {
+  /* make smartbar fill the #smartbar-wrapper */
+  --smartbar-max-width: var(--smartwindow-content-max-width);
+
   position: absolute;
   z-index: 1;
 }
