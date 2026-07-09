@@ -740,6 +740,7 @@ export class SearchSettings {
     this.#migrateTo11();
     await this.#migrateTo12();
     this.#migrateTo13();
+    this.#migrateTo14();
   }
 
   #migrateTo6() {
@@ -960,5 +961,19 @@ export class SearchSettings {
         }
       }
     }
+  }
+
+  #migrateTo14() {
+    // Bug 2046554 - Force the remove search engine enterprise policy to be
+    // re-applied, to ensure previously hidden engines are fully disabled. This
+    // is in case a user re-enabled them in version 152 when they were visible
+    // for a while.
+    //
+    // Note: This is here rather than in ProfileDataUpgrader.sys.mjs, as it
+    // means we can uplift without having to worry about 153 and 154 having
+    // different UI migration versions.
+    Services.prefs.clearUserPref(
+      "browser.policies.runOncePerModification.removeSearchEngines"
+    );
   }
 }

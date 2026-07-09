@@ -236,6 +236,8 @@ support-files = [
 
 ["test_settings_migrate_13.js"]
 
+["test_settings_migrate_14.js"]
+
 ["test_settings_migrate_id_format.js"]
 
 ["test_settings_migration_hideOneOffs.js"]

@@ -789,11 +789,27 @@ Preferences.addSetting(
      */
     #localShortcutL10nNames = null;
 
+    /**
+     * @type {Set<string>}
+     *   List of names of search engines that are disabled by enterprise policies.
+     */
+    #enterpriseDisabledEngineNames = null;
+
     setup() {
       Services.obs.addObserver(
         this.emitChange,
         "browser-search-engine-modified"
       );
+
+      if (Services.policies?.status == Ci.nsIEnterprisePolicies.ACTIVE) {
+        let activePolicies = Services.policies.getActivePolicies();
+        if (activePolicies.SearchEngines?.Remove) {
+          this.#enterpriseDisabledEngineNames = new Set(
+            activePolicies.SearchEngines?.Remove
+          );
+        }
+      }
+
       return () =>
         Services.obs.removeObserver(
           this.emitChange,
@@ -921,6 +937,12 @@ Preferences.addSetting(
       /** @type {SettingControlConfig[]} */
       let configs = [];
       for (let engine of await lazy.SearchService.getEngines()) {
+        // If this engine has been excluded by enterprise policies, then don't
+        // display it.
+        if (this.#enterpriseDisabledEngineNames?.has(engine.name)) {
+          continue;
+        }
+
         let settingId = `engineList-${engine.id}`;
         let editId = `editEngine-${engine.id}`;
         let outlinkId = `outlink-${engine.id}`;
@@ -1044,7 +1066,11 @@ Preferences.addSetting(
       if (!draggedEngine) {
         return;
       }
-      await lazy.SearchService.moveEngine(draggedEngine, insertAt);
+      await lazy.SearchService.moveEngine(
+        draggedEngine,
+        insertAt,
+        this.#enterpriseDisabledEngineNames
+      );
     }
     async getControlConfig() {
       /** @type {Partial<SettingControlConfig>} */
