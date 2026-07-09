@@ -526,8 +526,7 @@
     </style>
 
     <style name="PreferenceTheme" parent="PreferenceThemeOverlay.v14.Material">
-        <item name="android:textFontWeight" tools:ignore="NewApi">@integer/font_weight_light</item>
-        <item name="android:fontWeight">@integer/font_weight_light</item>
+        <item name="android:fontFamily">sans-serif</item>
         <item name="switchPreferenceCompatStyle">@style/SwitchCompatPreferenceMaterialStyle</item>
     </style>
 
