@@ -98,6 +98,8 @@ class nsHTMLDocument : public mozilla::dom::Document {
       nsWindowSizes& aWindowSizes) const override;
   // DocAddSizeOfIncludingThis is inherited from Document.
 
+  bool IsAsciiCompatible(const mozilla::Encoding* aEncoding);
+
   virtual bool WillIgnoreCharsetOverride() override;
 
   // WebIDL API
@@ -141,9 +143,8 @@ class nsHTMLDocument : public mozilla::dom::Document {
   /** # of forms in the document, synchronously set */
   int32_t mNumForms;
 
-  static void TryReloadCharset(nsIDocumentViewer* aViewer,
-                               int32_t& aCharsetSource,
-                               NotNull<const Encoding*>& aEncoding);
+  void TryReloadCharset(nsIDocumentViewer* aViewer, int32_t& aCharsetSource,
+                        NotNull<const Encoding*>& aEncoding);
   void TryUserForcedCharset(nsIDocumentViewer* aViewer, nsIDocShell* aDocShell,
                             int32_t& aCharsetSource,
                             NotNull<const Encoding*>& aEncoding,

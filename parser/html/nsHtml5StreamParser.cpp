@@ -314,12 +314,17 @@ nsHtml5StreamParser::GuessEncoding(bool aInitial) {
                         ? kCharsetFromFinalAutoDetectionFile
                         : kCharsetFromFinalAutoDetectionWouldNotHaveBeenUTF8Generic));
   if (source == kCharsetFromFinalAutoDetectionWouldNotHaveBeenUTF8Generic) {
-    if (!mDetectorHasSeenNonAscii) {
+    if (encoding == ISO_2022_JP_ENCODING) {
+      if (EncodingDetector::TldMayAffectGuess(mTLD)) {
+        source = kCharsetFromFinalAutoDetectionWouldNotHaveBeenUTF8Content;
+      }
+    } else if (!mDetectorHasSeenNonAscii) {
       source = kCharsetFromInitialAutoDetectionASCII;  // deliberately Initial
     } else if (ifHadBeenForced == UTF_8_ENCODING) {
       MOZ_ASSERT(mCharsetSource == kCharsetFromInitialAutoDetectionASCII ||
                  mCharsetSource ==
-                     kCharsetFromInitialAutoDetectionWouldHaveBeenUTF8);
+                     kCharsetFromInitialAutoDetectionWouldHaveBeenUTF8 ||
+                 mEncoding == ISO_2022_JP_ENCODING);
       source = kCharsetFromFinalAutoDetectionWouldHaveBeenUTF8InitialWasASCII;
     } else if (encoding != ifHadBeenForced) {
       if (mCharsetSource == kCharsetFromInitialAutoDetectionASCII) {
@@ -342,7 +347,11 @@ nsHtml5StreamParser::GuessEncoding(bool aInitial) {
     }
   } else if (source ==
              kCharsetFromInitialAutoDetectionWouldNotHaveBeenUTF8Generic) {
-    if (!mDetectorHasSeenNonAscii) {
+    if (encoding == ISO_2022_JP_ENCODING) {
+      if (EncodingDetector::TldMayAffectGuess(mTLD)) {
+        source = kCharsetFromInitialAutoDetectionWouldNotHaveBeenUTF8Content;
+      }
+    } else if (!mDetectorHasSeenNonAscii) {
       source = kCharsetFromInitialAutoDetectionASCII;
     } else if (ifHadBeenForced == UTF_8_ENCODING) {
       source = kCharsetFromInitialAutoDetectionWouldHaveBeenUTF8;
@@ -1049,7 +1058,8 @@ nsresult nsHtml5StreamParser::OnStartRequest(nsIRequest* aRequest) {
   auto detectorCreator = MakeScopeExit([&] {
     if ((mForceAutoDetection || mCharsetSource < kCharsetFromParentFrame) ||
         !(mMode == LOAD_AS_DATA || mMode == VIEW_SOURCE_XML)) {
-      mDetector = mozilla::EncodingDetector::Create(false);
+      mDetector = mozilla::EncodingDetector::Create(mMode == PLAIN_TEXT ||
+                                                    mMode == VIEW_SOURCE_PLAIN);
     }
   });
 
