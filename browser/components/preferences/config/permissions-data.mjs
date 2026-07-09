@@ -480,7 +480,17 @@ Preferences.addSetting(
       const profilesBackupEnabledValue = /** @type {string} */ (
         dataCollectionPrefDeps.profilesBackupEnabled.value
       );
-      let profilesEnabledOn = JSON.parse(profilesBackupEnabledValue || "[]");
+      let profilesEnabledOn;
+      try {
+        let parsed = JSON.parse(profilesBackupEnabledValue || "[]");
+        // The pref may still be in the legacy object format
+        // ({profileId: true, ...}) that BackupService migrates on read.
+        profilesEnabledOn = Array.isArray(parsed)
+          ? parsed
+          : Object.keys(parsed);
+      } catch {
+        profilesEnabledOn = [];
+      }
       let currentId = currentProfile.id;
       let otherProfilesEnabled = profilesEnabledOn.some(id => id != currentId);
       return otherProfilesEnabled && anyPrefChanged;
