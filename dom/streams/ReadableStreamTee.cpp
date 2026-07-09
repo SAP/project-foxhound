@@ -73,13 +73,13 @@ void ReadableStreamDefaultTeeReadRequest::ChunkSteps(
       : public MicroTaskRunnable {
     // Virtually const, but is cycle collected
     MOZ_KNOWN_LIVE RefPtr<TeeState> mTeeState;
-    JS::Heap<JS::Value> mChunk;
+    JS::PersistentRooted<JS::Value> mChunk;
 
    public:
     ReadableStreamDefaultTeeReadRequestChunkSteps(JSContext* aCx,
                                                   TeeState* aTeeState,
                                                   JS::Handle<JS::Value> aChunk)
-        : mTeeState(aTeeState), mChunk(aChunk) {}
+        : mTeeState(aTeeState), mChunk(aCx, aChunk) {}
 
     MOZ_CAN_RUN_SCRIPT
     void Run(AutoSlowOperation& aAso) override {
@@ -136,10 +136,6 @@ void ReadableStreamDefaultTeeReadRequest::ChunkSteps(
     bool Suppressed() override {
       nsIGlobalObject* global = mTeeState->GetStream()->GetParentObject();
       return global && global->IsInSyncOperation();
-    }
-
-    void TraceMicroTask(JSTracer* trc) override {
-      TraceEdge(trc, &mChunk, "ReadableStreamDefaultTeeReadRequest Chunk");
     }
   };
 
