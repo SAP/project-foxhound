@@ -2200,13 +2200,16 @@ bool DMABufSurfaceYUV::CreateTexture(GLContext* aGLContext, int aPlane) {
                  GetFOURCCFormat() == VA_FOURCC_P016) {
         swappedFormat = wasGR ? DRM_FORMAT_RG1616 : DRM_FORMAT_GR1616;
       }
-      mDrmFormats[aPlane] = static_cast<int>(swappedFormat);
-
-      egl->mLib->fQueryDmaBufModifiersEXT(egl->mDisplay, mDrmFormats[aPlane], 0,
-                                          nullptr, nullptr, &modifierCount);
-      int bits = GetFOURCCFormat() == VA_FOURCC_NV12 ? 8 : 16;
-      LOGDMABUF("  EGL DMA-BUF import: swapped plane 1 to %s%d%d",
-                wasGR ? "RG" : "GR", bits, bits);
+      EGLint swappedModifierCount = 0;
+      egl->mLib->fQueryDmaBufModifiersEXT(
+          egl->mDisplay, static_cast<EGLint>(swappedFormat), 0, nullptr,
+          nullptr, &swappedModifierCount);
+      if (swappedModifierCount > 0) {
+        mDrmFormats[aPlane] = static_cast<int>(swappedFormat);
+        int bits = GetFOURCCFormat() == VA_FOURCC_NV12 ? 8 : 16;
+        LOGDMABUF("  EGL DMA-BUF import: swapped plane 1 to %s%d%d",
+                  wasGR ? "RG" : "GR", bits, bits);
+      }
     }
   }
 
