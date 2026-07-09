@@ -63,7 +63,10 @@ export class GeckoViewPermissionParent extends GeckoViewActorParent {
       case "GeckoView:MediaPermission": {
         return this.eventDispatcher.sendRequestForResult(
           "GeckoView:MediaPermission",
-          aMessage.data
+          {
+            ...aMessage.data,
+            uri: this.manager.documentURI?.spec ?? "",
+          }
         );
       }
       case "GeckoView:MediaRecordingStatusChanged": {
