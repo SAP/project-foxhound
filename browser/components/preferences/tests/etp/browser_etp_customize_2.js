@@ -451,3 +451,75 @@ add_task(async function test_custom_fingerprinting_controls() {
 
   gBrowser.removeCurrentTab();
 });
+
+// Enabling cryptominer or known-fingerprinter blocking must force an immediate
+// tracker list refresh, matching the legacy UI (bug 2050749). The page module
+// can't be imported into the test process, so we mock the url-classifier list
+// manager service and assert forceUpdates runs with the relevant tables.
+add_task(async function test_custom_tracker_lists_force_update() {
+  const { MockRegistrar } = ChromeUtils.importESModule(
+    "resource://testing-common/MockRegistrar.sys.mjs"
+  );
+
+  let forcedTables = [];
+  let mockListManager = {
+    QueryInterface: ChromeUtils.generateQI(["nsIUrlListManager"]),
+    forceUpdates(tables) {
+      forcedTables.push(tables);
+      return true;
+    },
+  };
+  // The page resolves the list manager lazily on first use, so register the
+  // mock before opening the pane.
+  let mockCid = MockRegistrar.register(
+    "@mozilla.org/url-classifier/listmanager;1",
+    mockListManager
+  );
+  registerCleanupFunction(() => MockRegistrar.unregister(mockCid));
+
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      [CAT_PREF, "custom"],
+      [CRYPTOMINING_PREF, false],
+      [FINGERPRINTING_PREF, false],
+    ],
+  });
+
+  let { doc } = await openEtpCustomizePage();
+  let cryptoToggle = getControl(doc, "etpCustomCryptominingProtectionEnabled");
+  let knownFpToggle = getControl(
+    doc,
+    "etpCustomKnownFingerprintingProtectionEnabled"
+  );
+
+  info("Enable cryptomining protection");
+  forcedTables = [];
+  let prefChange = waitForAndAssertPrefState(
+    CRYPTOMINING_PREF,
+    true,
+    "Cryptomining pref enabled"
+  );
+  synthesizeClick(cryptoToggle.buttonEl);
+  await prefChange;
+  ok(
+    forcedTables.some(t => t.includes("cryptomining")),
+    "Toggling cryptomining protection forces a cryptomining list update"
+  );
+
+  info("Enable known fingerprinting protection");
+  forcedTables = [];
+  prefChange = waitForAndAssertPrefState(
+    FINGERPRINTING_PREF,
+    true,
+    "Fingerprinting pref enabled"
+  );
+  synthesizeClick(knownFpToggle.buttonEl);
+  await prefChange;
+  ok(
+    forcedTables.some(t => t.includes("fingerprinting")),
+    "Toggling known fingerprinting protection forces a fingerprinting list update"
+  );
+
+  MockRegistrar.unregister(mockCid);
+  gBrowser.removeCurrentTab();
+});

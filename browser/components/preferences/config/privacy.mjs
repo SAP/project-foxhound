@@ -184,6 +184,35 @@ export class PrivacySettingHelpers {
     Preferences.getSetting("reloadTabsHint").value = true;
   }
 
+  /**
+   * Forces the URL classifier to refresh the cryptomining tracker tables so the
+   * change takes effect immediately rather than at the next scheduled update.
+   */
+  static updateCryptominingLists() {
+    let listValue = [
+      "urlclassifier.features.cryptomining.blacklistTables",
+      "urlclassifier.features.cryptomining.whitelistTables",
+    ]
+      .map(l => Services.prefs.getStringPref(l))
+      .join(",");
+    lazy.listManager.forceUpdates(listValue);
+  }
+
+  /**
+   * Forces the URL classifier to refresh the fingerprinting tracker tables so
+   * the change takes effect immediately rather than at the next scheduled
+   * update.
+   */
+  static updateFingerprintingLists() {
+    let listValue = [
+      "urlclassifier.features.fingerprinting.blacklistTables",
+      "urlclassifier.features.fingerprinting.whitelistTables",
+    ]
+      .map(l => Services.prefs.getStringPref(l))
+      .join(",");
+    lazy.listManager.forceUpdates(listValue);
+  }
+
   static async onBaselineAllowListSettingChange(value, setting) {
     if (value) {
       PrivacySettingHelpers.maybeNotifyUserToReload();
@@ -3876,11 +3905,17 @@ Preferences.addSetting({
 Preferences.addSetting({
   id: "etpCustomCryptominingProtectionEnabled",
   pref: "privacy.trackingprotection.cryptomining.enabled",
+  onUserChange() {
+    PrivacySettingHelpers.updateCryptominingLists();
+  },
 });
 
 Preferences.addSetting({
   id: "etpCustomKnownFingerprintingProtectionEnabled",
   pref: "privacy.trackingprotection.fingerprinting.enabled",
+  onUserChange() {
+    PrivacySettingHelpers.updateFingerprintingLists();
+  },
 });
 
 Preferences.addSetting({
