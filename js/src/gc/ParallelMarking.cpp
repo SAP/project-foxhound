@@ -216,11 +216,20 @@ void ParallelMarkTask::markDeferredWeakmaps(AutoLockHelperThreadState& lock) {
   // Transfer the list to a local while the lock is still held.
   WeakMapList deferred(std::move(gc->deferredMapsList(pm->color)));
 
+#ifdef DEBUG
+  // Record that we are marking deferred weakmaps so that waiting tasks know
+  // they will still be resumed even though no task is active while the lock is
+  // released below.
+  pm->markingDeferredWeakmaps = true;
+#endif
   {
     // No other marking threads are running. Unlock helper thread state.
     AutoUnlockHelperThreadState unlock(lock);
     marker->markDeferredWeakMapChildren(deferred);
   }
+#ifdef DEBUG
+  pm->markingDeferredWeakmaps = false;
+#endif
 
   // All deferred weakmaps should have been moved to the marked list.
   MOZ_ASSERT(deferred.isEmpty());
@@ -263,7 +272,11 @@ void ParallelMarkTask::waitUntilResumed(AutoLockHelperThreadState& lock) {
   isWaiting = true;
 
   do {
-    MOZ_ASSERT(pm->hasActiveTasks(lock));
+    // An active task clears isWaiting before calling resumed.notify*(), so
+    // normally we can check that we're not hung by asserting that at least one
+    // active task exists. But a spurious wakeup during deferred weakmap marking
+    // could result in executing this body with no active marking tasks.
+    MOZ_ASSERT(pm->hasActiveTasks(lock) || pm->isMarkingDeferredWeakmaps(lock));
     resumed.wait(lock);
   } while (isWaiting);
 

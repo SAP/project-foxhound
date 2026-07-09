@@ -109,6 +109,16 @@ class MOZ_STACK_CLASS ParallelMarker {
 #endif
   ParallelMarkTask* takeWaitingTask();
 
+#ifdef DEBUG
+  // True while a task is marking deferred weakmaps. During this the lock is
+  // released and no task is active, but the marking task will resume or finish
+  // any waiting tasks once it completes, so waiting tasks must not treat this
+  // as a lost wakeup.
+  bool isMarkingDeferredWeakmaps(const AutoLockHelperThreadState& lock) const {
+    return markingDeferredWeakmaps.ref();
+  }
+#endif
+
   bool hasActiveTasks(const AutoLockHelperThreadState& lock) const {
     return !activeTasks.ref().IsEmpty();
   }
@@ -132,6 +142,11 @@ class MOZ_STACK_CLASS ParallelMarker {
   WaitingTaskSet waitingTasks;
 
   HelperThreadLockData<ParallelTaskBitset> activeTasks;
+
+#ifdef DEBUG
+  // Set while a task marks deferred weakmaps with the lock released.
+  HelperThreadLockData<bool> markingDeferredWeakmaps;
+#endif
 
   const MarkColor color;
 };
