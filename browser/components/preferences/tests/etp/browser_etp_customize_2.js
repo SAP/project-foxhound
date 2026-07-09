@@ -10,6 +10,8 @@ const TP_PBM_PREF = "privacy.trackingprotection.pbmode.enabled";
 const EMAIL_TP_PREF = "privacy.trackingprotection.emailtracking.enabled";
 const EMAIL_TP_PBM_PREF =
   "privacy.trackingprotection.emailtracking.pbmode.enabled";
+const STP_PREF = "privacy.trackingprotection.socialtracking.enabled";
+const STP_COOKIES_PREF = "privacy.socialtracking.block_cookies.enabled";
 const CRYPTOMINING_PREF = "privacy.trackingprotection.cryptomining.enabled";
 const FINGERPRINTING_PREF = "privacy.trackingprotection.fingerprinting.enabled";
 const SUSPECT_FP_PREF = "privacy.fingerprintingProtection";
@@ -192,6 +194,8 @@ add_task(async function test_custom_tracking_protection_controls() {
       [TP_PBM_PREF, true],
       [EMAIL_TP_PREF, false],
       [EMAIL_TP_PBM_PREF, true],
+      [STP_PREF, false],
+      [STP_COOKIES_PREF, true],
     ],
   });
 
@@ -223,6 +227,12 @@ add_task(async function test_custom_tracking_protection_controls() {
     !Services.prefs.getBoolPref(EMAIL_TP_PBM_PREF),
     "Private-windows email tracking protection disabled when toggle is off"
   );
+  // Social tracking protection follows all-windows tracking protection
+  // (bug 2050000): with the toggle off it must be disabled.
+  ok(
+    !Services.prefs.getBoolPref(STP_PREF),
+    "Social tracking protection disabled when toggle is off"
+  );
 
   prefChange = TestUtils.waitForPrefChange(
     TP_PBM_PREF,
@@ -243,6 +253,10 @@ add_task(async function test_custom_tracking_protection_controls() {
     Services.prefs.getBoolPref(EMAIL_TP_PBM_PREF),
     "Private-windows email tracking protection enabled with the toggle"
   );
+  ok(
+    !Services.prefs.getBoolPref(STP_PREF),
+    "Social tracking protection stays disabled for private-only TP"
+  );
 
   info("Switch context to protect all windows");
   await changeMozSelectValue(tpContext, "all");
@@ -262,6 +276,10 @@ add_task(async function test_custom_tracking_protection_controls() {
     Services.prefs.getBoolPref(EMAIL_TP_PBM_PREF),
     "Private-windows email tracking protection enabled for all windows"
   );
+  ok(
+    Services.prefs.getBoolPref(STP_PREF),
+    "Social tracking protection enabled for all windows"
+  );
 
   info("Switch back to private windows only");
   await changeMozSelectValue(tpContext, "pbmOnly");
@@ -280,6 +298,72 @@ add_task(async function test_custom_tracking_protection_controls() {
   ok(
     Services.prefs.getBoolPref(EMAIL_TP_PBM_PREF),
     "Private-windows email tracking protection stays enabled"
+  );
+  ok(
+    !Services.prefs.getBoolPref(STP_PREF),
+    "Social tracking protection disabled when choosing private only"
+  );
+
+  gBrowser.removeCurrentTab();
+});
+
+// Opening the pane must not write the social tracking pref; it is only written
+// on user interaction (bug 2050000).
+add_task(async function test_social_tracking_not_written_on_load() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      [CAT_PREF, "custom"],
+      [TP_PREF, false],
+      [TP_PBM_PREF, true],
+      [STP_COOKIES_PREF, true],
+    ],
+  });
+
+  Services.prefs.clearUserPref(STP_PREF);
+  ok(
+    !Services.prefs.prefHasUserValue(STP_PREF),
+    "Social tracking pref has no user value before opening the pane"
+  );
+
+  await openEtpCustomizePage();
+  getControl(
+    gBrowser.contentDocument,
+    "etpCustomTrackingProtectionEnabledContext"
+  );
+
+  ok(
+    !Services.prefs.prefHasUserValue(STP_PREF),
+    "Opening the ETP customize pane does not write the social tracking pref"
+  );
+
+  gBrowser.removeCurrentTab();
+});
+
+// When the user isn't blocking social tracking cookies, choosing all windows
+// must not enable social tracking protection (bug 2050000).
+add_task(async function test_social_tracking_gated_on_block_cookies() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      [CAT_PREF, "custom"],
+      [TP_PREF, false],
+      [TP_PBM_PREF, true],
+      [STP_PREF, false],
+      [STP_COOKIES_PREF, false],
+    ],
+  });
+
+  let { doc } = await openEtpCustomizePage();
+  let tpContext = getControl(doc, "etpCustomTrackingProtectionEnabledContext");
+
+  info("Switch context to protect all windows with cookie blocking off");
+  await changeMozSelectValue(tpContext, "all");
+  ok(
+    Services.prefs.getBoolPref(TP_PREF),
+    "Tracking protection pref enabled for all windows"
+  );
+  ok(
+    !Services.prefs.getBoolPref(STP_PREF),
+    "Social tracking protection stays disabled when not blocking social cookies"
   );
 
   gBrowser.removeCurrentTab();
