@@ -14,6 +14,7 @@ import androidx.fragment.compose.content
 import androidx.navigation.fragment.findNavController
 import androidx.navigation.fragment.navArgs
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
+import mozilla.components.feature.ipprotection.store.IPProtectionAction
 import mozilla.components.lib.state.helpers.StoreProvider.Companion.fragmentStore
 import org.mozilla.fenix.R
 import org.mozilla.fenix.components.accounts.FenixFxAEntryPoint
@@ -51,6 +52,18 @@ class IPProtectionBottomSheetFragment : BottomSheetDialogFragment() {
                 IPProtectionPromptTelemetryMiddleware(),
             ),
         )
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        // The user might already have an account, that we should check - they either need to authorize, or they are
+        // already entitled to use the service, and we will save them an authorization flow.
+        // FIXME(IPP): the user might navigate into try now faster than the account check completes, in which case,
+        //  even if already entitled, they would have to re-authorize vpn. We probably want to chain the check and
+        //  toggle actions or even check the account before showing the onboarding (so we don't have to maintain the UI
+        //  in a loading state.
+        requireComponents.ipProtection.store.dispatch(IPProtectionAction.CheckAccount)
     }
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog =

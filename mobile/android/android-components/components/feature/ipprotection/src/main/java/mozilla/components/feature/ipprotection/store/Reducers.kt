@@ -144,6 +144,23 @@ internal fun iPProtectionReducer(
                     )
                 }
 
+                // It is a bit of an edge case, but if we hit a toggle action while the account
+                // check is still in progress, we do want to move forward with authorization flow.
+                //
+                // An account check can be triggered, that will move the state into either entitled
+                // or needs authorization state. But if the check is taking longer, then the toggle
+                // action should move the state into requesting auth anyway.
+                //
+                // Ideally, we want to have an explicit state transition path for an account check;
+                // for now, that is what we ship with.
+                if (status == AccountStatus.TryAgain) {
+                    return state.copy(
+                        accountState = state.accountState.copy(
+                            status = AccountStatus.RequestingAuthorization,
+                        ),
+                    )
+                }
+
                 if (status == AccountStatus.Authenticated) {
                     throw IllegalStateException("VPN state machine is in a bad state")
                 }
