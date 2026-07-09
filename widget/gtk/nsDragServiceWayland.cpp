@@ -5,7 +5,9 @@
 #include "nsDragService.h"
 #include "nsDragServiceWayland.h"
 #include "AsyncClipboardRequest.h"
-#include "FileTransferPortal.h"
+#ifdef MOZ_ENABLE_DBUS
+#  include "FileTransferPortal.h"
+#endif
 
 using namespace mozilla;
 using namespace mozilla::widget;
@@ -151,11 +153,13 @@ static GUniquePtr<char*> GetURIs(const gchar* aData, int aLength) {
 }
 
 static GUniquePtr<char*> GetURIsFromPortal(const gchar* aData, int aLength) {
+#ifdef MOZ_ENABLE_DBUS
   nsCString data(nsDependentCString(aData, aLength));
   if (widget::FileTransferPortal* portal =
           widget::FileTransferPortal::GetPortal()) {
     return GUniquePtr<char*>(portal->RetrieveFilesSync(data.get()));
   }
+#endif
   return nullptr;
 }
 

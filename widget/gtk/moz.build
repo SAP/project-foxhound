@@ -118,7 +118,6 @@ SOURCES += [
 
 if CONFIG["MOZ_WAYLAND"]:
     UNIFIED_SOURCES += [
-        "FileTransferPortal.cpp",
         "MozContainerWayland.cpp",
         "nsDragServiceWayland.cpp",
         "nsWaylandDisplay.cpp",
@@ -218,5 +217,10 @@ if CONFIG["MOZ_ENABLE_DBUS"]:
         "DBusService.cpp",
     ]
     CXXFLAGS += CONFIG["MOZ_DBUS_CFLAGS"]
+
+if CONFIG["MOZ_WAYLAND"] and CONFIG["MOZ_ENABLE_DBUS"]:
+    UNIFIED_SOURCES += [
+        "FileTransferPortal.cpp",
+    ]
 
 COMPILE_FLAGS["WARNINGS_CXXFLAGS"] += ["-Werror=switch"]

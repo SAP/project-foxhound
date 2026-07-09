@@ -21,10 +21,10 @@
 #include "mozilla/StaticPrefs_widget.h"
 #include "mozilla/WidgetUtils.h"
 #include "nsIPowerManagerService.h"
+#include "nsIObserverService.h"
 #include "mozilla/Preferences.h"
 #ifdef MOZ_ENABLE_DBUS
 #  include <gio/gio.h>
-#  include "nsIObserverService.h"
 #  include "WidgetUtilsGtk.h"
 #endif
 #include "WakeLockListener.h"

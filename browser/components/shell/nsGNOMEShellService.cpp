@@ -4,9 +4,6 @@
 
 #include "mozilla/Preferences.h"
 #include "mozilla/widget/GSettings.h"
-#include "nsWindow.h"
-#include "WidgetUtils.h"
-
 #include "nsAppRunner.h"
 #include "nsCOMPtr.h"
 #include "nsGNOMEShellService.h"
@@ -29,9 +26,14 @@
 #include "mozilla/WidgetUtilsGtk.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/Promise.h"
-#include "mozilla/widget/AsyncDBus.h"
 #include "nsImageToPixbuf.h"
 #include "nsXULAppAPI.h"
+
+#ifdef MOZ_ENABLE_DBUS
+#  include "nsWindow.h"
+#  include "WidgetUtils.h"
+#  include "mozilla/widget/AsyncDBus.h"
+#endif
 
 #include <glib.h>
 #include <gio/gio.h>
@@ -270,7 +272,7 @@ nsGNOMEShellService::SetDefaultBrowser(bool aForAllUsers) {
     NS_ENSURE_SUCCESS(rv, rv);
 
     nsCOMPtr<nsIStringBundle> brandBundle;
-    rv = bundleService->CreateBundle(BRAND_PROPERTIES,
+    rv = bundleService->CreateBundle(SHELL_BRAND_PROPERTIES_URI,
                                      getter_AddRefs(brandBundle));
     NS_ENSURE_SUCCESS(rv, rv);
 
@@ -382,7 +384,8 @@ nsGNOMEShellService::SetDesktopBackground(dom::Element* aElement,
   if (nsCOMPtr<nsIStringBundleService> bundleService =
           components::StringBundle::Service()) {
     nsCOMPtr<nsIStringBundle> brandBundle;
-    bundleService->CreateBundle(BRAND_PROPERTIES, getter_AddRefs(brandBundle));
+    bundleService->CreateBundle(SHELL_BRAND_PROPERTIES_URI,
+                                getter_AddRefs(brandBundle));
     if (bundleService) {
       brandBundle->GetStringFromName("brandShortName", brandName);
     }
@@ -562,18 +565,21 @@ class AsyncGIconReader {
   ~AsyncGIconReader() = default;
 };
 
+#ifdef MOZ_ENABLE_DBUS
 static RefPtr<widget::DBusProxyPromise> CreateDynamicLauncherProxy() {
   return widget::CreateDBusProxyForBus(
       G_BUS_TYPE_SESSION, G_DBUS_PROXY_FLAGS_NONE, nullptr,
       "org.freedesktop.portal.Desktop", "/org/freedesktop/portal/desktop",
       "org.freedesktop.portal.DynamicLauncher");
 }
+#endif
 
 NS_IMETHODIMP nsGNOMEShellService::RequestInstallDynamicLauncher(
     const nsACString& aEntryId, nsIINIParserWriter* aDesktopEntry,
     mozIDOMWindowProxy* aWindow, JSContext* aCx, dom::Promise** aPromise) {
   MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread());
 
+#ifdef MOZ_ENABLE_DBUS
   ErrorResult rv;
   RefPtr<dom::Promise> promise =
       dom::Promise::Create(xpc::CurrentNativeGlobal(aCx), rv);
@@ -769,12 +775,15 @@ NS_IMETHODIMP nsGNOMEShellService::RequestInstallDynamicLauncher(
 
   promise.forget(aPromise);
   return NS_OK;
+#else
+  return NS_ERROR_FAILURE;
+#endif
 }
 
 NS_IMETHODIMP nsGNOMEShellService::RequestUninstallDynamicLauncher(
     const nsACString& aEntryId, JSContext* aCx, dom::Promise** aPromise) {
   MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread());
-
+#ifdef MOZ_ENABLE_DBUS
   ErrorResult rv;
   RefPtr<dom::Promise> promise =
       dom::Promise::Create(xpc::CurrentNativeGlobal(aCx), rv);
@@ -811,4 +820,7 @@ NS_IMETHODIMP nsGNOMEShellService::RequestUninstallDynamicLauncher(
 
   promise.forget(aPromise);
   return NS_OK;
+#else
+  return NS_ERROR_FAILURE;
+#endif
 }

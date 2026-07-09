@@ -8,6 +8,6 @@
 #define PREF_CHECKDEFAULTBROWSER "browser.shell.checkDefaultBrowser"
 #define PREF_DEFAULTBROWSERCHECKCOUNT "browser.shell.defaultBrowserCheckCount"
 
-#define BRAND_PROPERTIES "chrome://branding/locale/brand.properties"
+#define SHELL_BRAND_PROPERTIES_URI "chrome://branding/locale/brand.properties"
 
 #endif  // BROWSER_COMPONENTS_SHELL_NSSHELLSERVICE_H_
