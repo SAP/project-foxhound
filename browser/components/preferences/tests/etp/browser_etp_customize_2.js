@@ -523,3 +523,52 @@ add_task(async function test_custom_tracker_lists_force_update() {
   MockRegistrar.unregister(mockCid);
   gBrowser.removeCurrentTab();
 });
+
+// The suspect fingerprinting checkbox and scope menu must record the
+// privacy.ui.fpp.click telemetry, matching the legacy UI (bug 2050750).
+add_task(async function test_custom_suspect_fingerprinting_telemetry() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      [CAT_PREF, "custom"],
+      [SUSPECT_FP_PREF, false],
+      [SUSPECT_FP_PBM_PREF, false],
+    ],
+  });
+
+  Services.fog.testResetFOG();
+
+  let { doc } = await openEtpCustomizePage();
+  let suspectFpToggle = getControl(
+    doc,
+    "etpCustomSuspectFingerprintingProtectionEnabled"
+  );
+  let suspectContext = getControl(
+    doc,
+    "etpCustomSuspectFingerprintingProtectionEnabledContext"
+  );
+
+  info("Enable suspect fingerprinting protection through the toggle");
+  let prefChange = TestUtils.waitForPrefChange(
+    SUSPECT_FP_PBM_PREF,
+    value => value === true
+  );
+  synthesizeClick(suspectFpToggle.buttonEl);
+  await prefChange;
+
+  let checkboxEvents = Glean.privacyUiFppClick.checkbox.testGetValue();
+  is(checkboxEvents.length, 1, "One checkbox telemetry event recorded");
+  is(
+    checkboxEvents[0].extra.checked,
+    "true",
+    "Checkbox event records the checked state"
+  );
+
+  info("Switch suspect protection context to all windows");
+  await changeMozSelectValue(suspectContext, "all");
+
+  let menuEvents = Glean.privacyUiFppClick.menu.testGetValue();
+  is(menuEvents.length, 1, "One menu telemetry event recorded");
+  is(menuEvents[0].extra.value, "all", "Menu event records the selected value");
+
+  gBrowser.removeCurrentTab();
+});

@@ -3970,6 +3970,9 @@ Preferences.addSetting({
       etpCustomFingerprintingProtectionEnabledPBM.value = false;
     }
   },
+  onUserChange(value) {
+    Glean.privacyUiFppClick.checkbox.record({ checked: value });
+  },
 });
 
 Preferences.addSetting({
@@ -4009,5 +4012,8 @@ Preferences.addSetting({
       etpCustomFingerprintingProtectionEnabled.value = false;
       etpCustomFingerprintingProtectionEnabledPBM.value = true;
     }
+  },
+  onUserChange(value) {
+    Glean.privacyUiFppClick.menu.record({ value });
   },
 });
