@@ -66,7 +66,7 @@ async function createMapping(toolbox, doc, localTestFolder, expectedOrigin) {
   ok(folderPath, "Got the current folder path");
 
   const previousMappingCount = getMappingsCount(doc);
-  const onMappingsUpdated = toolbox.once("local-mode-mappings-updated");
+  const onMappingsUpdated = LocalModeMappings.once("updated");
   newMapping.click();
 
   info("Wait for the mappings to be updated");
@@ -157,7 +157,7 @@ async function disableMapping(toolbox, doc, mappingIndex) {
     "The mapping is enabled"
   );
 
-  const onMappingsUpdated = toolbox.once("local-mode-mappings-updated");
+  const onMappingsUpdated = LocalModeMappings.once("updated");
   toggleButton.click();
 
   info("Wait for the mapping to be displayed as disabled");
@@ -177,7 +177,7 @@ async function removeMapping(toolbox, doc, mappingIndex) {
     ".local-mode-mapping-remove"
   );
 
-  const onMappingsUpdated = toolbox.once("local-mode-mappings-updated");
+  const onMappingsUpdated = LocalModeMappings.once("updated");
   const onConfirmAccepted = BrowserTestUtils.promiseAlertDialogOpen("accept");
   removeButton.click();
   await onConfirmAccepted;
@@ -200,7 +200,7 @@ async function checkBuggyPath(toolbox, doc) {
   info("Set the first mapping to a buggy, non-existing path");
   // Use internal preference as the folder picker wouldn't allow us to do that,
   // nor can we easily remove our local test folder
-  const onMappingsUpdated = toolbox.once("local-mode-mappings-updated");
+  const onMappingsUpdated = LocalModeMappings.once("updated");
   Services.prefs.setStringPref(
     `${LocalModeMappings.LOCAL_MODE_MAPPINGS_PREF_PREFIX}${mappingIndex}.path`,
     buggyPath

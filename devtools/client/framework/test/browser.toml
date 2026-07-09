@@ -4,6 +4,7 @@ subsuite = "devtools"
 support-files = [
   "reload/*",
   "local-mode/index.html",
+  "local-mode/folder/test.html",
   "browser_toolbox_options_disable_js.html",
   "browser_toolbox_options_disable_js_iframe.html",
   "browser_toolbox_options_disable_cache.sjs",
@@ -226,6 +227,8 @@ skip-if = [
 ["browser_toolbox_options_frames_button.js"]
 
 ["browser_toolbox_options_local_mode.js"]
+
+["browser_toolbox_options_local_mode_notice.js"]
 
 ["browser_toolbox_options_multiple_tabs.js"]
 
