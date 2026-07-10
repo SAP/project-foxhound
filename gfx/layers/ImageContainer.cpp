@@ -794,10 +794,11 @@ nsresult PlanarYCbCrImage::BuildSurfaceDescriptorBuffer(
 
     // If we can copy directly from the surface, let's do that to avoid the YUV
     // to RGB conversion.
-    if (mSourceSurface && mSourceSurface->GetSize() == size) {
-      DataSourceSurface::ScopedMap map(mSourceSurface, DataSourceSurface::READ);
+    RefPtr<gfx::DataSourceSurface> sourceSurface = mSourceSurface.Get();
+    if (sourceSurface && sourceSurface->GetSize() == size) {
+      DataSourceSurface::ScopedMap map(sourceSurface, DataSourceSurface::READ);
       if (map.IsMapped() && SwizzleData(map.GetData(), map.GetStride(),
-                                        mSourceSurface->GetFormat(), buffer,
+                                        sourceSurface->GetFormat(), buffer,
                                         stride, format, size)) {
         return NS_OK;
       }
@@ -981,9 +982,8 @@ nsresult PlanarYCbCrImage::AdoptData(const Data& aData) {
 }
 
 already_AddRefed<gfx::SourceSurface> PlanarYCbCrImage::GetAsSourceSurface() {
-  if (mSourceSurface) {
-    RefPtr<gfx::SourceSurface> surface(mSourceSurface);
-    return surface.forget();
+  if (RefPtr<gfx::DataSourceSurface> cached = mSourceSurface.Get()) {
+    return cached.forget();
   }
 
   gfx::IntSize size(mSize);
@@ -1013,30 +1013,24 @@ already_AddRefed<gfx::SourceSurface> PlanarYCbCrImage::GetAsSourceSurface() {
     return nullptr;
   }
 
-  mSourceSurface = surface;
+  mSourceSurface.Set(surface);
 
   return surface.forget();
 }
 
-PlanarYCbCrImage::~PlanarYCbCrImage() {
-  NS_ReleaseOnMainThread("PlanarYCbCrImage::mSourceSurface",
-                         mSourceSurface.forget());
-}
+PlanarYCbCrImage::~PlanarYCbCrImage() = default;
 
 NVImage::NVImage() : Image(nullptr, ImageFormat::NV_IMAGE), mBufferSize(0) {}
 
-NVImage::~NVImage() {
-  NS_ReleaseOnMainThread("NVImage::mSourceSurface", mSourceSurface.forget());
-}
+NVImage::~NVImage() = default;
 
 IntSize NVImage::GetSize() const { return mSize; }
 
 IntRect NVImage::GetPictureRect() const { return mData.mPictureRect; }
 
 already_AddRefed<SourceSurface> NVImage::GetAsSourceSurface() {
-  if (mSourceSurface) {
-    RefPtr<gfx::SourceSurface> surface(mSourceSurface);
-    return surface.forget();
+  if (RefPtr<gfx::DataSourceSurface> cached = mSourceSurface.Get()) {
+    return cached.forget();
   }
 
   // Convert the current NV12 or NV21 data to YUV420P so that we can follow the
@@ -1094,7 +1088,7 @@ already_AddRefed<SourceSurface> NVImage::GetAsSourceSurface() {
     return nullptr;
   }
 
-  mSourceSurface = surface;
+  mSourceSurface.Set(surface);
 
   return surface.forget();
 }
@@ -1116,7 +1110,8 @@ nsresult NVImage::BuildSurfaceDescriptorBuffer(
 
   UniquePtr<uint8_t[]> buffer;
 
-  if (!mSourceSurface) {
+  RefPtr<gfx::DataSourceSurface> sourceSurface = mSourceSurface.Get();
+  if (!sourceSurface) {
     const int bufferLength =
         ySize.height * mData.mYStride + cbcrSize.height * cbcrSize.width * 2;
     buffer = MakeUnique<uint8_t[]>(bufferLength);
@@ -1146,7 +1141,7 @@ nsresult NVImage::BuildSurfaceDescriptorBuffer(
     return NS_ERROR_FAILURE;
   }
 
-  if (mSourceSurface && mSourceSurface->GetSize() != size) {
+  if (sourceSurface && sourceSurface->GetSize() != size) {
     return NS_ERROR_NOT_IMPLEMENTED;
   }
 
@@ -1158,7 +1153,7 @@ nsresult NVImage::BuildSurfaceDescriptorBuffer(
     return rv;
   }
 
-  if (!mSourceSurface) {
+  if (!sourceSurface) {
     rv = gfx::ConvertYCbCrToRGB(aData, format, size, output, stride);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       MOZ_ASSERT_UNREACHABLE("Failed to convert YUV into RGB data");
@@ -1167,12 +1162,12 @@ nsresult NVImage::BuildSurfaceDescriptorBuffer(
     return NS_OK;
   }
 
-  DataSourceSurface::ScopedMap map(mSourceSurface, DataSourceSurface::WRITE);
+  DataSourceSurface::ScopedMap map(sourceSurface, DataSourceSurface::WRITE);
   if (NS_WARN_IF(!map.IsMapped())) {
     return NS_ERROR_FAILURE;
   }
 
-  if (!SwizzleData(map.GetData(), map.GetStride(), mSourceSurface->GetFormat(),
+  if (!SwizzleData(map.GetData(), map.GetStride(), sourceSurface->GetFormat(),
                    output, stride, format, size)) {
     return NS_ERROR_FAILURE;
   }
