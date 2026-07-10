@@ -790,7 +790,7 @@ bool DataViewObject::getFloat16Impl(JSContext* cx, const CallArgs& args) {
     return false;
   }
 
-  args.rval().setDouble(CanonicalizeNaN(static_cast<double>(val)));
+  args.rval().setDouble(static_cast<double>(val));
   return true;
 }
 
@@ -810,7 +810,7 @@ bool DataViewObject::getFloat32Impl(JSContext* cx, const CallArgs& args) {
     return false;
   }
 
-  args.rval().setDouble(CanonicalizeNaN(val));
+  args.rval().setDouble(val);
   return true;
 }
 
@@ -830,7 +830,7 @@ bool DataViewObject::getFloat64Impl(JSContext* cx, const CallArgs& args) {
     return false;
   }
 
-  args.rval().setDouble(CanonicalizeNaN(val));
+  args.rval().setDouble(val);
   return true;
 }
 

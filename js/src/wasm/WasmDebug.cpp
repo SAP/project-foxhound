@@ -408,10 +408,10 @@ bool DebugState::getGlobal(Instance& instance, uint32_t globalIndex,
         vp.set(NumberValue((double)value.i64()));
         break;
       case ValType::F32:
-        vp.set(NumberValue(JS::CanonicalizeNaN(value.f32())));
+        vp.set(NumberValue(value.f32()));
         break;
       case ValType::F64:
-        vp.set(NumberValue(JS::CanonicalizeNaN(value.f64())));
+        vp.set(NumberValue(value.f64()));
         break;
       case ValType::Ref:
         // It's possible to do better.  We could try some kind of hashing
@@ -444,11 +444,11 @@ bool DebugState::getGlobal(Instance& instance, uint32_t globalIndex,
       break;
     }
     case ValType::F32: {
-      vp.set(NumberValue(JS::CanonicalizeNaN(*static_cast<float*>(dataPtr))));
+      vp.set(NumberValue(*static_cast<float*>(dataPtr)));
       break;
     }
     case ValType::F64: {
-      vp.set(NumberValue(JS::CanonicalizeNaN(*static_cast<double*>(dataPtr))));
+      vp.set(NumberValue(*static_cast<double*>(dataPtr)));
       break;
     }
     case ValType::Ref: {

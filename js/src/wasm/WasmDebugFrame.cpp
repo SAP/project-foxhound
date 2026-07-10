@@ -109,10 +109,10 @@ bool DebugFrame::getLocal(uint32_t localIndex, MutableHandleValue vp) {
       vp.set(NumberValue((double)*static_cast<int64_t*>(dataPtr)));
       break;
     case jit::MIRType::Float32:
-      vp.set(NumberValue(JS::CanonicalizeNaN(*static_cast<float*>(dataPtr))));
+      vp.set(NumberValue(*static_cast<float*>(dataPtr)));
       break;
     case jit::MIRType::Double:
-      vp.set(NumberValue(JS::CanonicalizeNaN(*static_cast<double*>(dataPtr))));
+      vp.set(NumberValue(*static_cast<double*>(dataPtr)));
       break;
     case jit::MIRType::WasmAnyRef:
       vp.set(((AnyRef*)dataPtr)->toJSValue());
