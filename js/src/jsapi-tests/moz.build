@@ -151,6 +151,7 @@ UNIFIED_SOURCES += [
     "testUbiNode.cpp",
     "testUncaughtSymbol.cpp",
     "testUTF8.cpp",
+    "testValueNaN.cpp",
     "testWasmEncoder.cpp",
     "testWasmLEB128.cpp",
     "testWasmMasm.cpp",

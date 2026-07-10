@@ -90,10 +90,8 @@ class JS_PUBLIC_API Value;
 //   holds the address of a JSObject; if a string, the address of a
 //   JSString; and so on.
 //
-//   To enforce this invariant, anywhere that may provide a numerical value
-//   which may have a non-canonical NaN value (NaN, but not the one we've chosen
-//   for ECMAScript) we must convert that to the canonical NaN. See
-//   JS::CanonicalizeNaN.
+//   To enforce this invariant, setDouble and setNumber canonicalize NaNs before
+//   storing them; see JS::CanonicalizeNaN.
 //
 // We have two boxing modes defined: NUNBOX32 and PUNBOX64.The first is
 // "NaN unboxed boxing" (or Nunboxing), as non-Number payload are stored
@@ -516,9 +514,7 @@ class Value {
   explicit constexpr Value(uint64_t asBits) : asBits_(asBits) {}
 
   static uint64_t bitsFromDouble(double d) {
-#if defined(JS_NONCANONICAL_HARDWARE_NAN)
     d = CanonicalizeNaN(d);
-#endif
     return mozilla::BitwiseCast<uint64_t>(d);
   }
 
@@ -1111,7 +1107,7 @@ static inline Value DoubleValue(double dbl) {
 }
 
 static inline Value CanonicalizedDoubleValue(double d) {
-  return Value::fromDouble(CanonicalizeNaN(d));
+  return DoubleValue(d);
 }
 
 static inline Value NaNValue() {
