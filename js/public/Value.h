@@ -450,7 +450,14 @@ static MOZ_ALWAYS_INLINE double Infinity() {
 // Convert an arbitrary double to one compatible with JS::Value representation
 // by replacing any NaN value with a canonical one.
 static MOZ_ALWAYS_INLINE double CanonicalizeNaN(double d) {
-  if (MOZ_UNLIKELY(std::isnan(d))) {
+  // std::isnan(double) is not inlined on Linux with glibc < 2.23. Use
+  // __builtin_isnan instead to ensure the NaN-check is inlined.
+#if defined(__clang__) || defined(__GNUC__)
+  bool isNaN = __builtin_isnan(d);
+#else
+  bool isNaN = std::isnan(d);
+#endif
+  if (MOZ_UNLIKELY(isNaN)) {
     return GenericNaN();
   }
   return d;
