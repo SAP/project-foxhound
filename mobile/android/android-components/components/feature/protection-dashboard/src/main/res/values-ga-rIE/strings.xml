@@ -7,16 +7,26 @@
 -->
 
 <resources>
+  <!-- Title shown in the protection dashboard indicating the user is protected -->
+  <string name="mozac_protections_dashboard_youre_protected">Tá tú faoi chosaint</string>
+  <!-- Tracker category: Advertising trackers -->
+  <string name="protections_dashboard_category_ads">Fógraí</string>
+  <!-- Tracker category: Analytics trackers -->
+  <string name="protections_dashboard_category_analytics">Anailísíocht</string>
+  <!-- Tracker category: Social media trackers -->
+  <string name="protections_dashboard_category_social">Sóisialta</string>
+  <!-- Tracker category: Other trackers -->
+  <string name="protections_dashboard_category_others">Cinn Eile</string>
   <plurals name="mozac_protections_dashboard_total_blocked_since_2">
     <!--
       Footer line shown in the dashboard summarizing total trackers blocked
       since a specific date. %1$d is the trackers count number (e.g. 123).
       %2$s is the formatted date (e.g. "February 23, 2026").
     -->
-    <item quantity="one">%1$d rianaitheoir blocáilte ó %2$s</item>
-    <item quantity="two">%1$d rianaitheoir blocáilte ó %2$s</item>
-    <item quantity="few">%1$d rianaitheoir blocáilte ó %2$s</item>
-    <item quantity="many">%1$d rianaitheoir blocáilte ó %2$s</item>
-    <item quantity="other">%1$d rianaitheoir blocáilte ó %2$s</item>
+    <item quantity="one">%1$d lorgaire blocáilte ó %2$s</item>
+    <item quantity="two">%1$d lorgaire blocáilte ó %2$s</item>
+    <item quantity="few">%1$d lorgaire blocáilte ó %2$s</item>
+    <item quantity="many">%1$d lorgaire blocáilte ó %2$s</item>
+    <item quantity="other">%1$d lorgaire blocáilte ó %2$s</item>
   </plurals>
 </resources>

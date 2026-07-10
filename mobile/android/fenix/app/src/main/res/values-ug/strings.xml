@@ -630,7 +630,7 @@
   <!-- Marketing onboarding primary button text. -->
   <string name="nova_onboarding_marketing_primary_button_text_2">يول قويۇپ ۋە داۋاملاشتۇر</string>
   <!-- Marketing onboarding secondary button text. -->
-  <string name="nova_onboarding_marketing_secondary_button_text">ياق رەھمەت</string>
+  <string name="nova_onboarding_marketing_secondary_button_text" tools:ignore="UnusedResources">ياق رەھمەت</string>
   <!-- Notifications onboarding title. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_notifications_title" tools:ignore="BrandUsage,UnusedResources">ئۇقتۇرۇش Firefox ئارقىلىق تېخىمۇ بىخەتەر بولۇشىڭىزغا ياردەم بېرىدۇ</string>
   <!-- Notifications onboarding subtitle. 'Firefox' is intentionally hardcoded. -->
@@ -1816,6 +1816,8 @@
   <string name="download_rename_error_exists_error">بۇ جايدا «%s» ئاتلىق ھۆججەت مەۋجۇت</string>
   <!-- Error message when renaming with an invalid file name. -->
   <string name="download_rename_error_invalid_name_error">ھۆججەت ئاتىدا «/» نى ئىشلەتكىلى بولمايدۇ</string>
+  <!-- Error message shown when a user tries to rename a downloaded file but only changes the casing (e.g., "file.txt" to "File.txt"). -->
+  <string name="download_rename_error_case_only_error">سىز كىرگۈزگەن ئىسىم پەقەت چوڭ ياكى كىچىك ھەرپنىلا ئۆزگەرتىدۇ. باشقا ھۆججەت ئاتىنى سىناپ بېقىڭ.</string>
   <!-- Title for the alert dialog when the file cannot be renamed. -->
   <string name="download_rename_error_cannot_rename_title">ھۆججەت ئاتىنى ئۆزگەرتەلمەيدۇ</string>
   <!-- Description message for the alert dialog when the file cannot be renamed. -->
@@ -1901,6 +1903,11 @@
   <!-- Text for the filter button to show all other file types in the downloads list -->
   <string name="download_content_type_filter_other_1">باشقا</string>
   <!--
+    Title for the alert dialog to rename a file and/or change its download location before downloading it.
+    %s is the formatted size of the file (e.g., "12.5 MB").
+  -->
+  <string name="download_rename_and_change_location_dialog_title">ھۆججەتنى چۈشۈرەمدۇ؟ (%s)</string>
+  <!--
     Title for the alert dialog to rename a file and/or change its download location
     when the file size is not available before downloading it.
   -->
@@ -1919,6 +1926,12 @@
   <string name="webcompat_reporter_label_url">تور ئادرېسى</string>
   <!-- The error message of the URL text field when an invalid URL has been entered. -->
   <string name="webcompat_reporter_url_error_invalid">ئىناۋەتلىك تور ئادرېسى كىرگۈزۈڭ</string>
+  <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
+  <string name="webcompat_reporter_label_whats_broken_3">نېمە ئىشلىمەيۋاتىدۇ؟</string>
+  <!-- Content description for the icon button that clears the selected broken site reason in the WebCompat Reporter. -->
+  <string name="webcompat_reporter_clear_reason_content_description">تاللانغان سەۋەبنى تازىلا</string>
+  <!-- The error message of the description when the user selects "Something else" as the reason, but left the description empty or too short. -->
+  <string name="webcompat_reporter_description_error">كەم دېگەندە 10 ھەرپ كىرگۈزۈڭ</string>
   <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_label_whats_broken_2">نېمە بۇزۇلدى؟</string>
   <!-- The placeholder text for the dropdown where a user selects a high-level reason why the site is broken. -->

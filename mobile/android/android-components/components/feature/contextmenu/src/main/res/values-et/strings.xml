@@ -21,6 +21,8 @@
   <string name="mozac_feature_contextmenu_share_image">Jaga pilti</string>
   <!-- Text for context menu item to copy the link to the clipboard. -->
   <string name="mozac_feature_contextmenu_copy_link">Kopeeri link</string>
+  <!-- Text for context menu item to copy the link text to the clipboard. -->
+  <string name="mozac_feature_contextmenu_copy_link_text">Kopeeri lingi tekst</string>
   <!-- Text for context menu item to copy the URL pointing to the image to the clipboard. -->
   <string name="mozac_feature_contextmenu_copy_image_location">Kopeeri pildi asukoht</string>
   <!-- Text for context menu item to save / download the image. -->
@@ -35,6 +37,8 @@
   <string name="mozac_feature_contextmenu_snackbar_new_private_tab_opened">Avati uus privaatne kaart</string>
   <!-- Text for confirmation "snackbar" shown after copying a link or image URL to the clipboard. -->
   <string name="mozac_feature_contextmenu_snackbar_link_copied">Link kopeeriti vahemällu</string>
+  <!-- Text for confirmation "snackbar" shown after copying a link text to the clipboard. -->
+  <string name="mozac_feature_contextmenu_snackbar_link_text_copied">Lingi tekst kopeeriti vahemällu</string>
   <!-- Action shown in a "snacbkar" after opening a new/private tab. Clicking this action will switch to the newly opened tab. -->
   <string name="mozac_feature_contextmenu_snackbar_action_switch">Lülitu</string>
   <!-- Text for context menu item to open the link in an external app. -->

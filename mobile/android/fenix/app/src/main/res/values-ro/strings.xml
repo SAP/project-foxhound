@@ -134,7 +134,7 @@
     Text for the body for the auto-close dialog of the inactive tabs.
     %1$s is the name of the app (for example "Firefox").
   -->
-  <string name="tab_tray_inactive_auto_close_body_2">%1$s poate închide filele pe care nu le-ai vizualizat în ultima lună.</string>
+  <string name="tab_tray_inactive_auto_close_body_2">%1$s poate închide filele pe care nu ai mai intrat în ultima lună.</string>
   <!-- Content description for close button in the auto-close dialog of the inactive tabs. -->
   <string name="tab_tray_inactive_auto_close_button_content_description">Închide</string>
   <!-- Text for turn on auto close tabs button in the auto-close dialog of the inactive tabs. -->
@@ -665,9 +665,13 @@
   <!-- Marketing onboarding primary button text. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage,UnusedResources">Ajută Firefox</string>
   <!-- Marketing onboarding primary button text. -->
+  <string name="nova_onboarding_marketing_primary_button_text_3">Da</string>
+  <!-- Marketing onboarding primary button text. -->
   <string name="nova_onboarding_marketing_primary_button_text_2">Permite și continuă</string>
   <!-- Marketing onboarding secondary button text. -->
-  <string name="nova_onboarding_marketing_secondary_button_text">Nu, mulțumesc</string>
+  <string name="nova_onboarding_marketing_secondary_button_text" tools:ignore="UnusedResources">Nu, mulțumesc</string>
+  <!-- Marketing onboarding secondary button text. -->
+  <string name="nova_onboarding_marketing_secondary_button_text_2">Nu</string>
   <!-- Notifications onboarding title. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_notifications_title" tools:ignore="BrandUsage,UnusedResources">Notificările te ajută să fii mai în siguranță cu Firefox</string>
   <!-- Notifications onboarding subtitle. 'Firefox' is intentionally hardcoded. -->
@@ -2192,7 +2196,7 @@
   <!-- Title for the bookmark list empty state at the root level. -->
   <string name="bookmark_empty_list_root_title">Păstrează-ți toate marcajele preferate la un loc</string>
   <!-- Bookmark screen folder description. %s is the count of bookmark folder children -->
-  <string name="bookmarks_folder_description">Marcaje în dosarul: %s</string>
+  <string name="bookmarks_folder_description">Marcaje în dosar: %s</string>
   <!-- Text for the button to navigate to sync authentication -->
   <string name="bookmark_empty_list_guest_cta">Intră în cont pentru sincronizare</string>
   <!-- Description for the bookmark list empty state when you're in an empty folder. -->

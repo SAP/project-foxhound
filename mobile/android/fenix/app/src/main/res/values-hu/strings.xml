@@ -665,7 +665,7 @@
   <!-- Marketing onboarding primary button text. -->
   <string name="nova_onboarding_marketing_primary_button_text_2">Engedélyezés és folytatás</string>
   <!-- Marketing onboarding secondary button text. -->
-  <string name="nova_onboarding_marketing_secondary_button_text">Köszönöm, nem</string>
+  <string name="nova_onboarding_marketing_secondary_button_text" tools:ignore="UnusedResources">Köszönöm, nem</string>
   <!-- Notifications onboarding title. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_notifications_title" tools:ignore="BrandUsage,UnusedResources">Az értesítések segítségével nagyobb biztonságban lehet a Firefoxszal</string>
   <!-- Notifications onboarding subtitle. 'Firefox' is intentionally hardcoded. -->

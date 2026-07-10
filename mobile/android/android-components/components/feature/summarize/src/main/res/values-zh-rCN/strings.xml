@@ -75,6 +75,10 @@
   <string name="mozac_summarize_settings_shake_to_summarize">摇动生成摘要</string>
   <!-- Description for the shake to summarize toggle in settings -->
   <string name="mozac_summarize_settings_shake_to_summarize_description">左右摇动设备以生成页面摘要。</string>
+  <!-- Label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity">摇动灵敏度</string>
+  <!-- Description for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_description">调整触发摘要功能所需的摇动强度。</string>
   <!-- Low option label for the shake sensitivity slider in settings -->
   <string name="mozac_summarize_settings_shake_sensitivity_low">低</string>
   <!-- Medium option label for the shake sensitivity slider in settings -->

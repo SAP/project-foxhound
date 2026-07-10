@@ -562,7 +562,7 @@
   <!-- Marketing onboarding primary button text. -->
   <string name="nova_onboarding_marketing_primary_button_text_2">സമ്മതിച്ചു തുടരുക</string>
   <!-- Marketing onboarding secondary button text. -->
-  <string name="nova_onboarding_marketing_secondary_button_text">വേണ്ട, നന്ദി</string>
+  <string name="nova_onboarding_marketing_secondary_button_text" tools:ignore="UnusedResources">വേണ്ട, നന്ദി</string>
   <!-- Notifications onboarding title. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_notifications_title" tools:ignore="BrandUsage,UnusedResources">Firefox-ൽ സുരക്ഷിതമായി തുടരാൻ അറിയിപ്പുകൾ താങ്ങളെ സഹായിക്കുന്നു</string>
   <!-- Notifications onboarding button. -->
