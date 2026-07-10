@@ -3141,7 +3141,7 @@ bool DCSurfaceVideo::ShaderBltSetup() {
   return true;
 }
 
-struct SavedD3D11State {
+class SavedD3D11State {
   RefPtr<ID3D11DeviceContext> context;
   RefPtr<ID3D11Buffer> vertexBuffers[D3D11_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT];
   UINT vertexBufferStrides[D3D11_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT];
@@ -3183,7 +3183,8 @@ struct SavedD3D11State {
   FLOAT blendFactors[4];
   UINT sampleMask;
 
-  explicit SavedD3D11State(ID3D11DeviceContext* _context) {
+ public:
+  explicit SavedD3D11State(RefPtr<ID3D11DeviceContext> _context) {
     context = _context;
     ID3D11Buffer*
         savedVertexBuffers[D3D11_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT] = {};
@@ -3243,33 +3244,34 @@ struct SavedD3D11State {
                                     &stencilRef);
 
     for (UINT i = 0; i < D3D11_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT; ++i) {
-      vertexBuffers[i] = savedVertexBuffers[i];
+      vertexBuffers[i] = dont_AddRef(savedVertexBuffers[i]);
     }
     for (UINT i = 0; i < D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT; ++i) {
-      vertexShaderClassInstances[i] = savedVertexClassInstances[i];
+      vertexShaderClassInstances[i] = dont_AddRef(savedVertexClassInstances[i]);
     }
     for (UINT i = 0; i < D3D11_COMMONSHADER_CONSTANT_BUFFER_API_SLOT_COUNT;
          ++i) {
-      vertexConstantBuffers[i] = savedVertexConstantBuffers[i];
+      vertexConstantBuffers[i] = dont_AddRef(savedVertexConstantBuffers[i]);
     }
     for (UINT i = 0; i < D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT; ++i) {
-      vertexShaderResources[i] = savedVertexShaderResources[i];
+      vertexShaderResources[i] = dont_AddRef(savedVertexShaderResources[i]);
     }
     for (UINT i = 0; i < D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT; ++i) {
-      pixelShaderClassInstances[i] = savedPixelShaderClassInstances[i];
+      pixelShaderClassInstances[i] =
+          dont_AddRef(savedPixelShaderClassInstances[i]);
     }
     for (UINT i = 0; i < D3D11_COMMONSHADER_CONSTANT_BUFFER_API_SLOT_COUNT;
          ++i) {
-      pixelConstantBuffers[i] = savedPixelConstantBuffers[i];
+      pixelConstantBuffers[i] = dont_AddRef(savedPixelConstantBuffers[i]);
     }
     for (UINT i = 0; i < D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT; ++i) {
-      pixelShaderResources[i] = savedPixelShaderResources[i];
+      pixelShaderResources[i] = dont_AddRef(savedPixelShaderResources[i]);
     }
     for (UINT i = 0; i < D3D11_COMMONSHADER_SAMPLER_SLOT_COUNT; ++i) {
-      pixelSamplerStates[i] = savedPixelSamplerStates[i];
+      pixelSamplerStates[i] = dont_AddRef(savedPixelSamplerStates[i]);
     }
     for (UINT i = 0; i < D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT; ++i) {
-      renderTargetViews[i] = savedRenderTargetViews[i];
+      renderTargetViews[i] = dont_AddRef(savedRenderTargetViews[i]);
     }
   }
 
@@ -3912,6 +3914,17 @@ void DCSurfaceVideo::ReleaseDecodeSwapChainResources() {
   }
   mUseVpAutoHDR = false;
   mUseHDR = false;
+  mShaderBltVertexShader = nullptr;
+  mShaderBltVSBlob = nullptr;
+  mShaderBltPixelShader = nullptr;
+  mShaderBltPSBlob = nullptr;
+  mShaderBltIndexBuffer = nullptr;
+  mShaderBltVertexBuffer = nullptr;
+  mShaderBltInputLayout = nullptr;
+  mShaderBltRasterizerState = nullptr;
+  mShaderBltBlendState = nullptr;
+  mShaderBltConstantBuffer = nullptr;
+  mShaderBltSamplerState = nullptr;
 }
 
 DCSurfaceHandle::DCSurfaceHandle(bool aIsOpaque, DCLayerTree* aDCLayerTree)
