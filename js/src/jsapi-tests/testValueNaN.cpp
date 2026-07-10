@@ -80,3 +80,71 @@ BEGIN_TEST(testValueCanonicalizeNaN) {
   return true;
 }
 END_TEST(testValueCanonicalizeNaN)
+
+BEGIN_TEST(testValueAssumeCanonicalNaN) {
+  const double canonical = JS::GenericNaN();
+  const uint64_t canonicalBits = JS::NaNValue().asRawBits();
+
+  {
+    JS::Value v;
+    v.setDoubleAssumeCanonicalNaN(canonical);
+    CHECK(v.isDouble());
+    CHECK(v.isNaN());
+    CHECK(v.asRawBits() == canonicalBits);
+  }
+  {
+    JS::Value v;
+    v.setNumberAssumeCanonicalNaN(canonical);
+    CHECK(v.isDouble());
+    CHECK(v.isNaN());
+    CHECK(v.asRawBits() == canonicalBits);
+  }
+
+  CHECK(JS::DoubleValueAssumeCanonicalNaN(canonical).asRawBits() ==
+        canonicalBits);
+  CHECK(JS::NumberValueAssumeCanonicalNaN(canonical).asRawBits() ==
+        canonicalBits);
+
+  // setDouble* always stores a double, even for integer values; setNumber*
+  // stores an Int32 when the value is an integer in int32 range.
+  for (int32_t i : {0, 5, -7, INT32_MAX, INT32_MIN}) {
+    double d = i;
+    {
+      JS::Value v;
+      v.setDoubleAssumeCanonicalNaN(d);
+      CHECK(v.isDouble());
+      CHECK(v.toDouble() == d);
+    }
+    {
+      JS::Value v;
+      v.setNumberAssumeCanonicalNaN(d);
+      CHECK(v.isInt32());
+      CHECK(v.toInt32() == i);
+    }
+    {
+      JS::Rooted<JS::Value> v(cx);
+      v.setDoubleAssumeCanonicalNaN(d);
+      CHECK(v.isDouble());
+      CHECK(v.toDouble() == d);
+    }
+    {
+      JS::Rooted<JS::Value> v(cx);
+      v.setNumberAssumeCanonicalNaN(d);
+      CHECK(v.isInt32());
+      CHECK(v.toInt32() == i);
+    }
+    {
+      JS::Value v = JS::DoubleValueAssumeCanonicalNaN(d);
+      CHECK(v.isDouble());
+      CHECK(v.toDouble() == d);
+    }
+    {
+      JS::Value v = JS::NumberValueAssumeCanonicalNaN(d);
+      CHECK(v.isInt32());
+      CHECK(v.toInt32() == i);
+    }
+  }
+
+  return true;
+}
+END_TEST(testValueAssumeCanonicalNaN)

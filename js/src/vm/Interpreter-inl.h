@@ -305,7 +305,7 @@ static MOZ_ALWAYS_INLINE bool NegOperation(JSContext* cx,
     return BigInt::negValue(cx, val, res);
   }
 
-  res.setNumber(-val.toNumber());
+  res.setNumberAssumeCanonicalNaN(-val.toNumber());
   return true;
 }
 
@@ -318,7 +318,7 @@ static MOZ_ALWAYS_INLINE bool IncOperation(JSContext* cx, HandleValue val,
   }
 
   if (val.isNumber()) {
-    res.setNumber(val.toNumber() + 1);
+    res.setNumberAssumeCanonicalNaN(val.toNumber() + 1);
     return true;
   }
 
@@ -335,7 +335,7 @@ static MOZ_ALWAYS_INLINE bool DecOperation(JSContext* cx, HandleValue val,
   }
 
   if (val.isNumber()) {
-    res.setNumber(val.toNumber() - 1);
+    res.setNumberAssumeCanonicalNaN(val.toNumber() - 1);
     return true;
   }
 
@@ -681,7 +681,7 @@ static MOZ_ALWAYS_INLINE bool AddOperation(JSContext* cx,
     return BigInt::addValue(cx, lhs, rhs, res);
   }
 
-  res.setNumber(lhs.toNumber() + rhs.toNumber());
+  res.setNumberAssumeCanonicalNaN(lhs.toNumber() + rhs.toNumber());
   return true;
 }
 
@@ -697,7 +697,7 @@ static MOZ_ALWAYS_INLINE bool SubOperation(JSContext* cx,
     return BigInt::subValue(cx, lhs, rhs, res);
   }
 
-  res.setNumber(lhs.toNumber() - rhs.toNumber());
+  res.setNumberAssumeCanonicalNaN(lhs.toNumber() - rhs.toNumber());
   return true;
 }
 
@@ -713,7 +713,7 @@ static MOZ_ALWAYS_INLINE bool MulOperation(JSContext* cx,
     return BigInt::mulValue(cx, lhs, rhs, res);
   }
 
-  res.setNumber(lhs.toNumber() * rhs.toNumber());
+  res.setNumberAssumeCanonicalNaN(lhs.toNumber() * rhs.toNumber());
   return true;
 }
 
@@ -729,7 +729,7 @@ static MOZ_ALWAYS_INLINE bool DivOperation(JSContext* cx,
     return BigInt::divValue(cx, lhs, rhs, res);
   }
 
-  res.setNumber(NumberDiv(lhs.toNumber(), rhs.toNumber()));
+  res.setNumberAssumeCanonicalNaN(NumberDiv(lhs.toNumber(), rhs.toNumber()));
   return true;
 }
 
@@ -753,7 +753,7 @@ static MOZ_ALWAYS_INLINE bool ModOperation(JSContext* cx,
     return BigInt::modValue(cx, lhs, rhs, res);
   }
 
-  res.setNumber(NumberMod(lhs.toNumber(), rhs.toNumber()));
+  res.setNumberAssumeCanonicalNaN(NumberMod(lhs.toNumber(), rhs.toNumber()));
   return true;
 }
 
@@ -769,7 +769,7 @@ static MOZ_ALWAYS_INLINE bool PowOperation(JSContext* cx,
     return BigInt::powValue(cx, lhs, rhs, res);
   }
 
-  res.setNumber(ecmaPow(lhs.toNumber(), rhs.toNumber()));
+  res.setNumberAssumeCanonicalNaN(ecmaPow(lhs.toNumber(), rhs.toNumber()));
   return true;
 }
 
