@@ -1755,16 +1755,18 @@ nsresult nsContentSecurityManager::CheckForIncoherentResultPrincipal(
     return NS_OK;
   }
 
-  nsCOMPtr<nsIPrincipal> resultOrPrecursor;
+  nsCOMPtr<nsIPrincipal> result;
   nsresult rv = nsScriptSecurityManager::GetScriptSecurityManager()
                     ->GetChannelResultPrincipalIfNotSandboxed(
-                        aChannel, getter_AddRefs(resultOrPrecursor));
+                        aChannel, getter_AddRefs(result));
   NS_ENSURE_SUCCESS(rv, rv);
-  NS_ENSURE_STATE(resultOrPrecursor);
+  NS_ENSURE_STATE(result);
 
-  if (nsCOMPtr<nsIPrincipal> precursor =
-          resultOrPrecursor->GetPrecursorPrincipal()) {
+  nsCOMPtr<nsIPrincipal> resultOrPrecursor;
+  if (nsCOMPtr<nsIPrincipal> precursor = result->GetPrecursorPrincipal()) {
     resultOrPrecursor = precursor;
+  } else {
+    resultOrPrecursor = result;
   }
 
   if (!resultOrPrecursor->GetIsContentPrincipal()) {
@@ -1782,6 +1784,35 @@ nsresult nsContentSecurityManager::CheckForIncoherentResultPrincipal(
   nsCOMPtr<nsIURI> channelURI;
   aChannel->GetURI(getter_AddRefs(channelURI));
   NS_ENSURE_STATE(channelURI);
+
+  if (channelURI->SchemeIs("data") && !result->GetIsNullPrincipal()) {
+    // Carve out for `ExtensionPolicyService::GetGeneratedBackgroundPageUrl`:
+    if (!BasePrincipal::Cast(result)->AddonPolicy()) {
+      MOZ_ASSERT_UNREACHABLE("data URI with a non-null principal");
+      return NS_ERROR_CONTENT_BLOCKED;
+    }
+
+    nsAutoCString triggeringRemoteType;
+    rv = loadInfo->GetTriggeringRemoteType(triggeringRemoteType);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    if (triggeringRemoteType != NOT_REMOTE_TYPE &&
+        triggeringRemoteType != EXTENSION_REMOTE_TYPE) {
+      MOZ_ASSERT_UNREACHABLE(
+          "Generated addon background page in incorrect process");
+      return NS_ERROR_CONTENT_BLOCKED;
+    }
+  }
+
+  if (NS_IsAboutSrcdoc(channelURI)) {
+    nsIPrincipal* loadingPrincipal = loadInfo->GetLoadingPrincipal();
+    if (!loadingPrincipal || !loadingPrincipal->Subsumes(result)) {
+      // This is fine for sandboxed srcdoc because result is unsandboxed.
+      MOZ_ASSERT_UNREACHABLE(
+          "about:srcdoc result principal not subsumed by embedder");
+      return NS_ERROR_CONTENT_BLOCKED;
+    }
+  }
 
   nsCOMPtr<nsIPrincipal> channelUriPrincipal =
       BasePrincipal::CreateContentPrincipal(channelURI, {});
