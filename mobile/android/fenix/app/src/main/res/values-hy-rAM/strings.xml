@@ -665,9 +665,13 @@
   <!-- Marketing onboarding primary button text. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage,UnusedResources">Օգնեք Firefox-ին</string>
   <!-- Marketing onboarding primary button text. -->
+  <string name="nova_onboarding_marketing_primary_button_text_3">Այո</string>
+  <!-- Marketing onboarding primary button text. -->
   <string name="nova_onboarding_marketing_primary_button_text_2">Թույլատրել և շարունակել</string>
   <!-- Marketing onboarding secondary button text. -->
   <string name="nova_onboarding_marketing_secondary_button_text" tools:ignore="UnusedResources">Ոչ, շնորհակալ եմ</string>
+  <!-- Marketing onboarding secondary button text. -->
+  <string name="nova_onboarding_marketing_secondary_button_text_2">Ոչ</string>
   <!-- Notifications onboarding title. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_notifications_title" tools:ignore="BrandUsage,UnusedResources">Ծանուցումները կօգնեն ձեզ ավելի անվտանգ լինել Firefox-ի հետ</string>
   <!-- Notifications onboarding subtitle. 'Firefox' is intentionally hardcoded. -->

@@ -23,6 +23,8 @@
   <string name="content_description_normal_browsing">Navigaziun normala</string>
   <!-- Placeholder text shown in the search bar before a user enters text for the default engine -->
   <string name="search_hint">Tschertgar u endatar in\'adressa</string>
+  <!-- Shorter placeholder text shown in the search bar when an additional action (voice search) is rendered alongside the hint. -->
+  <string name="search_hint_short">Tschertgar</string>
   <!-- Placeholder text shown in the search bar before a user enters text for a general engine -->
   <string name="search_hint_general_engine">Tschertgar en il web</string>
   <!-- Placeholder text shown in search bar when using history search -->
@@ -147,6 +149,8 @@
   <string name="home_screen_shortcut_open_new_private_tab_2">Nov tab privat</string>
   <!-- Shortcut action to open Passwords screen -->
   <string name="home_screen_shortcut_passwords">Pleds-clav</string>
+  <!-- Shortcut action to open uninstall survey -->
+  <string name="home_screen_shortcut_uninstall_survey">Deinstallar, pertge?</string>
   <!--
     Recent Tabs
 
@@ -361,6 +365,8 @@
   <string name="preferences_ai_controls">Controllas IA</string>
   <!-- Headline text for the AI controls banner. %s is the name of the app (for example "Firefox"). -->
   <string name="ai_controls_banner_headline">Ti has adina la tscherna en %s</string>
+  <!-- Supporting text for the AI controls banner. %s is a learn more link using ai_controls_learn_more as text. -->
+  <string name="ai_controls_banner_supporting_text_2">Quai includa la pussaivladad d’utilisar u betg utilisar funcziuns dad intelligenza artifiziala. %s</string>
   <!-- Link text for learning more about AI controls -->
   <string name="ai_controls_learn_more">Ulteriuras infurmaziuns</string>
   <!-- Title for the block AI enhancements toggle -->
@@ -442,6 +448,8 @@
   <string name="search_suggestions_delete_history_item_snackbar">Stizzà %1$s da la cronologia</string>
   <!-- Content description (not visible, for screen readers etc.): Button shown near a history search result allowing to delete it from browsing history. -->
   <string name="mozac_browser_awesomebar_remove_suggestion" tools:ignore="UnusedResources">Stizzar questa endataziun da la cronologia</string>
+  <!-- Button in the app links prompt that keeps the user in the browser instead of opening the external app. %1$s is the name of the app (for example "Firefox"). -->
+  <string name="applinks_prompt_negative_button">Restar en %1$s</string>
   <!--
     Home onboarding
 
@@ -617,8 +625,53 @@
     %1$s is replaced by an active link, using nova_onboarding_marketing_body_link_text as text (“How we use the data”).
   -->
   <string name="nova_onboarding_marketing_body" tools:ignore="BrandUsage,UnusedResources">Fa a savair ils partenaris da marketing da Mozilla co ti has scuvert Firefox e che ti dovras il program. Questas datas na vegnan mai vendidas. %1$s</string>
+  <!-- Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded. -->
+  <string name="nova_onboarding_marketing_body_2" tools:ignore="BrandUsage">Fa a savair ils partenaris da marketing da Mozilla co ti has scuvert Firefox e che ti dovras il program. Questas datas na vegnan mai vendidas.</string>
+  <!-- Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded. -->
+  <string name="nova_onboarding_marketing_body_3" tools:ignore="BrandUsage,UnusedResources">Ti ans pos gidar a cuntanscher dapli persunas, sche ti permettas a Mozilla da communitgar sin ils chanals che nus duvrain per la promoziun da Firefox che ti es in:a utilisad:ra da Firefox.</string>
+  <!--
+    Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
+    “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
+  -->
+  <string name="nova_onboarding_marketing_body_4" tools:ignore="BrandUsage,UnusedResources">Ti ans pos gidar a cuntanscher dapli persunas cun permetter a Mozilla da communitgar a la plattafurma da la quala ti vegns, che ti utiliseschas Firefox.</string>
+  <!--
+    Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
+    “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
+  -->
+  <string name="nova_onboarding_marketing_body_5" tools:ignore="BrandUsage,UnusedResources">Ans gida a cuntanscher dapli persunas cun permetter a Mozilla da communitgar a la plattafurma da la quala ti vegns, che ti utiliseschas Firefox.</string>
+  <!--
+    Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
+    “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
+    %1$s is replaced by an active link, using nova_onboarding_marketing_body_link_text as text (“How we use the data”).
+  -->
+  <string name="nova_onboarding_marketing_body_6" tools:ignore="BrandUsage,UnusedResources">Ans gida a cuntanscher dapli persunas cun permetter a Mozilla da communitgar a la plattafurma da la quala ti vegns, che ti utiliseschas Firefox. %1$s</string>
+  <!--
+    Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
+    “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
+    %1$s is replaced by an active link, using nova_onboarding_marketing_body_link_text_1 as text (“Learn More”).
+  -->
+  <string name="nova_onboarding_marketing_body_7" tools:ignore="BrandUsage">Ti ans pos era gidar a cuntanscher dapli persunas cun permetter a Mozilla da communitgar a la plattafurma da la quala ti vegns, che ti utiliseschas Firefox. %1$s</string>
+  <!-- Marketing onboarding additional body text. 'Firefox' is intentionally hardcoded. -->
+  <string name="nova_onboarding_marketing_body_line_two" tools:ignore="BrandUsage">Firefox è losch dad esser independent e s’engascha per defender il web avert cunter monopolists da tecnologia.</string>
+  <!--
+    Marketing onboarding additional body text. 'Firefox' is intentionally hardcoded.
+    “Allowing” refers to the main button “Allow and Continue”; the ask for the user is to allow communicating back to the platform.
+  -->
+  <string name="nova_onboarding_marketing_body_line_three" tools:ignore="BrandUsage">Ponderescha per plaschair da dar tes consentiment per contribuir al success da Firefox.</string>
   <!-- Marketing onboarding body link text. -->
   <string name="nova_onboarding_marketing_body_link_text">Co nus utilisain las datas</string>
+  <!-- Marketing onboarding body link text. -->
+  <string name="nova_onboarding_marketing_body_link_text_1">Ulteriuras infurmaziuns</string>
+  <!-- Marketing onboarding primary button text. 'Firefox' is intentionally hardcoded. -->
+  <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage,UnusedResources">Gida Firefox</string>
+  <!-- Marketing onboarding primary button text. -->
+  <string name="nova_onboarding_marketing_primary_button_text_3">Gea</string>
+  <!-- Marketing onboarding primary button text. -->
+  <string name="nova_onboarding_marketing_primary_button_text_2">Permetter e cuntinuar</string>
+  <!-- Marketing onboarding secondary button text. -->
+  <string name="nova_onboarding_marketing_secondary_button_text" tools:ignore="UnusedResources">Na, grazia</string>
+  <!-- Marketing onboarding secondary button text. -->
+  <string name="nova_onboarding_marketing_secondary_button_text_2">Na</string>
   <!-- Notifications onboarding title. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_notifications_title" tools:ignore="BrandUsage,UnusedResources">Cun las communicaziuns es ti pli segir en Firefox</string>
   <!-- Notifications onboarding subtitle. 'Firefox' is intentionally hardcoded. -->
@@ -646,6 +699,10 @@
   </plurals>
   <!-- Customize prompt onboarding positive button. -->
   <string name="nova_onboarding_customize_prompt_positive_button" tools:ignore="UnusedResources">Cumenzar a persunalisar</string>
+  <!-- App icon onboarding title. -->
+  <string name="nova_onboarding_app_icon_prompt_title" tools:ignore="UnusedResources">Tscherna ina icona persunalisada per l’app</string>
+  <!-- App icon onboarding body. -->
+  <string name="nova_onboarding_app_icon_prompt_body" tools:ignore="UnusedResources">Persunalisescha tes visur da partenza cun ina tempra persunala.</string>
   <!-- ==== End of Project "Nova" onboarding strings ==== -->
 
   <!--

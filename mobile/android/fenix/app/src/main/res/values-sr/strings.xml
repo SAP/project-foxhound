@@ -149,6 +149,8 @@
   <string name="home_screen_shortcut_open_new_private_tab_2">Нови приватни језичак</string>
   <!-- Shortcut action to open Passwords screen -->
   <string name="home_screen_shortcut_passwords">Лозинке</string>
+  <!-- Shortcut action to open uninstall survey -->
+  <string name="home_screen_shortcut_uninstall_survey">Деинсталирате, зашто?</string>
   <!--
     Recent Tabs
 
@@ -643,14 +645,33 @@
     %1$s is replaced by an active link, using nova_onboarding_marketing_body_link_text as text (“How we use the data”).
   -->
   <string name="nova_onboarding_marketing_body_6" tools:ignore="BrandUsage,UnusedResources">Помозите нам да допремо до више људи тако што ћете дозволити Mozilla-и да обавести платформу са које сте дошли да користите Firefox. %1$s</string>
+  <!--
+    Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
+    “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
+    %1$s is replaced by an active link, using nova_onboarding_marketing_body_link_text_1 as text (“Learn More”).
+  -->
+  <string name="nova_onboarding_marketing_body_7" tools:ignore="BrandUsage">Можете нам помоћи да допремо до више људи ако дозволите Mozilla-и да обавести платформу са које сте дошли да користите Firefox. %1$s</string>
+  <!-- Marketing onboarding additional body text. 'Firefox' is intentionally hardcoded. -->
+  <string name="nova_onboarding_marketing_body_line_two" tools:ignore="BrandUsage">Firefox је с поносом независан и посвећен одбрани отвореног веба од технолошких монопола.</string>
+  <!--
+    Marketing onboarding additional body text. 'Firefox' is intentionally hardcoded.
+    “Allowing” refers to the main button “Allow and Continue”; the ask for the user is to allow communicating back to the platform.
+  -->
+  <string name="nova_onboarding_marketing_body_line_three" tools:ignore="BrandUsage">Размотрите могућност дозвољавања како бисте помогли Firefox-у да победи.</string>
   <!-- Marketing onboarding body link text. -->
   <string name="nova_onboarding_marketing_body_link_text">Како користимо податке</string>
+  <!-- Marketing onboarding body link text. -->
+  <string name="nova_onboarding_marketing_body_link_text_1">Сазнајте више</string>
   <!-- Marketing onboarding primary button text. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage,UnusedResources">Помозите Firefox-у</string>
+  <!-- Marketing onboarding primary button text. -->
+  <string name="nova_onboarding_marketing_primary_button_text_3">Да</string>
   <!-- Marketing onboarding primary button text. -->
   <string name="nova_onboarding_marketing_primary_button_text_2">Дозволите и наставите</string>
   <!-- Marketing onboarding secondary button text. -->
   <string name="nova_onboarding_marketing_secondary_button_text" tools:ignore="UnusedResources">Не, хвала</string>
+  <!-- Marketing onboarding secondary button text. -->
+  <string name="nova_onboarding_marketing_secondary_button_text_2">Не</string>
   <!-- Notifications onboarding title. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_notifications_title" tools:ignore="BrandUsage,UnusedResources">Обавештења вам помажу да останете безбеднији уз Firefox</string>
   <!-- Notifications onboarding subtitle. 'Firefox' is intentionally hardcoded. -->
@@ -1017,6 +1038,8 @@
   <string name="customize_toggle_pocket_sponsored">Спонзорисане приче</string>
   <!-- Title for the opening wallpaper settings screen -->
   <string name="customize_wallpapers">Позадине</string>
+  <!-- Label for the menu item that opens the wallpaper settings screen. -->
+  <string name="browser_menu_change_wallpaper">Промени позадину</string>
   <!-- Title for the customize home screen section with sponsored shortcuts. -->
   <string name="customize_toggle_contile">Спонзорисане пречице</string>
   <!-- Title for the customize home screen section that toggles the Homepage sports widget. -->
@@ -1948,6 +1971,12 @@
   <!-- The error message of the URL text field when an invalid URL has been entered. -->
   <string name="webcompat_reporter_url_error_invalid">Унесите важећу адресу</string>
   <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
+  <string name="webcompat_reporter_label_whats_broken_3">Шта не ради?</string>
+  <!-- Content description for the icon button that clears the selected broken site reason in the WebCompat Reporter. -->
+  <string name="webcompat_reporter_clear_reason_content_description">Очисти изабрани разлог</string>
+  <!-- The error message of the description when the user selects "Something else" as the reason, but left the description empty or too short. -->
+  <string name="webcompat_reporter_description_error">Унесите најмање 10 знакова</string>
+  <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_label_whats_broken_2">Шта не ради?</string>
   <!-- The placeholder text for the dropdown where a user selects a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_choose_reason_2">Изаберите разлог</string>
@@ -1981,6 +2010,12 @@
   <string name="webcompat_reporter_preview_bottom_sheet_header">Преглед извештаја</string>
   <!-- Label for the “Send” button shown in the WebCompat Report preview panel, which the user taps to submit the report. -->
   <string name="webcompat_reporter_preview_bottom_sheet_send">Пошаљи</string>
+  <!-- Title for the Edit URL confirmation dialog in the WebCompatReporter -->
+  <string name="webcompat_reporter_edit_url_dialog_title">Измена УРЛ-а веб странице</string>
+  <!-- Text shown on the save button for the Edit URL confirmation dialog in the WebCompatReporter. -->
+  <string name="webcompat_reporter_edit_url_dialog_save">Сачувај</string>
+  <!-- Text shown on the dismiss button for the Edit URL confirmation dialog in the WebCompatReporter. -->
+  <string name="webcompat_reporter_edit_url_dialog_dismiss">Одбаци</string>
   <!--
     These reason strings are dropdown options on a WebCompat reporter form, indicating what is broken on the site.
 
@@ -1999,6 +2034,10 @@
   <string name="webcompat_reporter_reason_account2">Пријављивање или регистрација не раде</string>
   <!-- Broken site reason text for site asked to turn off ad blocker -->
   <string name="webcompat_reporter_reason_turn_off_adblocker">Страница је тражила искључивање блокатора огласа</string>
+  <!-- Broken site reason text for browser isn’t supported or blocked -->
+  <string name="webcompat_reporter_reason_notsupported_2">Прегледач је блокиран или није подржан</string>
+  <!-- Broken site reason text for the site being deceptive -->
+  <string name="webcompat_reporter_reason_site_is_deceptive">Ова страница је обмањујућа</string>
   <!-- Broken site reason text for browser isn’t supported or blocked -->
   <string name="webcompat_reporter_reason_notsupported">Прегледач није подржан или је блокиран</string>
   <!-- Broken site reason text for something else -->
@@ -2419,6 +2458,8 @@
   <string name="preferences_take_survey">Попуни анкету</string>
   <!-- Preference for not taking the short survey. -->
   <string name="preferences_not_take_survey">Не, хвала</string>
+  <!-- Error message shown in a Toast when the system fails to trigger the device uninstallation prompt. -->
+  <string name="uninstall_survey_error_failed">Није успело отварање системског упита за деинсталацију, користите директно системску радњу за деинсталацију.</string>
   <!--
     Snackbar
 
@@ -3076,6 +3117,14 @@
   <string name="ip_protection_onboarding_body">%1$s прикривањем ваше локације, чак и на јавним бежичним мрежама. Добијте %2$d GB бесплатно сваког месеца.</string>
   <!-- Used as text for a link in ip_protection_onboarding_body. Make sure to adapt capitalization if the link is in the middle of the sentence. -->
   <string name="ip_protection_onboarding_body_link">Прегледајте са додатном заштитом</string>
+  <!--
+    The body of the VPN onboarding card for a promotion that provides unlimited data bandwidth for a certain time.
+    %1$s is a localized date (for example "Jun 9") indicating the end of the promotional period.
+    %2$s is a link using ip_protection_onboarding_body_link_promo (“Learn more”) as text. It links to a support article about VPN on Firefox.
+  -->
+  <string name="ip_protection_onboarding_body_promo">Укључите га како бисте своје прегледање чинили приватнијим и тежим за праћење. Испробајте га сада да добијете неограничен проток до %1$s. %2$s</string>
+  <!-- Used as text for a link in ip_protection_onboarding_body. Make sure to adapt capitalization if the link is in the middle of the sentence. -->
+  <string name="ip_protection_onboarding_body_link_promo">Сазнајте више</string>
   <!-- Label for the dismiss button on the onboarding bottom sheet. -->
   <string name="ip_protection_onboarding_not_now_button">Не сада</string>
   <!-- Snackbar (in-app pop-up notification) text to signal the browser VPN connection error -->
@@ -3085,6 +3134,8 @@
     %1$d is the total monthly allowance in GB (for example "50").
   -->
   <string name="ip_protection_data_limit_reached_snackbar">Искоришћено је %1$d GB ВПН података. Приступ ће бити враћен следећег месеца.</string>
+  <!-- Snackbar (in-app pop-up notification) action button text that takes the user to the VPN settings screen. -->
+  <string name="ip_protection_data_limit_reached_snackbar_action">Подешавања</string>
   <!--
     Autofill
 
@@ -3391,6 +3442,8 @@
   <string name="homepage_shortcuts_add_website">Додај веб страницу</string>
   <!-- Title text for the "Enter a Website URL" dialog for adding a shortcut. -->
   <string name="homepage_shortcuts_add_website_title">Унесите адресу веб странице</string>
+  <!-- Title for the "Popular sites" section in the "Add to homepage" bottom sheet. -->
+  <string name="homepage_shortcuts_popular_sites">Популарне веб странице</string>
   <!-- Title text displayed in the dialog when shortcuts limit is reached. -->
   <string name="shortcut_max_limit_title">Ограничење пречица достигнуто</string>
   <!-- Content description text displayed in the dialog when shortcut limit is reached. -->
@@ -3816,6 +3869,62 @@
   <string name="protection_panel_privacy_and_security_settings_2">Подешавања приватности</string>
   <!-- Title text for the protection panel permissions section. -->
   <string name="protection_panel_permissions_title">Овлашћења</string>
+  <plurals name="trackers_blocked_panel_total_num_trackers_blocked_2">
+    <!--
+      Text for displaying the total number of trackers blocked in the trackers blocked panel.
+      %1$d is a placeholder for the number of trackers blocked.
+    -->
+    <item quantity="one">%1$d праћење блокирано на овој страници</item>
+    <item quantity="other">%1$d елемената за праћење блокирани на овој страници</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_social_media_trackers">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked social media trackers.
+      %1$d is a placeholder for the number of social media trackers blocked.
+    -->
+    <item quantity="one">%1$d елемент за праћење друштвених мрежа</item>
+    <item quantity="other">%1$d елемената за праћење друштвених мрежа</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_cross_site_cookies">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked cross-site tracking cookies.
+      %1$d is a placeholder for the number of cross-site tracking cookies blocked.
+    -->
+    <item quantity="one">%1$d колачић за праћење међу страницама</item>
+    <item quantity="other">%1$d колачића за праћење међу страницама</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_cryptominers">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked cryptomining scripts.
+      %1$d is a placeholder for the number of cryptominers blocked.
+    -->
+    <item quantity="one">%1$d крипторудар</item>
+    <item quantity="other">%1$d крипторудара</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_fingerprinters">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked fingerprinter scripts.
+      %1$d is a placeholder for the number of fingerprinters blocked.
+    -->
+    <item quantity="one">%1$d сакупљач дигиталних отисака</item>
+    <item quantity="other">%1$d сакупљача дигиталних отисака</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_trackers_2">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked generic tracking scripts.
+      %1$d is a placeholder for the number of trackers blocked.
+    -->
+    <item quantity="one">%1$d садржај за праћење</item>
+    <item quantity="other">%1$d садржаја за праћење</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_trackers_blocked_this_week_2">
+    <!--
+      Text for displaying the number of trackers blocked this week in the trackers blocked panel.
+      %1$d is a placeholder for the number of trackers blocked this week.
+    -->
+    <item quantity="one">%1$d праћење блокирано ове недеље</item>
+    <item quantity="other">%1$d елемената за праћење блокирани ове недеље</item>
+  </plurals>
   <!--
     Text for displaying the total number of trackers blocked in the trackers blocked panel.
     %d is a placeholder for the number of trackers blocked.
@@ -3847,6 +3956,8 @@
     %s is a placeholder for the name of the certificate authority that issued the certificate.
   -->
   <string name="connection_security_panel_verified_by">Потврдио је %s</string>
+  <!-- Content description (not visible, for screen readers etc.) for the handle used to drag the protections dashboard to the bottom of the screen and close it. -->
+  <string name="tracker_protections_dashboard_close_handlebar_content_description">Затвори командну таблу</string>
   <!--
     Text for the connection security panel when the site uses a QWAC.
     %s is a placeholder for the organization for which the certificate was issued.
@@ -3970,6 +4081,26 @@
   <string name="microsurvey_sync_title" tools:ignore="BrandUsage,UnusedResources">Колико сте задовољни усклађивањем у Firefox-у?</string>
   <!-- Text shown in the survey title for 'describe your experience so far' microsurvey. Note: The word "Firefox" should NOT be translated. -->
   <string name="microsurvey_describe_your_experience_title" tools:ignore="BrandUsage,UnusedResources">Помозите нам да побољшамо Firefox. Шта најбоље описује ваше досадашње искуство?</string>
+  <!--
+    Uninstall Survey
+
+    Title text for the uninstall survey dialog, asking the user for the reason they are removing the app
+  -->
+  <string name="microsurvey_uninstall_survey_title">Ваше примедбе су важне. Зашто деинсталирате?</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_1">Проблеми са веб страницама</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_2">Проблеми са видео снимцима и преузимањем</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_3">Проблеми са делотворношћу</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_4">Проблеми са функцијама и дизајном</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_5">Проблеми повезани са приватношћу</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_6">Проблеми са плаћањем и претплатом</string>
+  <!-- Button label shown at the bottom of the uninstall survey -->
+  <string name="uninstall_survey_button_label">Пошаљи примедбе и деинсталирај</string>
   <!--
     Accessibility
 
@@ -4549,6 +4680,28 @@
   <string name="privacy_notice_updated_homepage_message_privacy_notice" tools:ignore="UnusedResources">Обавештење о приватности</string>
   <!-- The second active link used in privacy_notice_updated_homepage_message -->
   <string name="privacy_notice_updated_homepage_message_learn_more" tools:ignore="UnusedResources">Сазнајте више</string>
+  <!-- Google Lens prototype related strings -->
+  <string name="preferences_debug_settings_google_lens_integration">Интеграција са Google објективом</string>
+  <!-- Lens image search button content description -->
+  <string name="lens_search_content_description">Претражи помоћу слике</string>
+  <!-- Content description for the gallery picker button in the Lens camera screen -->
+  <string name="content_description_gallery">Изаберите из галерије да бисте послали у Google објектив</string>
+  <!-- Content description for the shutter button in the Lens camera screen -->
+  <string name="content_description_take_photo">Направи фотографију и пошаљи у Google објектив</string>
+  <!-- Image context menu entry that sends the long-pressed image to Google Lens -->
+  <string name="context_menu_open_image_with_google_lens">Претражи помоћу Google објектива</string>
+  <!-- Toast shown when the user denies the camera permission requested by the Lens camera screen -->
+  <string name="lens_camera_permission_denied">Приступ је одбијен</string>
+  <!-- Title for the Google Lens AI feature toggle -->
+  <string name="ai_controls_google_lens_title">Google објектив</string>
+  <!-- Description for the Google Lens AI feature toggle -->
+  <string name="ai_controls_google_lens_description">Шаље слике и фотографије Google-у за визуелну претрагу.</string>
+  <!-- Content description for the Google Lens half of the camera mode toggle -->
+  <string name="lens_camera_mode_lens">Google објектив</string>
+  <!-- Content description for the QR scanner half of the camera mode toggle -->
+  <string name="lens_camera_mode_qr">КР скенер</string>
+  <!-- Toast shown when the user picks an image from the gallery in QR mode but no QR code is found in it -->
+  <string name="lens_camera_qr_no_code_found">У слици није пронађен КР код</string>
   <!--
     Firefox Labs
 
@@ -4585,6 +4738,8 @@
   <string name="firefox_labs_feature_enable_dialog_message">Да бисте укључили ову функцију, поново покрените %s.</string>
   <!-- The description text that is displayed in the confirmation dialog on the Firefox Labs screen for toggling "off" experimental features. %s is the name of the app (for example "Firefox Nightly") -->
   <string name="firefox_labs_feature_disable_dialog_message">Да бисте искључили ову функцију, поново покрените %s.</string>
+  <!-- Helper text shown beneath a Firefox Labs item when it is blocked from being turned on. -->
+  <string name="firefox_labs_feature_conflict">Функција није доступна за испробавање.</string>
   <!-- Text displayed on the Firefox Labs screen when there are no Labs experimental features present. -->
   <string name="firefox_labs_no_labs_available_description">Тренутно нема експерименталних могућности које можете испробати</string>
 </resources>
