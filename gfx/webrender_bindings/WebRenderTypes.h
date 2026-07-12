@@ -99,6 +99,11 @@ inline Maybe<wr::ImageFormat> SurfaceFormatToImageFormat(
   }
 }
 
+inline OpacityType ToOpacityType(gfx::SurfaceFormat aFormat) {
+  return gfx::IsOpaque(aFormat) ? OpacityType::Opaque
+                                : OpacityType::HasAlphaChannel;
+}
+
 inline gfx::SurfaceFormat ImageFormatToSurfaceFormat(ImageFormat aFormat) {
   switch (aFormat) {
     case ImageFormat::RGBA8:
@@ -118,48 +123,27 @@ inline gfx::SurfaceFormat ImageFormatToSurfaceFormat(ImageFormat aFormat) {
   }
 }
 
-struct ImageDescriptor : public wr::WrImageDescriptor {
-  // We need a default constructor for ipdl serialization.
-  ImageDescriptor() {
-    format = (ImageFormat)0;
-    width = 0;
-    height = 0;
-    stride = 0;
-    opacity = OpacityType::HasAlphaChannel;
-    prefer_compositor_surface = false;
-  }
-
-  ImageDescriptor(const gfx::IntSize& aSize, gfx::SurfaceFormat aFormat,
+struct ImageDescriptor : public WrImageDescriptor {
+  ImageDescriptor() = delete;
+  ImageDescriptor(const gfx::IntSize& aSize, ImageFormat aFormat,
+                  OpacityType aOpacityType,
                   bool aPreferCompositorSurface = false) {
-    format = wr::SurfaceFormatToImageFormat(aFormat).valueOr((ImageFormat)0);
+    format = aFormat;
     width = aSize.width;
     height = aSize.height;
     stride = 0;
-    opacity = gfx::IsOpaque(aFormat) ? OpacityType::Opaque
-                                     : OpacityType::HasAlphaChannel;
+    opacity = aOpacityType;
     prefer_compositor_surface = aPreferCompositorSurface;
   }
 
-  ImageDescriptor(const gfx::IntSize& aSize, uint32_t aByteStride,
-                  gfx::SurfaceFormat aFormat,
+  ImageDescriptor(const gfx::IntSize& aSize, int32_t aByteStride,
+                  ImageFormat aFormat, OpacityType aOpacityType,
                   bool aPreferCompositorSurface = false) {
-    format = wr::SurfaceFormatToImageFormat(aFormat).valueOr((ImageFormat)0);
+    format = aFormat;
     width = aSize.width;
     height = aSize.height;
     stride = aByteStride;
-    opacity = gfx::IsOpaque(aFormat) ? OpacityType::Opaque
-                                     : OpacityType::HasAlphaChannel;
-    prefer_compositor_surface = aPreferCompositorSurface;
-  }
-
-  ImageDescriptor(const gfx::IntSize& aSize, uint32_t aByteStride,
-                  gfx::SurfaceFormat aFormat, OpacityType aOpacity,
-                  bool aPreferCompositorSurface = false) {
-    format = wr::SurfaceFormatToImageFormat(aFormat).valueOr((ImageFormat)0);
-    width = aSize.width;
-    height = aSize.height;
-    stride = aByteStride;
-    opacity = aOpacity;
+    opacity = aOpacityType;
     prefer_compositor_surface = aPreferCompositorSurface;
   }
 };
