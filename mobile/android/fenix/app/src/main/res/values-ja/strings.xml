@@ -632,7 +632,7 @@
   <!-- Marketing onboarding primary button text. -->
   <string name="nova_onboarding_marketing_primary_button_text_2">許可して続行する</string>
   <!-- Marketing onboarding secondary button text. -->
-  <string name="nova_onboarding_marketing_secondary_button_text">いいえ、結構です</string>
+  <string name="nova_onboarding_marketing_secondary_button_text" tools:ignore="UnusedResources">いいえ、結構です</string>
   <!-- Notifications onboarding title. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_notifications_title" tools:ignore="BrandUsage,UnusedResources">通知をオンにして Firefox で安全性を高めましょう</string>
   <!-- Notifications onboarding subtitle. 'Firefox' is intentionally hardcoded. -->

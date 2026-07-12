@@ -13,6 +13,8 @@
     The default content description (not visible, for screen readers etc.): Eye trailing icon button in TextField used to show hidden password text.
   -->
   <string name="text_field_eye_trailing_icon_default_content_description">Näita peidetud teksti</string>
+  <!-- The default content description (not visible, for screen readers etc.): Cross trailing icon button in TextField used to clear input. -->
+  <string name="text_field_cross_trailing_icon_default_content_description">Eemalda tekst</string>
   <!-- Announcement made by the screen reader when the progress bar is shown and a page is loading -->
   <string name="mozac_compose_base_progress_loading">Laadimine</string>
   <!-- Content description for the dismiss icon of a Snackbar -->

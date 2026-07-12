@@ -168,6 +168,8 @@
   <string name="mozac_feature_prompts_collapse_address_content_description_2">കരുതിവച്ച വിലാസങ്ങൾ ചെറുതാക്കുക</string>
   <!-- Text for the manage addresses button. -->
   <string name="mozac_feature_prompts_manage_address">വിലാസങ്ങളെ കൈകാര്യം ചെയ്യുക</string>
+  <!-- Text for the title of a save address dialog. -->
+  <string name="mozac_feature_prompts_save_address_prompt_title">വിലാസം കരുതിവയ്ക്കണോ?</string>
   <!--
     Federated Credential Management prompts
 

@@ -149,6 +149,8 @@
   <string name="home_screen_shortcut_open_new_private_tab_2">新建隐私标签页</string>
   <!-- Shortcut action to open Passwords screen -->
   <string name="home_screen_shortcut_passwords">密码</string>
+  <!-- Shortcut action to open uninstall survey -->
+  <string name="home_screen_shortcut_uninstall_survey">卸载并询问原因</string>
   <!--
     Recent Tabs
 
@@ -649,6 +651,11 @@
     %1$s is replaced by an active link, using nova_onboarding_marketing_body_link_text_1 as text (“Learn More”).
   -->
   <string name="nova_onboarding_marketing_body_7" tools:ignore="BrandUsage">您可以通过允许 Mozilla 将您正在使用 Firefox 这一信息告知您来源的平台，来帮助我们触达更多人。%1$s</string>
+  <!--
+    Marketing onboarding additional body text. 'Firefox' is intentionally hardcoded.
+    “Allowing” refers to the main button “Allow and Continue”; the ask for the user is to allow communicating back to the platform.
+  -->
+  <string name="nova_onboarding_marketing_body_line_three" tools:ignore="BrandUsage">请考虑允许以帮助成就 Firefox。</string>
   <!-- Marketing onboarding body link text. -->
   <string name="nova_onboarding_marketing_body_link_text">我们如何使用您的数据</string>
   <!-- Marketing onboarding body link text. -->
@@ -658,7 +665,7 @@
   <!-- Marketing onboarding primary button text. -->
   <string name="nova_onboarding_marketing_primary_button_text_2">允许并继续</string>
   <!-- Marketing onboarding secondary button text. -->
-  <string name="nova_onboarding_marketing_secondary_button_text">不了，谢谢</string>
+  <string name="nova_onboarding_marketing_secondary_button_text" tools:ignore="UnusedResources">不了，谢谢</string>
   <!-- Notifications onboarding title. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_notifications_title" tools:ignore="BrandUsage,UnusedResources">允许通知可让 Firefox 更好地为您保驾护航</string>
   <!-- Notifications onboarding subtitle. 'Firefox' is intentionally hardcoded. -->
@@ -1951,6 +1958,8 @@
   <string name="webcompat_reporter_label_whats_broken_3">哪一方面不正常？</string>
   <!-- Content description for the icon button that clears the selected broken site reason in the WebCompat Reporter. -->
   <string name="webcompat_reporter_clear_reason_content_description">清除已选择的原因</string>
+  <!-- The error message of the description when the user selects "Something else" as the reason, but left the description empty or too short. -->
+  <string name="webcompat_reporter_description_error">请至少输入 10 个字符</string>
   <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_label_whats_broken_2">什么方面出现问题？</string>
   <!-- The placeholder text for the dropdown where a user selects a high-level reason why the site is broken. -->
@@ -2433,6 +2442,8 @@
   <string name="preferences_take_survey">问卷调查</string>
   <!-- Preference for not taking the short survey. -->
   <string name="preferences_not_take_survey">不了，谢谢</string>
+  <!-- Error message shown in a Toast when the system fails to trigger the device uninstallation prompt. -->
+  <string name="uninstall_survey_error_failed">未能打开系统卸载提示，请直接使用系统卸载操作。</string>
   <!--
     Snackbar
 
@@ -3088,6 +3099,12 @@
   <string name="ip_protection_onboarding_body">即使使用公共 Wi-Fi，也能隐藏真实位置，%1$s。每月可免费获得 %2$d GB 流量。</string>
   <!-- Used as text for a link in ip_protection_onboarding_body. Make sure to adapt capitalization if the link is in the middle of the sentence. -->
   <string name="ip_protection_onboarding_body_link">在浏览时获得额外保护</string>
+  <!--
+    The body of the VPN onboarding card for a promotion that provides unlimited data bandwidth for a certain time.
+    %1$s is a localized date (for example "Jun 9") indicating the end of the promotional period.
+    %2$s is a link using ip_protection_onboarding_body_link_promo (“Learn more”) as text. It links to a support article about VPN on Firefox.
+  -->
+  <string name="ip_protection_onboarding_body_promo">打开此功能，可让浏览活动更私密、更难被追踪。即日起至 %1$s 试用可获无限带宽。%2$s</string>
   <!-- Used as text for a link in ip_protection_onboarding_body. Make sure to adapt capitalization if the link is in the middle of the sentence. -->
   <string name="ip_protection_onboarding_body_link_promo">详细了解</string>
   <!-- Label for the dismiss button on the onboarding bottom sheet. -->
@@ -4036,6 +4053,18 @@
   <string name="microsurvey_sync_title" tools:ignore="BrandUsage,UnusedResources">您对 Firefox 的同步体验满意度如何？</string>
   <!-- Text shown in the survey title for 'describe your experience so far' microsurvey. Note: The word "Firefox" should NOT be translated. -->
   <string name="microsurvey_describe_your_experience_title" tools:ignore="BrandUsage,UnusedResources">帮助我们改进 Firefox。以下哪项最符合您目前的使用体验？</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_1">网页问题</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_2">视频和下载问题</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_3">性能问题</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_4">功能和设计问题</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_5">隐私相关问题</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_6">付款和订阅问题</string>
   <!-- Button label shown at the bottom of the uninstall survey -->
   <string name="uninstall_survey_button_label">提交反馈并卸载</string>
   <!--
@@ -4617,10 +4646,26 @@
   <string name="privacy_notice_updated_homepage_message_privacy_notice" tools:ignore="UnusedResources">隐私声明</string>
   <!-- The second active link used in privacy_notice_updated_homepage_message -->
   <string name="privacy_notice_updated_homepage_message_learn_more" tools:ignore="UnusedResources">详细了解</string>
+  <!-- Google Lens prototype related strings -->
+  <string name="preferences_debug_settings_google_lens_integration">启用 Google 智能镜头集成</string>
+  <!-- Content description for the gallery picker button in the Lens camera screen -->
+  <string name="content_description_gallery">从图库选择图片发送到 Google 智能镜头</string>
+  <!-- Content description for the shutter button in the Lens camera screen -->
+  <string name="content_description_take_photo">拍照并发送到 Google 智能镜头</string>
+  <!-- Image context menu entry that sends the long-pressed image to Google Lens -->
+  <string name="context_menu_open_image_with_google_lens">使用 Google 智能镜头搜索</string>
   <!-- Toast shown when the user denies the camera permission requested by the Lens camera screen -->
   <string name="lens_camera_permission_denied">拒绝访问</string>
+  <!-- Title for the Google Lens AI feature toggle -->
+  <string name="ai_controls_google_lens_title">Google 智能镜头</string>
+  <!-- Description for the Google Lens AI feature toggle -->
+  <string name="ai_controls_google_lens_description">向 Google 发送图像和照片以进行按图搜索。</string>
+  <!-- Content description for the Google Lens half of the camera mode toggle -->
+  <string name="lens_camera_mode_lens">Google 智能镜头</string>
   <!-- Content description for the QR scanner half of the camera mode toggle -->
   <string name="lens_camera_mode_qr">扫码器</string>
+  <!-- Toast shown when the user picks an image from the gallery in QR mode but no QR code is found in it -->
+  <string name="lens_camera_qr_no_code_found">未在图像中找到二维码</string>
   <!--
     Firefox Labs
 
@@ -4657,6 +4702,8 @@
   <string name="firefox_labs_feature_enable_dialog_message">请重启 %s 以开启此功能。</string>
   <!-- The description text that is displayed in the confirmation dialog on the Firefox Labs screen for toggling "off" experimental features. %s is the name of the app (for example "Firefox Nightly") -->
   <string name="firefox_labs_feature_disable_dialog_message">请重启 %s 以关闭此功能。</string>
+  <!-- Helper text shown beneath a Firefox Labs item when it is blocked from being turned on. -->
+  <string name="firefox_labs_feature_conflict">功能无法试用。</string>
   <!-- Text displayed on the Firefox Labs screen when there are no Labs experimental features present. -->
   <string name="firefox_labs_no_labs_available_description">暂无可试用的实验性功能</string>
 </resources>

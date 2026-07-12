@@ -665,9 +665,13 @@
   <!-- Marketing onboarding primary button text. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage,UnusedResources">Օգնեք Firefox-ին</string>
   <!-- Marketing onboarding primary button text. -->
+  <string name="nova_onboarding_marketing_primary_button_text_3">Այո</string>
+  <!-- Marketing onboarding primary button text. -->
   <string name="nova_onboarding_marketing_primary_button_text_2">Թույլատրել և շարունակել</string>
   <!-- Marketing onboarding secondary button text. -->
-  <string name="nova_onboarding_marketing_secondary_button_text">Ոչ, շնորհակալ եմ</string>
+  <string name="nova_onboarding_marketing_secondary_button_text" tools:ignore="UnusedResources">Ոչ, շնորհակալ եմ</string>
+  <!-- Marketing onboarding secondary button text. -->
+  <string name="nova_onboarding_marketing_secondary_button_text_2">Ոչ</string>
   <!-- Notifications onboarding title. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_notifications_title" tools:ignore="BrandUsage,UnusedResources">Ծանուցումները կօգնեն ձեզ ավելի անվտանգ լինել Firefox-ի հետ</string>
   <!-- Notifications onboarding subtitle. 'Firefox' is intentionally hardcoded. -->
@@ -3949,6 +3953,8 @@
     %s is a placeholder for the name of the certificate authority that issued the certificate.
   -->
   <string name="connection_security_panel_verified_by">Հաստատել է %s-ը</string>
+  <!-- Content description (not visible, for screen readers etc.) for the handle used to drag the protections dashboard to the bottom of the screen and close it. -->
+  <string name="tracker_protections_dashboard_close_handlebar_content_description">Փակել վահանակը</string>
   <!--
     Text for the connection security panel when the site uses a QWAC.
     %s is a placeholder for the organization for which the certificate was issued.
@@ -4072,6 +4078,24 @@
   <string name="microsurvey_sync_title" tools:ignore="BrandUsage,UnusedResources">Որքանո՞վ եք գոհ Firefox-ի համօգտագործման փորձից:</string>
   <!-- Text shown in the survey title for 'describe your experience so far' microsurvey. Note: The word "Firefox" should NOT be translated. -->
   <string name="microsurvey_describe_your_experience_title" tools:ignore="BrandUsage,UnusedResources">Օգնեք մեզ բարելավել Firefox-ը։ Ո՞րն է լավագույնս նկարագրում ձեր մինչ այժմ ունեցած փորձը։</string>
+  <!--
+    Uninstall Survey
+
+    Title text for the uninstall survey dialog, asking the user for the reason they are removing the app
+  -->
+  <string name="microsurvey_uninstall_survey_title">Ձեր կարծիքը կարևոր է։ Ինչո՞ւ եք ապատեղադրում։</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_1">Կայքէջի խնդիրներ</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_2">Տեսանյութի և ներբեռնման խնդիրներ</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_3">Արտադրողականության խնդիրներ</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_4">Գործառույթների և դիզայնի հետ կապված խնդիրներ</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_5">Գաղտնիության հետ կապված խնդիրներ</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_6">Վճարման և բաժանորդագրության հետ կապված խնդիրներ</string>
   <!-- Button label shown at the bottom of the uninstall survey -->
   <string name="uninstall_survey_button_label">Ուղարկել կարծիք և ապատեղադրել</string>
   <!--

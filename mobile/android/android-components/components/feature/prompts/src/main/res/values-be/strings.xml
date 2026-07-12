@@ -172,6 +172,8 @@
   <string name="mozac_feature_prompts_collapse_address_content_description_2">Згарнуць захаваныя адрасы</string>
   <!-- Text for the manage addresses button. -->
   <string name="mozac_feature_prompts_manage_address">Кіраваць адрасамі</string>
+  <!-- Text for the title of a save address dialog. -->
+  <string name="mozac_feature_prompts_save_address_prompt_title">Захаваць адрас?</string>
   <!--
     Federated Credential Management prompts
 

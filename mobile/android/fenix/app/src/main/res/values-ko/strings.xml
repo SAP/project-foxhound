@@ -665,9 +665,13 @@
   <!-- Marketing onboarding primary button text. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage,UnusedResources">Firefox 도움말</string>
   <!-- Marketing onboarding primary button text. -->
+  <string name="nova_onboarding_marketing_primary_button_text_3">예</string>
+  <!-- Marketing onboarding primary button text. -->
   <string name="nova_onboarding_marketing_primary_button_text_2">허가하고 계속</string>
   <!-- Marketing onboarding secondary button text. -->
-  <string name="nova_onboarding_marketing_secondary_button_text">아니요</string>
+  <string name="nova_onboarding_marketing_secondary_button_text" tools:ignore="UnusedResources">아니요</string>
+  <!-- Marketing onboarding secondary button text. -->
+  <string name="nova_onboarding_marketing_secondary_button_text_2">아니오</string>
   <!-- Notifications onboarding title. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_notifications_title" tools:ignore="BrandUsage,UnusedResources">알림으로 Firefox를 더욱 안전하게 사용할 수 있습니다</string>
   <!-- Notifications onboarding subtitle. 'Firefox' is intentionally hardcoded. -->
@@ -984,9 +988,9 @@
   <!-- The text shown when an extension does not require permissions -->
   <string name="addons_does_not_require_permissions">이 확장 기능은 권한이 필요하지 않습니다.</string>
   <!-- The description of data collection permissions listed in the addon's permissions screen.  %1$s is a formatted list of permissions. -->
-  <string name="addons_permissions_required_data_collection_description_2">개발자가 밝힌 이 확장 기능의 수집 권한: %1$s</string>
+  <string name="addons_permissions_required_data_collection_description_2">개발자가 이 확장 기능이 수집한다고 밝힌 항목: %1$s</string>
   <!-- The description of the "none" data collection permission, when the extension doesn't collect anything according to the developer. -->
-  <string name="addons_permissions_none_required_data_collection_description">개발자가 이 확장 기능은 데이터 수집이 필요하지 않다고 합니다.</string>
+  <string name="addons_permissions_none_required_data_collection_description">개발자는 이 확장 기능이 데이터 수집을 요구하지 않는다고 밝히고 있습니다.</string>
   <!-- The title of the required permissions section from addon's permissions screen. -->
   <string name="addons_permissions_heading_required_permissions">필수 권한:</string>
   <!-- The title of the optional permissions section from addon's permissions screen. -->
@@ -3932,6 +3936,8 @@
     %s is a placeholder for the name of the certificate authority that issued the certificate.
   -->
   <string name="connection_security_panel_verified_by">%s에서 인증함</string>
+  <!-- Content description (not visible, for screen readers etc.) for the handle used to drag the protections dashboard to the bottom of the screen and close it. -->
+  <string name="tracker_protections_dashboard_close_handlebar_content_description">대시보드 닫기</string>
   <!--
     Text for the connection security panel when the site uses a QWAC.
     %s is a placeholder for the organization for which the certificate was issued.
@@ -4055,6 +4061,24 @@
   <string name="microsurvey_sync_title" tools:ignore="BrandUsage,UnusedResources">Firefox의 동기화 경험에 얼마나 만족하시나요?</string>
   <!-- Text shown in the survey title for 'describe your experience so far' microsurvey. Note: The word "Firefox" should NOT be translated. -->
   <string name="microsurvey_describe_your_experience_title" tools:ignore="BrandUsage,UnusedResources">Firefox를 개선할 수 있도록 도와주세요. 지금까지의 경험을 가장 잘 설명한 항목은 무엇입니까?</string>
+  <!--
+    Uninstall Survey
+
+    Title text for the uninstall survey dialog, asking the user for the reason they are removing the app
+  -->
+  <string name="microsurvey_uninstall_survey_title">여러분의 의견이 중요합니다. 왜 앱을 제거하시나요?</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_1">웹 페이지 문제</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_2">동영상 및 다운로드 문제</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_3">성능 문제</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_4">기능과 디자인 문제</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_5">개인 정보 관련 문제</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_6">지불과 구독 문제</string>
   <!-- Button label shown at the bottom of the uninstall survey -->
   <string name="uninstall_survey_button_label">의견 제출 및 제거</string>
   <!--

@@ -665,9 +665,13 @@
   <!-- Marketing onboarding primary button text. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage,UnusedResources">Aider Firefox</string>
   <!-- Marketing onboarding primary button text. -->
+  <string name="nova_onboarding_marketing_primary_button_text_3">Oui</string>
+  <!-- Marketing onboarding primary button text. -->
   <string name="nova_onboarding_marketing_primary_button_text_2">Autoriser et continuer</string>
   <!-- Marketing onboarding secondary button text. -->
-  <string name="nova_onboarding_marketing_secondary_button_text">Non merci</string>
+  <string name="nova_onboarding_marketing_secondary_button_text" tools:ignore="UnusedResources">Non merci</string>
+  <!-- Marketing onboarding secondary button text. -->
+  <string name="nova_onboarding_marketing_secondary_button_text_2">Non</string>
   <!-- Notifications onboarding title. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_notifications_title" tools:ignore="BrandUsage,UnusedResources">Les notifications vous aident à rester en sécurité avec Firefox</string>
   <!-- Notifications onboarding subtitle. 'Firefox' is intentionally hardcoded. -->
@@ -4081,7 +4085,7 @@
   -->
   <string name="microsurvey_uninstall_survey_title">Votre avis compte. Pourquoi effectuez-vous la désinstallation\u00a0?</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_1">Problèmes de pages web</string>
+  <string name="uninstall_survey_option_1">Problèmes avec des pages web</string>
   <!-- Uninstall survey answer option -->
   <string name="uninstall_survey_option_2">Problèmes de vidéo et de téléchargement</string>
   <!-- Uninstall survey answer option -->
@@ -4483,7 +4487,7 @@
   <!-- Round name shown on the sports widget for the quarter-finals stage in the soccer tournament. -->
   <string name="sports_widget_quarter_final">Quarts de finale</string>
   <!-- Round name shown on the sports widget for the semi-finals stage in the soccer tournament. -->
-  <string name="sports_widget_semi_final">Demi-finale</string>
+  <string name="sports_widget_semi_final">Demi-finales</string>
   <!-- Round name shown on the sports widget for the final stage in the soccer tournament. -->
   <string name="sports_widget_final">Finale</string>
   <!-- Round name shown on the sports widget for the bronze final stage in the soccer tournament. -->

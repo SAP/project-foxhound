@@ -592,7 +592,7 @@
   <!-- Marketing onboarding body link text. -->
   <string name="nova_onboarding_marketing_body_link_text_1">Més informació</string>
   <!-- Marketing onboarding secondary button text. -->
-  <string name="nova_onboarding_marketing_secondary_button_text">No, gràcies</string>
+  <string name="nova_onboarding_marketing_secondary_button_text" tools:ignore="UnusedResources">No, gràcies</string>
   <!-- Notifications onboarding title. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_notifications_title" tools:ignore="BrandUsage,UnusedResources">Les notificacions us ajuden a estar més segur amb el Firefox</string>
   <!-- Notifications onboarding button. -->

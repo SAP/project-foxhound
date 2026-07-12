@@ -149,6 +149,8 @@
   <string name="home_screen_shortcut_open_new_private_tab_2">Варақаи хусусии нав</string>
   <!-- Shortcut action to open Passwords screen -->
   <string name="home_screen_shortcut_passwords">Ниҳонвожаҳо</string>
+  <!-- Shortcut action to open uninstall survey -->
+  <string name="home_screen_shortcut_uninstall_survey">Чаро насбро лағв мекунед?</string>
   <!--
     Recent Tabs
 
@@ -663,9 +665,13 @@
   <!-- Marketing onboarding primary button text. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage,UnusedResources">«Firefox»-ро дастгирӣ намоед</string>
   <!-- Marketing onboarding primary button text. -->
+  <string name="nova_onboarding_marketing_primary_button_text_3">Ҳа</string>
+  <!-- Marketing onboarding primary button text. -->
   <string name="nova_onboarding_marketing_primary_button_text_2">Иҷозат дода, идома диҳед</string>
   <!-- Marketing onboarding secondary button text. -->
-  <string name="nova_onboarding_marketing_secondary_button_text">Не, ташаккур</string>
+  <string name="nova_onboarding_marketing_secondary_button_text" tools:ignore="UnusedResources">Не, ташаккур</string>
+  <!-- Marketing onboarding secondary button text. -->
+  <string name="nova_onboarding_marketing_secondary_button_text_2">Не</string>
   <!-- Notifications onboarding title. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_notifications_title" tools:ignore="BrandUsage,UnusedResources">Огоҳиҳо барои кори бехатартар бо «Firefox» ба шумо кумак мекунанд</string>
   <!-- Notifications onboarding subtitle. 'Firefox' is intentionally hardcoded. -->
@@ -1965,6 +1971,8 @@
   <string name="webcompat_reporter_label_whats_broken_3">Чӣ кор намекунад?</string>
   <!-- Content description for the icon button that clears the selected broken site reason in the WebCompat Reporter. -->
   <string name="webcompat_reporter_clear_reason_content_description">Пок кардани сабаби интихобшуда</string>
+  <!-- The error message of the description when the user selects "Something else" as the reason, but left the description empty or too short. -->
+  <string name="webcompat_reporter_description_error">Лутфан, ақаллан 10 аломатро ворид намоед</string>
   <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_label_whats_broken_2">Чӣ вайрон шудааст?</string>
   <!-- The placeholder text for the dropdown where a user selects a high-level reason why the site is broken. -->
@@ -2447,6 +2455,8 @@
   <string name="preferences_take_survey">Иштирок дар саволнома</string>
   <!-- Preference for not taking the short survey. -->
   <string name="preferences_not_take_survey">Не, ташаккур</string>
+  <!-- Error message shown in a Toast when the system fails to trigger the device uninstallation prompt. -->
+  <string name="uninstall_survey_error_failed">Дархости низоми барномавӣ барои лағв кардани насб кушода нашуд, лутфан, аз амали низоми барномавӣ барои лағв кардани насб бевосита истифода баред.</string>
   <!--
     Snackbar
 
@@ -3943,6 +3953,8 @@
     %s is a placeholder for the name of the certificate authority that issued the certificate.
   -->
   <string name="connection_security_panel_verified_by">Аз ҷониби «%s» тасдиқ карда шудааст</string>
+  <!-- Content description (not visible, for screen readers etc.) for the handle used to drag the protections dashboard to the bottom of the screen and close it. -->
+  <string name="tracker_protections_dashboard_close_handlebar_content_description">Пӯшидани лавҳаи иттилоотӣ</string>
   <!--
     Text for the connection security panel when the site uses a QWAC.
     %s is a placeholder for the organization for which the certificate was issued.
@@ -4066,6 +4078,26 @@
   <string name="microsurvey_sync_title" tools:ignore="BrandUsage,UnusedResources">Шумо аз таҷрибаи ҳамоҳангсозӣ дар «Firefox» то чӣ андоза қаноатмандед?</string>
   <!-- Text shown in the survey title for 'describe your experience so far' microsurvey. Note: The word "Firefox" should NOT be translated. -->
   <string name="microsurvey_describe_your_experience_title" tools:ignore="BrandUsage,UnusedResources">Ба мо барои беҳтар кардани браузери «Firefox» кумак расонед. Кадом банд таҷрибаи беҳтарини шуморо тавсиф мекунад?</string>
+  <!--
+    Uninstall Survey
+
+    Title text for the uninstall survey dialog, asking the user for the reason they are removing the app
+  -->
+  <string name="microsurvey_uninstall_survey_title">Изҳори назари шумо муҳим аст. Сабаби лағв кардани насби барнома дар чӣ аст?</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_1">Мушкилиҳо бо саҳифаҳои сомона</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_2">Мушкилиҳо бо видео ва боргириҳо</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_3">Мушкилиҳо бо самаранокӣ</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_4">Мушкилиҳо бо вазифаҳо ва намуди зоҳирӣ</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_5">Мушкилиҳои марбут ба махфият</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_6">Мушкилиҳо бо пардохт ва обуна</string>
+  <!-- Button label shown at the bottom of the uninstall survey -->
+  <string name="uninstall_survey_button_label">Ирсоли изҳори назар ва лағв кардани насб</string>
   <!--
     Accessibility
 
@@ -4703,6 +4735,8 @@
   <string name="firefox_labs_feature_enable_dialog_message">Барои фаъол кардани ин хусусият, «%s»-ро аз нав оғоз кунед.</string>
   <!-- The description text that is displayed in the confirmation dialog on the Firefox Labs screen for toggling "off" experimental features. %s is the name of the app (for example "Firefox Nightly") -->
   <string name="firefox_labs_feature_disable_dialog_message">Барои хомӯш кардани ин хусусият, «%s»-ро аз нав оғоз кунед.</string>
+  <!-- Helper text shown beneath a Firefox Labs item when it is blocked from being turned on. -->
+  <string name="firefox_labs_feature_conflict">Ин хусусият барои санҷиш дастнорас аст.</string>
   <!-- Text displayed on the Firefox Labs screen when there are no Labs experimental features present. -->
   <string name="firefox_labs_no_labs_available_description">Дар айни замон ягон хусусияти озмоишӣ барои санҷиш дастрас нест</string>
 </resources>

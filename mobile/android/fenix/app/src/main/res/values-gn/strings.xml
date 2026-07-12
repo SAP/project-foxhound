@@ -651,6 +651,8 @@
     %1$s is replaced by an active link, using nova_onboarding_marketing_body_link_text_1 as text (“Learn More”).
   -->
   <string name="nova_onboarding_marketing_body_7" tools:ignore="BrandUsage">Ore pytyvõ roguahẽ hag̃ua hetave tapichápe ehejávo Mozilla toikuaauka pyendavusu eikehague guive eiporúvo Firefox. %1$s</string>
+  <!-- Marketing onboarding additional body text. 'Firefox' is intentionally hardcoded. -->
+  <string name="nova_onboarding_marketing_body_line_two" tools:ignore="BrandUsage">Firefox ojerovu ijehegui rupi omba’apo omoakãrapu’ã hag̃ua ñanduti hekosãsóva umi ojagarrapaséva renondépe.</string>
   <!--
     Marketing onboarding additional body text. 'Firefox' is intentionally hardcoded.
     “Allowing” refers to the main button “Allow and Continue”; the ask for the user is to allow communicating back to the platform.
@@ -663,9 +665,13 @@
   <!-- Marketing onboarding primary button text. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage,UnusedResources">Eipytyvõ Firefox-pe</string>
   <!-- Marketing onboarding primary button text. -->
+  <string name="nova_onboarding_marketing_primary_button_text_3">Héẽ</string>
+  <!-- Marketing onboarding primary button text. -->
   <string name="nova_onboarding_marketing_primary_button_text_2">Emoneĩ ha Eku’ejey</string>
   <!-- Marketing onboarding secondary button text. -->
-  <string name="nova_onboarding_marketing_secondary_button_text">Nahániri, aguyje</string>
+  <string name="nova_onboarding_marketing_secondary_button_text" tools:ignore="UnusedResources">Nahániri, aguyje</string>
+  <!-- Marketing onboarding secondary button text. -->
+  <string name="nova_onboarding_marketing_secondary_button_text_2">Nahániri</string>
   <!-- Notifications onboarding title. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_notifications_title" tools:ignore="BrandUsage,UnusedResources">Umi marandu ne pytyvõta eime hag̃ua tekorosãme Firefox ndive</string>
   <!-- Notifications onboarding subtitle. 'Firefox' is intentionally hardcoded. -->
@@ -2449,6 +2455,8 @@
   <string name="preferences_take_survey">Ejapo encuesta</string>
   <!-- Preference for not taking the short survey. -->
   <string name="preferences_not_take_survey">Nahániri, aguyje</string>
+  <!-- Error message shown in a Toast when the system fails to trigger the device uninstallation prompt. -->
+  <string name="uninstall_survey_error_failed">Ndaikatúi embojuruja ovetã ñemohendape’aha apopyvusu. Eipuru pe apopyvusu ñemohendape’aha.</string>
   <!--
     Snackbar
 
@@ -3106,6 +3114,12 @@
   <string name="ip_protection_onboarding_body">%1$s oñomi ne rendaite, taha’e Wi-Fi jepera’e. Eiporu %2$d GB reiete jasy pukukue.</string>
   <!-- Used as text for a link in ip_protection_onboarding_body. Make sure to adapt capitalization if the link is in the middle of the sentence. -->
   <string name="ip_protection_onboarding_body_link">Eikundaha ñemo’ã jo’a reheve</string>
+  <!--
+    The body of the VPN onboarding card for a promotion that provides unlimited data bandwidth for a certain time.
+    %1$s is a localized date (for example "Jun 9") indicating the end of the promotional period.
+    %2$s is a link using ip_protection_onboarding_body_link_promo (“Learn more”) as text. It links to a support article about VPN on Firefox.
+  -->
+  <string name="ip_protection_onboarding_body_promo">Emyandy ne ñeikundaha hekoñemi ha hasyve hag̃ua ijehapykueko. Eiporu ko’ág̃a ancho de banda opa’ỹva %1$s. %2$s rupive</string>
   <!-- Used as text for a link in ip_protection_onboarding_body. Make sure to adapt capitalization if the link is in the middle of the sentence. -->
   <string name="ip_protection_onboarding_body_link_promo">Eikuaave</string>
   <!-- Label for the dismiss button on the onboarding bottom sheet. -->
@@ -3939,6 +3953,8 @@
     %s is a placeholder for the name of the certificate authority that issued the certificate.
   -->
   <string name="connection_security_panel_verified_by">Ohechapyréva %s</string>
+  <!-- Content description (not visible, for screen readers etc.) for the handle used to drag the protections dashboard to the bottom of the screen and close it. -->
+  <string name="tracker_protections_dashboard_close_handlebar_content_description">Emboty mba’erupa</string>
   <!--
     Text for the connection security panel when the site uses a QWAC.
     %s is a placeholder for the organization for which the certificate was issued.
@@ -4062,6 +4078,24 @@
   <string name="microsurvey_sync_title" tools:ignore="BrandUsage,UnusedResources">¿Mba’eichaitépa reñeñandu Firefox ñembojuehe ndive?</string>
   <!-- Text shown in the survey title for 'describe your experience so far' microsurvey. Note: The word "Firefox" should NOT be translated. -->
   <string name="microsurvey_describe_your_experience_title" tools:ignore="BrandUsage,UnusedResources">Ore pytyvõ iporãve hag̃ua Firefox. ¿Mba’épa iporãvéva ne rembiasakuépe?</string>
+  <!--
+    Uninstall Survey
+
+    Title text for the uninstall survey dialog, asking the user for the reason they are removing the app
+  -->
+  <string name="microsurvey_uninstall_survey_title">Ne remiandu iporã oréve. ¿Mba’ére reipe’ahína?</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_1">Apañuái ñanduti roguéndi</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_2">Apañuái ta’ãngamýi ha mboguejýndi</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_3">Apañuái jejapogua</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_4">Apañuái tembiapoite ha moha’ãngagua</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_5">Apañuái tekoñemi rehegua</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_6">Apañuái hepyme’ẽ ha mboheraguapygua</string>
   <!-- Button label shown at the bottom of the uninstall survey -->
   <string name="uninstall_survey_button_label">Emondo temiandu ha eipe’aite</string>
   <!--

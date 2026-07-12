@@ -25,4 +25,6 @@
   <string name="sound_off">🔇 ginâ\'àj nanèe</string>
   <!-- Back button -->
   <string name="back">ne\' rūkùu</string>
+  <!-- Share hiscore action label. hiscore is an abbreviation for "Highest Score" -->
+  <string name="share_hiscore">Dūguachîn da’nga’ yākán doj</string>
 </resources>

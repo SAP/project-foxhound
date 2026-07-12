@@ -149,6 +149,8 @@
   <string name="home_screen_shortcut_open_new_private_tab_2">Uusi yksityinen välilehti</string>
   <!-- Shortcut action to open Passwords screen -->
   <string name="home_screen_shortcut_passwords">Salasanat</string>
+  <!-- Shortcut action to open uninstall survey -->
+  <string name="home_screen_shortcut_uninstall_survey">Poistatko, miksi?</string>
   <!--
     Recent Tabs
 
@@ -643,14 +645,29 @@
     %1$s is replaced by an active link, using nova_onboarding_marketing_body_link_text as text (“How we use the data”).
   -->
   <string name="nova_onboarding_marketing_body_6" tools:ignore="BrandUsage,UnusedResources">Auta meitä tavoittamaan enemmän ihmisiä sallimalla Mozillan kertoa alustalle, jolta tulit, että käytät Firefoxia. %1$s</string>
+  <!--
+    Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
+    “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
+    %1$s is replaced by an active link, using nova_onboarding_marketing_body_link_text_1 as text (“Learn More”).
+  -->
+  <string name="nova_onboarding_marketing_body_7" tools:ignore="BrandUsage">Voit auttaa meitä tavoittamaan enemmän ihmisiä sallimalla Mozillan kertoa alustalle, jolta tulit, että käytät Firefoxia. %1$s</string>
+  <!-- Marketing onboarding additional body text. 'Firefox' is intentionally hardcoded. -->
+  <string name="nova_onboarding_marketing_body_line_two" tools:ignore="BrandUsage">Firefox on ylpeästi itsenäinen ja omistautunut puolustamaan avointa verkkoa teknologiamonopoleja vastaan.</string>
+  <!--
+    Marketing onboarding additional body text. 'Firefox' is intentionally hardcoded.
+    “Allowing” refers to the main button “Allow and Continue”; the ask for the user is to allow communicating back to the platform.
+  -->
+  <string name="nova_onboarding_marketing_body_line_three" tools:ignore="BrandUsage">Harkitse Firefoxin voittamisen mahdollistamista.</string>
   <!-- Marketing onboarding body link text. -->
   <string name="nova_onboarding_marketing_body_link_text">Kuinka käytämme tietoja</string>
+  <!-- Marketing onboarding body link text. -->
+  <string name="nova_onboarding_marketing_body_link_text_1">Lue lisää</string>
   <!-- Marketing onboarding primary button text. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage,UnusedResources">Auta Firefoxia</string>
   <!-- Marketing onboarding primary button text. -->
   <string name="nova_onboarding_marketing_primary_button_text_2">Salli ja jatka</string>
   <!-- Marketing onboarding secondary button text. -->
-  <string name="nova_onboarding_marketing_secondary_button_text">Ei kiitos</string>
+  <string name="nova_onboarding_marketing_secondary_button_text" tools:ignore="UnusedResources">Ei kiitos</string>
   <!-- Notifications onboarding title. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_notifications_title" tools:ignore="BrandUsage,UnusedResources">Ilmoitukset auttavat sinua pysymään paremmassa turvassa Firefoxilla</string>
   <!-- Notifications onboarding subtitle. 'Firefox' is intentionally hardcoded. -->
@@ -1947,6 +1964,12 @@
   <!-- The error message of the URL text field when an invalid URL has been entered. -->
   <string name="webcompat_reporter_url_error_invalid">Kirjoita kelvollinen URL-osoite</string>
   <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
+  <string name="webcompat_reporter_label_whats_broken_3">Mikä ei toimi?</string>
+  <!-- Content description for the icon button that clears the selected broken site reason in the WebCompat Reporter. -->
+  <string name="webcompat_reporter_clear_reason_content_description">Tyhjennä valittu syy</string>
+  <!-- The error message of the description when the user selects "Something else" as the reason, but left the description empty or too short. -->
+  <string name="webcompat_reporter_description_error">Syötä vähintään 10 merkkiä</string>
+  <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_label_whats_broken_2">Mikä on rikki?</string>
   <!-- The placeholder text for the dropdown where a user selects a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_choose_reason_2">Valitse syy</string>
@@ -2004,6 +2027,10 @@
   <string name="webcompat_reporter_reason_account2">Kirjautuminen tai rekisteröityminen ei onnistu</string>
   <!-- Broken site reason text for site asked to turn off ad blocker -->
   <string name="webcompat_reporter_reason_turn_off_adblocker">Sivusto pyysi poistamaan mainosteneston käytöstä</string>
+  <!-- Broken site reason text for browser isn’t supported or blocked -->
+  <string name="webcompat_reporter_reason_notsupported_2">Selain ei ole tuettu tai se on estetty</string>
+  <!-- Broken site reason text for the site being deceptive -->
+  <string name="webcompat_reporter_reason_site_is_deceptive">Tämä sivusto on petollinen</string>
   <!-- Broken site reason text for browser isn’t supported or blocked -->
   <string name="webcompat_reporter_reason_notsupported">Selain ei ole tuettu tai se on estetty</string>
   <!-- Broken site reason text for something else -->
@@ -2424,6 +2451,8 @@
   <string name="preferences_take_survey">Vastaa kyselyyn</string>
   <!-- Preference for not taking the short survey. -->
   <string name="preferences_not_take_survey">Ei kiitos</string>
+  <!-- Error message shown in a Toast when the system fails to trigger the device uninstallation prompt. -->
+  <string name="uninstall_survey_error_failed">Järjestelmän asennuksen poistokehotteen avaaminen epäonnistui. Käytä järjestelmän asennuksen poistotoimintoa suoraan.</string>
   <!--
     Snackbar
 
@@ -3081,6 +3110,12 @@
   <string name="ip_protection_onboarding_body">%1$s piilottamalla sijaintisi, jopa julkisessa Wi-Fi-verkossa. Saat %2$d Gt ilmaiseksi joka kuukausi.</string>
   <!-- Used as text for a link in ip_protection_onboarding_body. Make sure to adapt capitalization if the link is in the middle of the sentence. -->
   <string name="ip_protection_onboarding_body_link">Selaa lisäsuojauksella</string>
+  <!--
+    The body of the VPN onboarding card for a promotion that provides unlimited data bandwidth for a certain time.
+    %1$s is a localized date (for example "Jun 9") indicating the end of the promotional period.
+    %2$s is a link using ip_protection_onboarding_body_link_promo (“Learn more”) as text. It links to a support article about VPN on Firefox.
+  -->
+  <string name="ip_protection_onboarding_body_promo">Ota se käyttöön, niin selaamisestasi tulee aiempaa yksityisempää ja vaikeampaa jäljittää. Kokeile sitä nyt ja saat rajattoman kaistanleveyden %1$s asti. %2$s</string>
   <!-- Used as text for a link in ip_protection_onboarding_body. Make sure to adapt capitalization if the link is in the middle of the sentence. -->
   <string name="ip_protection_onboarding_body_link_promo">Lue lisää</string>
   <!-- Label for the dismiss button on the onboarding bottom sheet. -->
@@ -3827,6 +3862,62 @@
   <string name="protection_panel_privacy_and_security_settings_2">Tietosuoja-asetukset</string>
   <!-- Title text for the protection panel permissions section. -->
   <string name="protection_panel_permissions_title">Oikeudet</string>
+  <plurals name="trackers_blocked_panel_total_num_trackers_blocked_2">
+    <!--
+      Text for displaying the total number of trackers blocked in the trackers blocked panel.
+      %1$d is a placeholder for the number of trackers blocked.
+    -->
+    <item quantity="one">%1$d seurain estetty tällä sivustolla</item>
+    <item quantity="other">%1$d seurainta estetty tällä sivustolla</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_social_media_trackers">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked social media trackers.
+      %1$d is a placeholder for the number of social media trackers blocked.
+    -->
+    <item quantity="one">%1$d sosiaalisen median seurain</item>
+    <item quantity="other">%1$d sosiaalisen median seurainta</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_cross_site_cookies">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked cross-site tracking cookies.
+      %1$d is a placeholder for the number of cross-site tracking cookies blocked.
+    -->
+    <item quantity="one">%1$d sivustorajat ylittävä seuraineväste</item>
+    <item quantity="other">%1$d sivustorajat ylittävää seurainevästettä</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_cryptominers">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked cryptomining scripts.
+      %1$d is a placeholder for the number of cryptominers blocked.
+    -->
+    <item quantity="one">%1$d kryptolouhija</item>
+    <item quantity="other">%1$d kryptolouhijaa</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_fingerprinters">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked fingerprinter scripts.
+      %1$d is a placeholder for the number of fingerprinters blocked.
+    -->
+    <item quantity="one">%1$d yksilöijä</item>
+    <item quantity="other">%1$d yksilöijää</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_trackers_2">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked generic tracking scripts.
+      %1$d is a placeholder for the number of trackers blocked.
+    -->
+    <item quantity="one">%1$d seurantaan tarkoitettu sisältö</item>
+    <item quantity="other">%1$d seurantaan tarkoitettua sisältöä</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_trackers_blocked_this_week_2">
+    <!--
+      Text for displaying the number of trackers blocked this week in the trackers blocked panel.
+      %1$d is a placeholder for the number of trackers blocked this week.
+    -->
+    <item quantity="one">%1$d seurain estetty tällä viikolla</item>
+    <item quantity="other">%1$d seurainta estetty tällä viikolla</item>
+  </plurals>
   <!--
     Text for displaying the total number of trackers blocked in the trackers blocked panel.
     %d is a placeholder for the number of trackers blocked.
@@ -3858,6 +3949,8 @@
     %s is a placeholder for the name of the certificate authority that issued the certificate.
   -->
   <string name="connection_security_panel_verified_by">Varmistanut %s</string>
+  <!-- Content description (not visible, for screen readers etc.) for the handle used to drag the protections dashboard to the bottom of the screen and close it. -->
+  <string name="tracker_protections_dashboard_close_handlebar_content_description">Sulje hallintapaneeli</string>
   <!--
     Text for the connection security panel when the site uses a QWAC.
     %s is a placeholder for the organization for which the certificate was issued.
@@ -3981,6 +4074,26 @@
   <string name="microsurvey_sync_title" tools:ignore="BrandUsage,UnusedResources">Kuinka tyytyväinen olet Firefoxin synkronointikokemukseen?</string>
   <!-- Text shown in the survey title for 'describe your experience so far' microsurvey. Note: The word "Firefox" should NOT be translated. -->
   <string name="microsurvey_describe_your_experience_title" tools:ignore="BrandUsage,UnusedResources">Auta meitä parantamaan Firefoxia. Mikä näistä kuvailee parhaiten kokemustasi tähän mennessä?</string>
+  <!--
+    Uninstall Survey
+
+    Title text for the uninstall survey dialog, asking the user for the reason they are removing the app
+  -->
+  <string name="microsurvey_uninstall_survey_title">Palautteesi on tärkeä. Miksi poistat asennuksen?</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_1">Verkkosivuongelmat</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_2">Video- ja latausongelmat</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_3">Suorituskykyongelmat</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_4">Toiminnalliset ja suunnitteluun liittyvät ongelmat</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_5">Tietosuojaan liittyvät ongelmat</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_6">Maksu- ja tilausongelmat</string>
+  <!-- Button label shown at the bottom of the uninstall survey -->
+  <string name="uninstall_survey_button_label">Lähetä palautetta ja poista sovellus</string>
   <!--
     Accessibility
 
@@ -4560,6 +4673,28 @@
   <string name="privacy_notice_updated_homepage_message_privacy_notice" tools:ignore="UnusedResources">tietosuojakäytännön</string>
   <!-- The second active link used in privacy_notice_updated_homepage_message -->
   <string name="privacy_notice_updated_homepage_message_learn_more" tools:ignore="UnusedResources">Lue lisää</string>
+  <!-- Google Lens prototype related strings -->
+  <string name="preferences_debug_settings_google_lens_integration">Ota käyttöön Google Lens -integraatio</string>
+  <!-- Lens image search button content description -->
+  <string name="lens_search_content_description">Hae kuvan avulla</string>
+  <!-- Content description for the gallery picker button in the Lens camera screen -->
+  <string name="content_description_gallery">Valitse galleriasta lähetettäväksi Google Lensiin</string>
+  <!-- Content description for the shutter button in the Lens camera screen -->
+  <string name="content_description_take_photo">Ota kuva ja lähetä se Google Lensiin</string>
+  <!-- Image context menu entry that sends the long-pressed image to Google Lens -->
+  <string name="context_menu_open_image_with_google_lens">Hae Google Lensillä</string>
+  <!-- Toast shown when the user denies the camera permission requested by the Lens camera screen -->
+  <string name="lens_camera_permission_denied">Pääsy estetty</string>
+  <!-- Title for the Google Lens AI feature toggle -->
+  <string name="ai_controls_google_lens_title">Google Lens</string>
+  <!-- Description for the Google Lens AI feature toggle -->
+  <string name="ai_controls_google_lens_description">Lähettää kuvia ja valokuvia Googlelle visuaalista hakua varten.</string>
+  <!-- Content description for the Google Lens half of the camera mode toggle -->
+  <string name="lens_camera_mode_lens">Google Lens</string>
+  <!-- Content description for the QR scanner half of the camera mode toggle -->
+  <string name="lens_camera_mode_qr">QR-skanneri</string>
+  <!-- Toast shown when the user picks an image from the gallery in QR mode but no QR code is found in it -->
+  <string name="lens_camera_qr_no_code_found">Kuvasta ei löytynyt QR-koodia</string>
   <!--
     Firefox Labs
 
@@ -4596,6 +4731,8 @@
   <string name="firefox_labs_feature_enable_dialog_message">Ota tämä ominaisuus käyttöön käynnistämällä %s uudelleen.</string>
   <!-- The description text that is displayed in the confirmation dialog on the Firefox Labs screen for toggling "off" experimental features. %s is the name of the app (for example "Firefox Nightly") -->
   <string name="firefox_labs_feature_disable_dialog_message">Poista tämä ominaisuus käytöstä käynnistämällä %s uudelleen.</string>
+  <!-- Helper text shown beneath a Firefox Labs item when it is blocked from being turned on. -->
+  <string name="firefox_labs_feature_conflict">Ominaisuus ei ole kokeiltavissa.</string>
   <!-- Text displayed on the Firefox Labs screen when there are no Labs experimental features present. -->
   <string name="firefox_labs_no_labs_available_description">Ei kokeellisia ominaisuuksia kokeiltavaksi juuri nyt</string>
 </resources>

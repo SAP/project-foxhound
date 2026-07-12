@@ -796,6 +796,7 @@
   <string name="download_file_has_not_enough_storage_dialog_title">Ei ole piisavalt ruumi</string>
   <!-- Text for the button to delete a single downloaded file item -->
   <string name="download_delete_item">Kustuta</string>
+  <string name="download_clear_search_description">Tühjenda</string>
   <!-- Text for the button to share the download URL -->
   <string name="download_share_url">Jaga URL-i</string>
   <!-- Text for the button to share the download file -->
@@ -1517,6 +1518,8 @@
   <string name="saved_login_clear_hostname">Tühjenda sait</string>
   <!-- Delete text for the login detail menu delete button -->
   <string name="login_detail_menu_delete_button">Kustuta</string>
+  <!-- Content description, used by tools like screenreaders, to press on the clear search text button. -->
+  <string name="saved_logins_clear_search_text_button_content_description">Eemalda otsingutekst</string>
   <!-- Content Description (for screenreaders etc) read for the button to open a site in logins -->
   <string name="saved_login_open_site">Ava sait brauseris</string>
   <!-- Content Description (for screenreaders etc) read for the button to reveal a password in logins -->
@@ -1968,8 +1971,12 @@
   <string name="protection_panel_etp_toggle_off">Väljas</string>
   <!-- Title text for the protection panel permissions section. -->
   <string name="protection_panel_permissions_title">Õigused</string>
+  <!-- Button text on the clear site data dialog to allow users to confirm they wish to clear the site data. -->
+  <string name="clear_site_data_dialog_positive_button_text">Kustuta</string>
   <!-- Button text on the clear site data dialog to allow users to cancel the action and not clear the site data. -->
   <string name="clear_site_data_dialog_negative_button_text">Loobu</string>
+  <!-- The error message of the text field in the tab creation tool when the text field is empty -->
+  <string name="debug_drawer_tab_tools_tab_quantity_empty_error">Tekstiväli on tühi</string>
   <!-- The continue button label -->
   <string name="micro_survey_continue_button_label" tools:ignore="UnusedResources">Jätka</string>
   <!-- TextField Design System Component -->
@@ -2008,6 +2015,10 @@
   <string name="review_prompt_feedback_header">Meil on kahju, et sul on probleeme. Anna meile teada, kuidas saaksime %1$si paremaks muuta.</string>
   <!-- Label for a button opening a feedback forum -->
   <string name="review_prompt_feedback_button">Anna tagasisidet</string>
+  <!-- Content description (not visible, for screen readers etc.) for the button to clear the search field for settings search -->
+  <string name="content_description_settings_search_clear_search">Tühjenda otsing</string>
+  <!-- Text of button allowing to clear history of recent searches done in the settings screen. -->
+  <string name="settings_search_clear_recent_searches_message">Kustuta kõik</string>
   <!-- ==== Terms of use pop up prompt ==== -->
 
   <!-- ==== Experiment strings. ==== -->

@@ -557,10 +557,12 @@
   <string name="nova_onboarding_marketing_title">ഒരു മികച്ച ഇന്റെർനെറ്റ് പണിയാൻ ഞങ്ങളെ തുണയ്ക്കുക</string>
   <!-- Marketing onboarding body link text. -->
   <string name="nova_onboarding_marketing_body_link_text">എങ്ങനെയാണു ഞങ്ങൾ ദത്തയെ ഉപയോഗിക്കുന്നതു്</string>
+  <!-- Marketing onboarding body link text. -->
+  <string name="nova_onboarding_marketing_body_link_text_1">കൂടുതല്‍ അറിയുക</string>
   <!-- Marketing onboarding primary button text. -->
   <string name="nova_onboarding_marketing_primary_button_text_2">സമ്മതിച്ചു തുടരുക</string>
   <!-- Marketing onboarding secondary button text. -->
-  <string name="nova_onboarding_marketing_secondary_button_text">വേണ്ട, നന്ദി</string>
+  <string name="nova_onboarding_marketing_secondary_button_text" tools:ignore="UnusedResources">വേണ്ട, നന്ദി</string>
   <!-- Notifications onboarding title. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_notifications_title" tools:ignore="BrandUsage,UnusedResources">Firefox-ൽ സുരക്ഷിതമായി തുടരാൻ അറിയിപ്പുകൾ താങ്ങളെ സഹായിക്കുന്നു</string>
   <!-- Notifications onboarding button. -->
@@ -1760,6 +1762,10 @@
   <!-- Broken site reason text for site asked to turn off ad blocker -->
   <string name="webcompat_reporter_reason_turn_off_adblocker">ഈ വെബിടം പരസ്യ തടയൽയന്ത്രത്തിനെ അണയ്ക്കാൻ ചോദിയ്ക്കുന്നു.</string>
   <!-- Broken site reason text for browser isn’t supported or blocked -->
+  <string name="webcompat_reporter_reason_notsupported_2">ഈ അന്വേഷിയന്ത്രം വിലക്കപ്പെട്ടിരിക്കുന്നു അല്ലെങ്കിൽ പിന്തുണയ്ക്കപ്പെടാത്തതാണു്</string>
+  <!-- Broken site reason text for the site being deceptive -->
+  <string name="webcompat_reporter_reason_site_is_deceptive">ഈ വെബ്ബിടം വഴിതെറ്റിക്കാവുന്നതായേക്കാം</string>
+  <!-- Broken site reason text for browser isn’t supported or blocked -->
   <string name="webcompat_reporter_reason_notsupported">ഈ അന്വേഷിയന്ത്രത്തിനെ പിന്തുണയ്ക്കാറില്ല അല്ലെങ്കിൽ തടഞ്ഞിരിക്കുന്നു</string>
   <!-- Broken site reason text for something else -->
   <string name="webcompat_reporter_reason_other">വേറെന്തെങ്കിലും</string>
@@ -2091,6 +2097,8 @@
   <string name="qr_code_display_title">ക്യു.ആർ സങ്കേതം</string>
   <!-- Content description for the close button in the QR code display screen -->
   <string name="qr_code_display_close">അടയ്ക്കുക</string>
+  <!-- Heading on the QR code display screen -->
+  <string name="qr_code_display_share_nearby">കണ്ണി പങ്കിടുക</string>
   <!-- Label for the download button on the QR code display screen -->
   <string name="qr_code_display_download">ഇറക്കിവയ്ക്കുക</string>
   <!-- Sub-header in the dialog to share a link to an app from the full list -->
@@ -2417,10 +2425,14 @@
   <string name="etp_cookies_title_2">വെബിടക്കുറുകെ കുക്കികൾ</string>
   <!-- Description of cross-site tracking cookies that can be blocked by Enhanced Tracking Protection -->
   <string name="etp_cookies_description">താങ്കളുടെ തിരച്ചിൽദത്ത സമാഹരിക്കാൻ നിരവധി സൈറ്റുകളിൽ പരസ്യ ശൃംഘലകളും അനലിറ്റിക്സ് കമ്പനികളും ഉപയോഗിക്കുന്ന കൂക്കികളെ തടയുന്നു.</string>
+  <!-- Description of cross-site tracking cookies that can be blocked by Enhanced Tracking Protection -->
+  <string name="etp_cookies_description_2">തികച്ച കുക്കി സംരക്ഷണം കുക്കികളെ താങ്ങൾ സന്ദൎശിക്കുന്ന വെബ്ബിടത്തേക്കു മാത്രം ഒറ്റപ്പെടുത്തിവയ്ക്കും.പരസ്യ ശൃംഖല പോലുള്ള പിന്തുടൎച്ചയന്ത്രങ്ങൾക്കു വെബ്ബിടങ്ങൾ കുറുകെ താങ്ങളെ പിന്തുടരാൻ പറ്റിത്തില്ല.</string>
   <!-- Category of trackers (cryptominers) that can be blocked by Enhanced Tracking Protection -->
   <string name="etp_cryptominers_title">ക്രിപ്റ്റോമൈനേഴ്സ്</string>
   <!-- Description of cryptominers that can be blocked by Enhanced Tracking Protection -->
   <string name="etp_cryptominers_description">ഡിജിറ്റൽ പണത്തിന്റെ ഖനനത്തിനായി താങ്കളുടെ ഉപകരണത്തിലേക്ക് പ്രവേശനം നേടുന്ന ക്ഷുദ്ര സ്‌ക്രിപ്റ്റുകളെ തടയുന്നു.</string>
+  <!-- Description of fingerprinters that can be blocked by Enhanced Tracking Protection -->
+  <string name="etp_known_fingerprinters_description">പിന്തുടൎച്ച ഉന്നങ്ങൾക്കായി ഉപയോഗിക്കാൻ കഴിയുന്ന താങ്ങളുടെ ഉപകരണത്തെ കുറിച്ച് അദ്വിതീയമായി തിരിച്ചറിയാവുന്ന ഡാറ്റ ശേഖരിക്കുന്നതിൽ നിന്നു തടയുന്നു.</string>
   <!-- Category of trackers (tracking content) that can be blocked by Enhanced Tracking Protection -->
   <string name="etp_tracking_content_title">പിന്തുടരുന്ന ഉള്ളടക്കം</string>
   <!-- Description of tracking content that can be blocked by Enhanced Tracking Protection -->
@@ -2449,8 +2461,15 @@
   <string name="etp_redirect_trackers_description">അറിയപ്പെടുന്ന ദത്താപിന്തുടർച്ച വെബ്‌സൈറ്റുകളിലേക്ക് വഴിതിരിച്ചിടുകൾ സജ്ജമാക്കിയ കുക്കികൾ മായ്ക്കുന്നു.</string>
   <!-- Preference for fingerprinting protection for the custom protection settings -->
   <string name="etp_suspected_fingerprinters_title">സംശയിക്കപ്പെട്ട വിരലടയാളപ്പിന്തുടൎച്ചയന്ത്രങ്ങൾ</string>
+  <!-- Description of fingerprinters that can be blocked by fingerprinting protection -->
+  <string name="etp_suspected_fingerprinters_description">വിരലടയാളപരിരക്ഷണം പ്രവൎത്തനക്ഷമാക്കുന്നതു ശംശയകരമായ വിരലടയാളപ്പിന്തുടൎച്ചയന്ത്രങ്ങളെ തടയുന്നു.</string>
   <!-- Category of trackers (fingerprinters) that can be blocked by Enhanced Tracking Protection -->
   <string name="etp_known_fingerprinters_title">അറിയപ്പെട്ട വിരലടയാളപ്പിന്തുടൎച്ചയന്ത്രം</string>
+  <!--
+    Description of the SmartBlock Enhanced Tracking Protection feature. The * symbol is intentionally hardcoded here,
+    as we use it on the UI to indicate which trackers have been partially unblocked.
+  -->
+  <string name="preference_etp_smartblock_description">താഴെ അടയാളപ്പെട്ട ചില പിന്തുടൎച്ചയന്ത്രങ്ങളുമായി താങ്ങൾ ഇടപഴകിയതിനാൽ ഈ വെബ്ബിടത്തിൽ അവയെ ഭാഗികയളവിൽ അനുവദിച്ചിരിക്കുന്നു.</string>
   <!-- Text displayed that links to website about enhanced tracking protection SmartBlock -->
   <string name="preference_etp_smartblock_learn_more">കൂടുതലറിയുക</string>
   <!--
@@ -2710,6 +2729,8 @@
   <string name="ip_protection_promo_headline">%s-യുടെ ഉൾപ്പണിഞ്ഞ വി.പി.എൻ</string>
   <!-- Link text that opens additional information about the browser VPN -->
   <string name="ip_protection_learn_more">കൂടുതലറിയുക</string>
+  <!-- Label for the monthly data allowance section on the browser VPN settings screen -->
+  <string name="ip_protection_data_limit_label">മാസംതോറും ഡാറ്റ പരിധി</string>
   <!--
     Data usage shown on the browser VPN settings screen.
     %1$.1f is the data remaining in GB (for example "8.3").
@@ -2735,6 +2756,8 @@
   <string name="ip_protection_menu_paused">നിറുത്തി</string>
   <!-- Badge label shown in the menu item when the browser VPN has an error -->
   <string name="ip_protection_menu_error">പിഴവു്</string>
+  <!-- Badge label shown in the menu item when the user is eligible to use the browser VPN but should authenticate or authorize it first. -->
+  <string name="ip_protection_menu_auth_required">ഉപയോഗിച്ചു നോക്കൂ</string>
   <!-- Content description for the chevron button that opens the browser VPN settings screen -->
   <string name="ip_protection_navigate_settings">വി.പി.എൻ ക്രമീകരണങ്ങൾ</string>
   <!--
@@ -3649,6 +3672,16 @@
   <string name="microsurvey_search_title" tools:ignore="BrandUsage,UnusedResources">ഫയർഫോക്സു് തിരച്ചിൽ അനുഭവം കൊണ്ടു് താങ്ങൾക്കു് എത്രത്തോളം സംതൃപ്തിയുണ്ട്?</string>
   <!-- Text shown in the survey title for sync experience microsurvey. Note: The word "Firefox" should NOT be translated. -->
   <string name="microsurvey_sync_title" tools:ignore="BrandUsage,UnusedResources">ഫയർഫോക്സു് സമന്വയ അനുഭവം കൊണ്ടു് താങ്ങൾക്കു് എത്രത്തോളം സംതൃപ്തിയുണ്ട്?</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_1">വെബ്ബിടക്കുഴപ്പങ്ങൾ</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_3">പ്രകടനക്കുഴപ്പങ്ങൾ</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_4">പ്രവൎത്തനത്തിലും രൂപകല്പനയിലും ഉള്ള കുഴപ്പങ്ങൾ</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_5">സ്വകാര്യതയുമായി ബന്ധപ്പെട്ട കുഴപ്പങ്ങൾ</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_6">പണമടക്കലും വരികാരാവലും ബന്ധപ്പെട്ട കുഴപ്പങ്ങൾ</string>
   <!--
     Accessibility
 
@@ -3938,6 +3971,26 @@
   <string name="terms_of_use_prompt_body_line_two_alternative" tools:ignore="UnusedResources">%1$s-ൽ താങ്ങൾക്കു കൂടുതലറിയാം.</string>
   <!-- Link text for terms_of_use_prompt_body_line_two_alternative that links to a site with more information about the Terms of Use -->
   <string name="terms_of_use_prompt_body_line_two_alternative_link" tools:ignore="UnusedResources">ഇവിടെ</string>
+  <!-- Section header for the North America region in the sports widget country selector. -->
+  <string name="sports_widget_confederation_north_america">വടക്കേ അമേരിക്ക</string>
+  <!-- Section header for the Africa confederation group in the sports widget country selector. -->
+  <string name="sports_widget_confederation_africa">ആഫ്രിക്ക</string>
+  <!-- Section header for the Asia confederation group in the sports widget country selector. -->
+  <string name="sports_widget_confederation_asia">ഏഷ്യ</string>
+  <!-- Section header for the CONCACAF confederation group in the sports widget country selector. "CONCACAF" is the abbreviation for "Confederation of North, Central America and Caribbean Association Football". -->
+  <string name="sports_widget_confederation_concacaf">കോൺകാഫ്</string>
+  <!-- Section header for the Europe confederation group in the sports widget country selector. -->
+  <string name="sports_widget_confederation_europe">യൂറോപ്പ്</string>
+  <!-- Section header for the Oceania confederation group in the sports widget country selector. -->
+  <string name="sports_widget_confederation_oceania">ഓഷ്യാനിയ</string>
+  <!-- Section header for the South America confederation group in the sports widget country selector. -->
+  <string name="sports_widget_confederation_south_america">തെക്കേ അമേരിക്ക</string>
+  <!-- Country name for England in the sports widget. England cannot be resolved with the Android Intl APIs so it needs an explicit string. -->
+  <string name="sports_widget_country_england">ഇംഗ്ലണ്ട്</string>
+  <!-- Country name for Scotland in the sports widget. Scotland cannot be resolved with the Android Intl APIs so it needs an explicit string. -->
+  <string name="sports_widget_country_scotland">സ്കോട്ലാണ്ട്</string>
+  <!-- Label shown on the sports widget scoreboard when a match is currently being played live. -->
+  <string name="sports_widget_match_live">തത്സമയം</string>
   <!-- Sports widget button label to see match results. -->
   <string name="sports_widget_see_results" tools:ignore="UnusedResources">ഫലങ്ങൾ കാണുക</string>
   <!-- Sports widget button label to view details of a soccer match results. -->
@@ -3958,12 +4011,28 @@
   <string name="sports_widget_first_half" tools:ignore="UnusedResources">ഒന്നാമ്പകുതി</string>
   <!-- Sports widget match status label shown during second half of a match. -->
   <string name="sports_widget_second_half" tools:ignore="UnusedResources">രണ്ടാമ്പകുതി</string>
+  <!-- Sports widget error card title shown when the user is offline. -->
+  <string name="sports_widget_error_connection_offline_title">താങ്ങൾ നിലവിൽ തത്സമയമല്ലെന്നു തോന്നുന്നു.</string>
   <!-- ==== End of Terms of use popup prompt. ==== -->
 
   <!-- The first active link used in privacy_notice_updated_homepage_message -->
   <string name="privacy_notice_updated_homepage_message_privacy_notice" tools:ignore="UnusedResources">സ്വകാര്യത അറിയിപ്പു്</string>
   <!-- The second active link used in privacy_notice_updated_homepage_message -->
   <string name="privacy_notice_updated_homepage_message_learn_more" tools:ignore="UnusedResources">കൂടുതല്‍ അറിയുക</string>
+  <!-- Lens image search button content description -->
+  <string name="lens_search_content_description">പടം ഉപയോഗിച്ചു തിരയുക</string>
+  <!-- Content description for the gallery picker button in the Lens camera screen -->
+  <string name="content_description_gallery">ചിത്രശാലയിൽ നിന്നൊരു പടം ഗൂഗിൾ ലെൻസേക്കു് അയയ്ക്കുക</string>
+  <!-- Content description for the shutter button in the Lens camera screen -->
+  <string name="content_description_take_photo">പടമെടുത്തിട്ടു ഗൂഗിൾ ലെൻസേക്കു് അയയ്ക്കുക</string>
+  <!-- Image context menu entry that sends the long-pressed image to Google Lens -->
+  <string name="context_menu_open_image_with_google_lens">ഗൂഗിൾ ലെൻസ് ഉപയോഗിച്ചു തിരയുക</string>
+  <!-- Toast shown when the user denies the camera permission requested by the Lens camera screen -->
+  <string name="lens_camera_permission_denied">അനുമതി നല്കിയില്ല</string>
+  <!-- Title for the Google Lens AI feature toggle -->
+  <string name="ai_controls_google_lens_title">ഗൂഗിൾ ലെൻസ്</string>
   <!-- The text on the dialog on the Firefox Labs screen for the negative button when toggling "on" and "off" experimental features. This is used to cancel the action and return to the previous screen. -->
   <string name="firefox_labs_dialog_cancel_button">റദ്ദാക്കുക</string>
+  <!-- The description text that is displayed in the confirmation dialog on the Firefox Labs screen for toggling "on" experimental features. %s is the name of the app (for example "Firefox Nightly") -->
+  <string name="firefox_labs_feature_enable_dialog_message">ഈ സവിശേഷത തുടങ്ങാൻ %s-നെ പുനരാരംഭിക്കുക.</string>
 </resources>

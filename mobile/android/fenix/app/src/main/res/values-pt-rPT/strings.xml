@@ -150,7 +150,7 @@
   <!-- Shortcut action to open Passwords screen -->
   <string name="home_screen_shortcut_passwords">Palavras-passe</string>
   <!-- Shortcut action to open uninstall survey -->
-  <string name="home_screen_shortcut_uninstall_survey">Desinstalar, porquê?</string>
+  <string name="home_screen_shortcut_uninstall_survey">Desinstalar?! Porquê?</string>
   <!--
     Recent Tabs
 
@@ -366,7 +366,7 @@
   <!-- Headline text for the AI controls banner. %s is the name of the app (for example "Firefox"). -->
   <string name="ai_controls_banner_headline">Tem sempre uma escolha no %s</string>
   <!-- Supporting text for the AI controls banner. %s is a learn more link using ai_controls_learn_more as text. -->
-  <string name="ai_controls_banner_supporting_text_2">Isto inclui se devem ou não utilizar funcionalidades melhoradas com IA. %s</string>
+  <string name="ai_controls_banner_supporting_text_2">Isto inclui a decisão de utilizar, ou não, funcionalidades potenciadas por IA. %s</string>
   <!-- Link text for learning more about AI controls -->
   <string name="ai_controls_learn_more">Saber mais</string>
   <!-- Title for the block AI enhancements toggle -->
@@ -449,7 +449,7 @@
   <!-- Content description (not visible, for screen readers etc.): Button shown near a history search result allowing to delete it from browsing history. -->
   <string name="mozac_browser_awesomebar_remove_suggestion" tools:ignore="UnusedResources">Eliminar esta entrada do histórico</string>
   <!-- Button in the app links prompt that keeps the user in the browser instead of opening the external app. %1$s is the name of the app (for example "Firefox"). -->
-  <string name="applinks_prompt_negative_button">Ficar em %1$s</string>
+  <string name="applinks_prompt_negative_button">Permanecer no %1$s</string>
   <!--
     Home onboarding
 
@@ -626,7 +626,7 @@
   -->
   <string name="nova_onboarding_marketing_body" tools:ignore="BrandUsage,UnusedResources">Partilhe como descobriu e que utiliza o Firefox, com os parceiros de marketing da Mozilla. Estes dados nunca são vendidos. %1$s</string>
   <!-- Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded. -->
-  <string name="nova_onboarding_marketing_body_2" tools:ignore="BrandUsage">Partilhe como descobriu o Firefox, e que o utiliza, com os parceiros de marketing da Mozilla. Estes dados nunca são vendidos.</string>
+  <string name="nova_onboarding_marketing_body_2" tools:ignore="BrandUsage">Partilhe como descobriu o Firefox e que o utiliza, com os parceiros de marketing da Mozilla. Estes dados nunca são vendidos.</string>
   <!-- Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded. -->
   <string name="nova_onboarding_marketing_body_3" tools:ignore="BrandUsage,UnusedResources">Pode ajudar-nos a chegar a mais pessoas permitindo que a Mozilla informe os canais onde promovemos o Firefox que é um utilizador do Firefox.</string>
   <!--
@@ -652,7 +652,7 @@
   -->
   <string name="nova_onboarding_marketing_body_7" tools:ignore="BrandUsage">Pode ajudar-nos a chegar a mais pessoas permitindo que a Mozilla informe a plataforma de onde veio que utiliza o Firefox. %1$s</string>
   <!-- Marketing onboarding additional body text. 'Firefox' is intentionally hardcoded. -->
-  <string name="nova_onboarding_marketing_body_line_two" tools:ignore="BrandUsage">O Firefox é, com orgulho, independente e dedicado a defender a web aberta contra os monitores da tecnologia.</string>
+  <string name="nova_onboarding_marketing_body_line_two" tools:ignore="BrandUsage">O Firefox é orgulhosamente independente e está empenhado em proteger a web aberta contra os monopólios tecnológicos.</string>
   <!--
     Marketing onboarding additional body text. 'Firefox' is intentionally hardcoded.
     “Allowing” refers to the main button “Allow and Continue”; the ask for the user is to allow communicating back to the platform.
@@ -663,11 +663,15 @@
   <!-- Marketing onboarding body link text. -->
   <string name="nova_onboarding_marketing_body_link_text_1">Saber mais</string>
   <!-- Marketing onboarding primary button text. 'Firefox' is intentionally hardcoded. -->
-  <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage,UnusedResources">Ajuda do Firefox</string>
+  <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage,UnusedResources">Ajude o Firefox</string>
+  <!-- Marketing onboarding primary button text. -->
+  <string name="nova_onboarding_marketing_primary_button_text_3">Sim</string>
   <!-- Marketing onboarding primary button text. -->
   <string name="nova_onboarding_marketing_primary_button_text_2">Permitir e continuar</string>
   <!-- Marketing onboarding secondary button text. -->
-  <string name="nova_onboarding_marketing_secondary_button_text">Não, obrigado</string>
+  <string name="nova_onboarding_marketing_secondary_button_text" tools:ignore="UnusedResources">Não, obrigado</string>
+  <!-- Marketing onboarding secondary button text. -->
+  <string name="nova_onboarding_marketing_secondary_button_text_2">Não</string>
   <!-- Notifications onboarding title. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_notifications_title" tools:ignore="BrandUsage,UnusedResources">As notificações ajudam a que se possa manter em segurança com o Firefox</string>
   <!-- Notifications onboarding subtitle. 'Firefox' is intentionally hardcoded. -->
@@ -1968,7 +1972,7 @@
   <!-- Content description for the icon button that clears the selected broken site reason in the WebCompat Reporter. -->
   <string name="webcompat_reporter_clear_reason_content_description">Limpar motivo selecionado</string>
   <!-- The error message of the description when the user selects "Something else" as the reason, but left the description empty or too short. -->
-  <string name="webcompat_reporter_description_error">Por favor introduza pelo menos 10 carateres</string>
+  <string name="webcompat_reporter_description_error">Introduza pelo menos 10 caracteres</string>
   <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_label_whats_broken_2">O que não está a funcionar?</string>
   <!-- The placeholder text for the dropdown where a user selects a high-level reason why the site is broken. -->
@@ -1976,7 +1980,7 @@
   <!-- The error message of the dropdown, prompting the user to select a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_choose_reason_error">Escolha um motivo</string>
   <!-- The label/title of an optional field in the Web Compat Reporter feature for adding additional information. -->
-  <string name="webcompat_reporter_label_description_2">Descreva o problema em detalhes para nos ajudar a investigar o problema (opcional)</string>
+  <string name="webcompat_reporter_label_description_2">Descreva detalhadamente o problema para nos ajudar a investigar a situação (opcional)</string>
   <!-- The label/title of an optional field in the Web Compat Reporter feature for adding additional information. -->
   <string name="webcompat_reporter_label_description">Descreva o problema (opcional)</string>
   <!-- The button text for navigating away from the feature to provide more information on the broken site's bug report. -->
@@ -1992,7 +1996,7 @@
   <!-- Placeholder text for the description field to prompt the user on what they should type. -->
   <string name="webcompat_reporter_problem_description_placeholder_text">O que aconteceu? O que deveria ter acontecido?</string>
   <!-- Label of the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. -->
-  <string name="webcompat_reporter_etp_checkbox_text_2">Enviar lista dos itens bloqueados pela proteção contra monitorização</string>
+  <string name="webcompat_reporter_etp_checkbox_text_2">Enviar lista dos itens bloqueados pela proteção contra a monitorização</string>
   <!-- Label of the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. -->
   <string name="webcompat_reporter_etp_checkbox_text">Enviar URL bloqueados pela proteção contra a monitorização</string>
   <!-- Description text for the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. It informs the user when checked, the report will include the list of URLs that were blocked by Enhanced Tracking Protection on the current page. -->
@@ -2452,7 +2456,7 @@
   <!-- Preference for not taking the short survey. -->
   <string name="preferences_not_take_survey">Não, obrigado</string>
   <!-- Error message shown in a Toast when the system fails to trigger the device uninstallation prompt. -->
-  <string name="uninstall_survey_error_failed">Não foi possível abrir o pedido de desinstalação do sistema, por favor utilize diretamente a ação de desinstalação do sistema.</string>
+  <string name="uninstall_survey_error_failed">Não foi possível abrir o pedido de desinstalação do sistema. Por favor, utilize diretamente a opção de desinstalar nas definições do sistema.</string>
   <!--
     Snackbar
 
@@ -2615,7 +2619,7 @@
 
       Text shown on the trackers blocked card. %d is the number of trackers blocked.
     -->
-    <item quantity="one">%d rastreadores bloqueados</item>
+    <item quantity="one">%d rastreador bloqueado</item>
     <item quantity="other">%d rastreadores bloqueados</item>
   </plurals>
   <plurals name="trackers_blocked_count">
@@ -2630,7 +2634,7 @@
   <!-- Text shown on the trackers blocked card when no trackers have been blocked yet -->
   <string name="trackers_blocked_empty">Está protegido(a)</string>
   <!-- Text shown below the trackers blocked card with typing animation -->
-  <string name="help_catch_trackers">Ajudar a capturar rastreadores</string>
+  <string name="help_catch_trackers">Ajude a apanhar os rastreadores</string>
   <!-- Preference for enhanced tracking protection for the standard protection settings -->
   <string name="preference_enhanced_tracking_protection_standard_default_1">Padrão (predefinição)</string>
   <!-- Preference description for enhanced tracking protection for the standard protection settings -->
@@ -3046,7 +3050,7 @@
   <!-- Headline for the browser VPN promo card. %s is the name of the app (for example "Firefox"). -->
   <string name="ip_protection_promo_headline">VPN integrada do %s</string>
   <!-- Body text for the browser VPN promo card . %s is a learn more link using ip_protection_learn_more as text. -->
-  <string name="ip_protection_promo_body_2">Navegue com proteção extra ao ocultar a sua localização, mesmo em redes públicas. %s</string>
+  <string name="ip_protection_promo_body_2">Navegue com proteção adicional ao ocultar a sua localização, mesmo ao utilizar o Wi-Fi público. %s</string>
   <!-- Link text that opens additional information about the browser VPN -->
   <string name="ip_protection_learn_more">Saber mais</string>
   <!-- Label for the monthly data allowance section on the browser VPN settings screen -->
@@ -3107,15 +3111,15 @@
     %1$s is a link using ip_protection_onboarding_body_link (“Browse with extra protection”) as text. It links to a support article about VPN on Firefox.
     %2$d is the total monthly allowance in GB (for example "50").
   -->
-  <string name="ip_protection_onboarding_body">%1$s ao ocultar a sua localização, mesmo em redes públicas. Obtenha %2$d GB gratuitos todos os meses.</string>
+  <string name="ip_protection_onboarding_body">%1$s ao ocultar a sua localização, mesmo em redes públicas. Obtenha %2$d GB gratuitamente todos os meses.</string>
   <!-- Used as text for a link in ip_protection_onboarding_body. Make sure to adapt capitalization if the link is in the middle of the sentence. -->
-  <string name="ip_protection_onboarding_body_link">Navegue com proteção extra</string>
+  <string name="ip_protection_onboarding_body_link">Navegue com proteção adicional</string>
   <!--
     The body of the VPN onboarding card for a promotion that provides unlimited data bandwidth for a certain time.
     %1$s is a localized date (for example "Jun 9") indicating the end of the promotional period.
     %2$s is a link using ip_protection_onboarding_body_link_promo (“Learn more”) as text. It links to a support article about VPN on Firefox.
   -->
-  <string name="ip_protection_onboarding_body_promo">Ative-o para tornar a sua navegação mais privada e mais difícil de monitorizar. Experimente agora para obter largura de banda ilimitada até %1$s. %2$s</string>
+  <string name="ip_protection_onboarding_body_promo">Ative esta funcionalidade para tornar a sua navegação mais privada e difícil de rastrear. Experimente já e usufrua de largura de banda ilimitada até %1$s. %2$s</string>
   <!-- Used as text for a link in ip_protection_onboarding_body. Make sure to adapt capitalization if the link is in the middle of the sentence. -->
   <string name="ip_protection_onboarding_body_link_promo">Saber mais</string>
   <!-- Label for the dismiss button on the onboarding bottom sheet. -->
@@ -3126,7 +3130,7 @@
     Snackbar (in-app pop-up notification) text to signal the browser VPN has reached the monthly data limit.
     %1$d is the total monthly allowance in GB (for example "50").
   -->
-  <string name="ip_protection_data_limit_reached_snackbar">Utilizados %1$d GB de dados de VPN. O acesso será reposto no próximo mês.</string>
+  <string name="ip_protection_data_limit_reached_snackbar">Foram usados %1$d GB de dados na VPN. O acesso será restabelecido no próximo mês.</string>
   <!-- Snackbar (in-app pop-up notification) action button text that takes the user to the VPN settings screen. -->
   <string name="ip_protection_data_limit_reached_snackbar_action">Definições</string>
   <!--
@@ -3432,7 +3436,7 @@
   <!-- Title for the "Add to homepage" bottom sheet. -->
   <string name="homepage_shortcuts_add_to_homepage">Adicionar à página inicial</string>
   <!-- Label for the "Add website" button in the "Add to homepage" bottom sheet. -->
-  <string name="homepage_shortcuts_add_website">Adicionar um site</string>
+  <string name="homepage_shortcuts_add_website">Adicionar site</string>
   <!-- Title text for the "Enter a Website URL" dialog for adding a shortcut. -->
   <string name="homepage_shortcuts_add_website_title">Introduza um URL de um site</string>
   <!-- Title for the "Popular sites" section in the "Add to homepage" bottom sheet. -->
@@ -4642,11 +4646,11 @@
   <!-- Title shown on the sports widget immediately after the user has followed a team. %s is the selected team (e.g., "USA"). -->
   <string name="sports_widget_team_followed_title">A seguir: %s</string>
   <!-- Description shown on the sports widget immediately after the user has followed a team -->
-  <string name="sports_widget_team_followed_description">Volte para ver as informações da correspondência à medida que o evento se aproxima.</string>
+  <string name="sports_widget_team_followed_description">Volte mais tarde para obter informações sobre os jogos à medida que o campeonato se aproxima.</string>
   <!-- Sports widget match status label shown during first half of a match. -->
   <string name="sports_widget_first_half" tools:ignore="UnusedResources">Primeira parte</string>
   <!-- Sports widget match status label shown during second half of a match. -->
-  <string name="sports_widget_second_half" tools:ignore="UnusedResources">Segundo tempo</string>
+  <string name="sports_widget_second_half" tools:ignore="UnusedResources">Segunda parte</string>
   <!-- Sports widget error card title shown when the user is offline. -->
   <string name="sports_widget_error_connection_offline_title">Parece que está offline.</string>
   <!-- Sports widget error card description shown when the user is offline. -->
@@ -4674,27 +4678,27 @@
   <!-- The second active link used in privacy_notice_updated_homepage_message -->
   <string name="privacy_notice_updated_homepage_message_learn_more" tools:ignore="UnusedResources">Saber mais</string>
   <!-- Google Lens prototype related strings -->
-  <string name="preferences_debug_settings_google_lens_integration">Ativar integração com o Google Ler mais</string>
+  <string name="preferences_debug_settings_google_lens_integration">Ativar integração com o Google Lens</string>
   <!-- Lens image search button content description -->
   <string name="lens_search_content_description">Pesquisar com imagem</string>
   <!-- Content description for the gallery picker button in the Lens camera screen -->
-  <string name="content_description_gallery">Escolha da galeria para enviar para o Google Ler mais</string>
+  <string name="content_description_gallery">Selecionar da galeria para enviar para o Google Lens</string>
   <!-- Content description for the shutter button in the Lens camera screen -->
-  <string name="content_description_take_photo">Tirar uma foto e enviar para o Google Ler mais</string>
+  <string name="content_description_take_photo">Tirar fotografia e enviar para o Google Lens</string>
   <!-- Image context menu entry that sends the long-pressed image to Google Lens -->
-  <string name="context_menu_open_image_with_google_lens">Pesquisar com o Google Ler mais</string>
+  <string name="context_menu_open_image_with_google_lens">Pesquisar com o Google Lens</string>
   <!-- Toast shown when the user denies the camera permission requested by the Lens camera screen -->
   <string name="lens_camera_permission_denied">Permissão negada</string>
   <!-- Title for the Google Lens AI feature toggle -->
-  <string name="ai_controls_google_lens_title">Google Lente</string>
+  <string name="ai_controls_google_lens_title">Google Lens</string>
   <!-- Description for the Google Lens AI feature toggle -->
-  <string name="ai_controls_google_lens_description">Envia imagens e fotos para o Google para pesquisa visual.</string>
+  <string name="ai_controls_google_lens_description">Envia imagens e fotos para a Google para pesquisa visual.</string>
   <!-- Content description for the Google Lens half of the camera mode toggle -->
-  <string name="lens_camera_mode_lens">Google Lente</string>
+  <string name="lens_camera_mode_lens">Google Lens</string>
   <!-- Content description for the QR scanner half of the camera mode toggle -->
   <string name="lens_camera_mode_qr">Digitalizador QR</string>
   <!-- Toast shown when the user picks an image from the gallery in QR mode but no QR code is found in it -->
-  <string name="lens_camera_qr_no_code_found">Não foi encontrado código QR na imagem</string>
+  <string name="lens_camera_qr_no_code_found">A imagem não contém nenhum código QR</string>
   <!--
     Firefox Labs
 
@@ -4710,7 +4714,7 @@
     Banner description text on the Firefox Labs screen. Provides information on what Firefox Labs does. %s is the name of the app (for example "Firefox Nightly").
     Text will appear under the Firefox Labs banner title.
   -->
-  <string name="firefox_labs_experimental_description">Estão em desenvolvimento e a evoluir o que pode afetar o modo como o %s funciona.</string>
+  <string name="firefox_labs_experimental_description">Estão em fase de desenvolvimento e em constante evolução, o que pode influenciar o funcionamento do %s.</string>
   <!-- The link text shown when a feedback URL for a Firefox Labs feature is available. The feedback URL page will allow users to provide opinions and suggestions. -->
   <string name="firefox_labs_share_feedback">Partilhar feedback</string>
   <!-- Content description for the share feedback link on a Firefox Labs feature. This text will be used by screen readers to provide more context on the feedback link. %s is the name of the Firefox Labs feature. -->
@@ -4728,11 +4732,11 @@
   <!-- The description used in a confirmation dialog on the Firefox Labs screen when restoring the application to its defaults by turning "off" any experimental features. %s is the name of the app (for example "Firefox Nightly") -->
   <string name="firefox_labs_restore_defaults_dialog_message">Para restaurar as predefinições, reinicie o %s.</string>
   <!-- The description text that is displayed in the confirmation dialog on the Firefox Labs screen for toggling "on" experimental features. %s is the name of the app (for example "Firefox Nightly") -->
-  <string name="firefox_labs_feature_enable_dialog_message">Para ligar esta funcionalidade, reinicie o %s.</string>
+  <string name="firefox_labs_feature_enable_dialog_message">Para ativar esta funcionalidade, reinicie o %s.</string>
   <!-- The description text that is displayed in the confirmation dialog on the Firefox Labs screen for toggling "off" experimental features. %s is the name of the app (for example "Firefox Nightly") -->
   <string name="firefox_labs_feature_disable_dialog_message">Para desativar esta funcionalidade, reinicie o %s.</string>
   <!-- Helper text shown beneath a Firefox Labs item when it is blocked from being turned on. -->
-  <string name="firefox_labs_feature_conflict">Esta funcionalidade não está disponível para experiência.</string>
+  <string name="firefox_labs_feature_conflict">Esta funcionalidade não está disponível para teste.</string>
   <!-- Text displayed on the Firefox Labs screen when there are no Labs experimental features present. -->
-  <string name="firefox_labs_no_labs_available_description">Sem funcionalidades experimentais para experimentar neste momento</string>
+  <string name="firefox_labs_no_labs_available_description">De momento, não há funcionalidades experimentais disponíveis para testar</string>
 </resources>

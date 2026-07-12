@@ -149,6 +149,8 @@
   <string name="home_screen_shortcut_open_new_private_tab_2">Pestaña privada</string>
   <!-- Shortcut action to open Passwords screen -->
   <string name="home_screen_shortcut_passwords">Contraseñas</string>
+  <!-- Shortcut action to open uninstall survey -->
+  <string name="home_screen_shortcut_uninstall_survey">Desinstalar, ¿por qué?</string>
   <!--
     Recent Tabs
 
@@ -643,14 +645,33 @@
     %1$s is replaced by an active link, using nova_onboarding_marketing_body_link_text as text (“How we use the data”).
   -->
   <string name="nova_onboarding_marketing_body_6" tools:ignore="BrandUsage,UnusedResources">Ayúdanos a llegar a más personas: permite que Mozilla informe a la plataforma de origen que utilizas Firefox. %1$s</string>
+  <!--
+    Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
+    “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
+    %1$s is replaced by an active link, using nova_onboarding_marketing_body_link_text_1 as text (“Learn More”).
+  -->
+  <string name="nova_onboarding_marketing_body_7" tools:ignore="BrandUsage">Puedes ayudarnos a aumentar nuestro alcance si autorizas a Mozilla a comunicarle a la plataforma desde la que accediste que utilizas Firefox. %1$s</string>
+  <!-- Marketing onboarding additional body text. 'Firefox' is intentionally hardcoded. -->
+  <string name="nova_onboarding_marketing_body_line_two" tools:ignore="BrandUsage">Firefox se enorgullece de ser independiente y dedicarse a defender la web abierta contra los monopolios tecnológicos.</string>
+  <!--
+    Marketing onboarding additional body text. 'Firefox' is intentionally hardcoded.
+    “Allowing” refers to the main button “Allow and Continue”; the ask for the user is to allow communicating back to the platform.
+  -->
+  <string name="nova_onboarding_marketing_body_line_three" tools:ignore="BrandUsage">Te invitamos a darnos tu autorización para contribuir a que Firefox logre su misión.</string>
   <!-- Marketing onboarding body link text. -->
   <string name="nova_onboarding_marketing_body_link_text">Cómo utilizamos los datos</string>
+  <!-- Marketing onboarding body link text. -->
+  <string name="nova_onboarding_marketing_body_link_text_1">Más información</string>
   <!-- Marketing onboarding primary button text. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage,UnusedResources">Ayuda Firefox</string>
   <!-- Marketing onboarding primary button text. -->
+  <string name="nova_onboarding_marketing_primary_button_text_3">Sí</string>
+  <!-- Marketing onboarding primary button text. -->
   <string name="nova_onboarding_marketing_primary_button_text_2">Permitir y continuar</string>
   <!-- Marketing onboarding secondary button text. -->
-  <string name="nova_onboarding_marketing_secondary_button_text">No, gracias</string>
+  <string name="nova_onboarding_marketing_secondary_button_text" tools:ignore="UnusedResources">No, gracias</string>
+  <!-- Marketing onboarding secondary button text. -->
+  <string name="nova_onboarding_marketing_secondary_button_text_2">No</string>
   <!-- Notifications onboarding title. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_notifications_title" tools:ignore="BrandUsage,UnusedResources">Las notificaciones te ayudan a estar más seguro con Firefox</string>
   <!-- Notifications onboarding subtitle. 'Firefox' is intentionally hardcoded. -->
@@ -1950,6 +1971,8 @@
   <string name="webcompat_reporter_label_whats_broken_3">¿Qué es lo que no funciona?</string>
   <!-- Content description for the icon button that clears the selected broken site reason in the WebCompat Reporter. -->
   <string name="webcompat_reporter_clear_reason_content_description">Borrar motivo seleccionado</string>
+  <!-- The error message of the description when the user selects "Something else" as the reason, but left the description empty or too short. -->
+  <string name="webcompat_reporter_description_error">Por favor, ingresa al menos 10 caracteres</string>
   <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_label_whats_broken_2">¿Qué es lo que falla?</string>
   <!-- The placeholder text for the dropdown where a user selects a high-level reason why the site is broken. -->
@@ -2432,6 +2455,8 @@
   <string name="preferences_take_survey">Responder encuesta</string>
   <!-- Preference for not taking the short survey. -->
   <string name="preferences_not_take_survey">No, gracias</string>
+  <!-- Error message shown in a Toast when the system fails to trigger the device uninstallation prompt. -->
+  <string name="uninstall_survey_error_failed">No se pudo abrir la ventana de confirmación de desinstalación. Por favor, utiliza la función de desinstalación nativa del sistema.</string>
   <!--
     Snackbar
 
@@ -3928,6 +3953,8 @@
     %s is a placeholder for the name of the certificate authority that issued the certificate.
   -->
   <string name="connection_security_panel_verified_by">Verificado por %s</string>
+  <!-- Content description (not visible, for screen readers etc.) for the handle used to drag the protections dashboard to the bottom of the screen and close it. -->
+  <string name="tracker_protections_dashboard_close_handlebar_content_description">Cerrar panel de control</string>
   <!--
     Text for the connection security panel when the site uses a QWAC.
     %s is a placeholder for the organization for which the certificate was issued.
@@ -4051,6 +4078,26 @@
   <string name="microsurvey_sync_title" tools:ignore="BrandUsage,UnusedResources">¿Qué tan satisfactoria es la experiencia de sincronización en Firefox?</string>
   <!-- Text shown in the survey title for 'describe your experience so far' microsurvey. Note: The word "Firefox" should NOT be translated. -->
   <string name="microsurvey_describe_your_experience_title" tools:ignore="BrandUsage,UnusedResources">Ayúdanos a mejorar Firefox. ¿Qué opción describe mejor tu experiencia hasta ahora?</string>
+  <!--
+    Uninstall Survey
+
+    Title text for the uninstall survey dialog, asking the user for the reason they are removing the app
+  -->
+  <string name="microsurvey_uninstall_survey_title">Tu opinión es importante. ¿Por qué estás desinstalando la aplicación?</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_1">Problemas con la página web</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_2">Problemas de vídeo y descarga</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_3">Problemas de rendimiento</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_4">Problemas de función y diseño</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_5">Cuestiones relacionadas con la privacidad</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_6">Problemas de pago y suscripción</string>
+  <!-- Button label shown at the bottom of the uninstall survey -->
+  <string name="uninstall_survey_button_label">Enviar comentario y desinstalar</string>
   <!--
     Accessibility
 
@@ -4673,7 +4720,7 @@
   <!-- Content description for the share feedback link on a Firefox Labs feature. This text will be used by screen readers to provide more context on the feedback link. %s is the name of the Firefox Labs feature. -->
   <string name="firefox_labs_share_feedback_content_description">Compartir comentarios sobre %s.</string>
   <!-- Button text on the Firefox Labs screen for restoring all toggles back to the default settings. The button will turn off any experimental features. -->
-  <string name="firefox_labs_restore_default_button_text">Restaurar predeterminados</string>
+  <string name="firefox_labs_restore_default_button_text">Restaurar valores predeterminados</string>
   <!-- The title used in a confirmation dialog on the Firefox Labs screen when toggling "on" or "off" an experimental feature that requires a restart. -->
   <string name="firefox_labs_feature_dialog_title">Se necesita reiniciar</string>
   <!-- The text on the dialog on the Firefox Labs screen for the positive button when toggling "on" and "off" experimental features. This prompts the user to confirm that they want to restart the app. -->
@@ -4688,6 +4735,8 @@
   <string name="firefox_labs_feature_enable_dialog_message">Para activar esta función, reinicia %s.</string>
   <!-- The description text that is displayed in the confirmation dialog on the Firefox Labs screen for toggling "off" experimental features. %s is the name of the app (for example "Firefox Nightly") -->
   <string name="firefox_labs_feature_disable_dialog_message">Para desactivar esta función, reinicia %s.</string>
+  <!-- Helper text shown beneath a Firefox Labs item when it is blocked from being turned on. -->
+  <string name="firefox_labs_feature_conflict">Funcionalidad no disponible para prueba.</string>
   <!-- Text displayed on the Firefox Labs screen when there are no Labs experimental features present. -->
   <string name="firefox_labs_no_labs_available_description">No hay funciones experimentales para probar en este momento</string>
 </resources>

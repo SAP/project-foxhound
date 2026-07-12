@@ -67,6 +67,12 @@
   <string name="mozac_feature_addons_permissions_tabs_description_for_update">براؤزر ٹیبز تائیں رسائی حاصل کرو۔</string>
   <!-- Description for the "webNavigation" WebExtensions API permission for the update notification. Multiple permissions may be simply appended one after the other, and separated with a space, which is why the period is important. -->
   <string name="mozac_feature_addons_permissions_web_navigation_description_for_update">نیویگیشݨ دے دوران براوئزر دی سرگرمی تائیں رسائی۔</string>
+  <!-- Description for the "bookmarks" WebExtensions API permission for the update notification. Multiple permissions may be simply appended one after the other, and separated with a space, which is why the period is important. -->
+  <string name="mozac_feature_addons_permissions_bookmarks_description_for_update">نشانیاں پڑھو تے ترمیم کرو۔</string>
+  <!-- Description for the "browserSettings" WebExtensions API permission for the update notification. Multiple permissions may be simply appended one after the other, and separated with a space, which is why the period is important. -->
+  <string name="mozac_feature_addons_permissions_browser_settings_description_for_update">براؤزر ترتیباں پڑھو تے تبدیل کرو۔</string>
+  <!-- Description for the "browsingData" WebExtensions API permission for the update notification. Multiple permissions may be simply appended one after the other, and separated with a space, which is why the period is important. -->
+  <string name="mozac_feature_addons_permissions_browsing_data_description_for_update">حالیہ براؤزنگ تاریخ۔ کوکیاں تے متعلقہ ڈیٹا صاف کرو۔</string>
   <!-- Description for the "geolocation" WebExtensions API permission for the update notification. Multiple permissions may be simply appended one after the other, and separated with a space, which is why the period is important. -->
   <string name="mozac_feature_addons_permissions_geolocation_description_for_update">آپݨے مقام تائیں اپڑو۔</string>
   <!-- Short description for the bookmarksInfo data collection permission -->

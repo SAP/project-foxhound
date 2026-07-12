@@ -149,6 +149,8 @@
   <string name="home_screen_shortcut_open_new_private_tab_2">แท็บส่วนตัวใหม่</string>
   <!-- Shortcut action to open Passwords screen -->
   <string name="home_screen_shortcut_passwords">รหัสผ่าน</string>
+  <!-- Shortcut action to open uninstall survey -->
+  <string name="home_screen_shortcut_uninstall_survey">ทำไมถึงถอนการติดตั้ง?</string>
   <!--
     Recent Tabs
 
@@ -643,6 +645,19 @@
     %1$s is replaced by an active link, using nova_onboarding_marketing_body_link_text as text (“How we use the data”).
   -->
   <string name="nova_onboarding_marketing_body_6" tools:ignore="BrandUsage,UnusedResources">ช่วยเราเข้าถึงผู้คนได้มากขึ้นด้วยการอนุญาตให้ Mozilla แจ้งแพลตฟอร์มที่คุณเข้ามาว่าคุณใช้ Firefox %1$s</string>
+  <!--
+    Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
+    “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
+    %1$s is replaced by an active link, using nova_onboarding_marketing_body_link_text_1 as text (“Learn More”).
+  -->
+  <string name="nova_onboarding_marketing_body_7" tools:ignore="BrandUsage">คุณสามารถช่วยเราเข้าถึงผู้คนได้มากขึ้นด้วยการอนุญาตให้ Mozilla แจ้งแพลตฟอร์มที่คุณเข้ามาว่าคุณใช้ Firefox %1$s</string>
+  <!-- Marketing onboarding additional body text. 'Firefox' is intentionally hardcoded. -->
+  <string name="nova_onboarding_marketing_body_line_two" tools:ignore="BrandUsage">Firefox เป็นองค์กรอิสระอย่างภาคภูมิใจ และมุ่งมั่นที่จะปกป้องเว็บแบบเปิดจากบริษัทเทคโนโลยียักษ์ใหญ่</string>
+  <!--
+    Marketing onboarding additional body text. 'Firefox' is intentionally hardcoded.
+    “Allowing” refers to the main button “Allow and Continue”; the ask for the user is to allow communicating back to the platform.
+  -->
+  <string name="nova_onboarding_marketing_body_line_three" tools:ignore="BrandUsage">โปรดพิจารณาอนุญาตเพื่อช่วยเหลือ Firefox ในการนี้</string>
   <!-- Marketing onboarding body link text. -->
   <string name="nova_onboarding_marketing_body_link_text">เราใช้ข้อมูลอย่างไร</string>
   <!-- Marketing onboarding body link text. -->
@@ -650,9 +665,13 @@
   <!-- Marketing onboarding primary button text. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage,UnusedResources">ช่วย Firefox</string>
   <!-- Marketing onboarding primary button text. -->
+  <string name="nova_onboarding_marketing_primary_button_text_3">ใช่</string>
+  <!-- Marketing onboarding primary button text. -->
   <string name="nova_onboarding_marketing_primary_button_text_2">อนุญาตและดำเนินการต่อ</string>
   <!-- Marketing onboarding secondary button text. -->
-  <string name="nova_onboarding_marketing_secondary_button_text">ไม่ ขอบคุณ</string>
+  <string name="nova_onboarding_marketing_secondary_button_text" tools:ignore="UnusedResources">ไม่ ขอบคุณ</string>
+  <!-- Marketing onboarding secondary button text. -->
+  <string name="nova_onboarding_marketing_secondary_button_text_2">ไม่</string>
   <!-- Notifications onboarding title. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_notifications_title" tools:ignore="BrandUsage,UnusedResources">การแจ้งเตือนช่วยให้คุณปลอดภัยยิ่งขึ้นด้วย Firefox</string>
   <!-- Notifications onboarding subtitle. 'Firefox' is intentionally hardcoded. -->
@@ -1943,6 +1962,10 @@
   <string name="webcompat_reporter_url_error_invalid">โปรดกรอก URL ที่ถูกต้อง</string>
   <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_label_whats_broken_3">มีอะไรที่ใช้งานไม่ได้หรือเปล่า?</string>
+  <!-- Content description for the icon button that clears the selected broken site reason in the WebCompat Reporter. -->
+  <string name="webcompat_reporter_clear_reason_content_description">ล้างเหตุผลที่เลือก</string>
+  <!-- The error message of the description when the user selects "Something else" as the reason, but left the description empty or too short. -->
+  <string name="webcompat_reporter_description_error">โปรดป้อนอย่างน้อย 10 อักขระ</string>
   <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_label_whats_broken_2">มีอะไรเสียหาย?</string>
   <!-- The placeholder text for the dropdown where a user selects a high-level reason why the site is broken. -->
@@ -2003,6 +2026,8 @@
   <string name="webcompat_reporter_reason_turn_off_adblocker">เว็บไซต์ขอความร่วมมือปิดตัวปิดกั้นโฆษณา</string>
   <!-- Broken site reason text for browser isn’t supported or blocked -->
   <string name="webcompat_reporter_reason_notsupported_2">เบราว์เซอร์ไม่เข้ากันหรือถูกปิดกั้น</string>
+  <!-- Broken site reason text for the site being deceptive -->
+  <string name="webcompat_reporter_reason_site_is_deceptive">เว็บไซต์นี้หลอกลวง</string>
   <!-- Broken site reason text for browser isn’t supported or blocked -->
   <string name="webcompat_reporter_reason_notsupported">เบราว์เซอร์ไม่เข้ากันหรือถูกปิดกั้น</string>
   <!-- Broken site reason text for something else -->

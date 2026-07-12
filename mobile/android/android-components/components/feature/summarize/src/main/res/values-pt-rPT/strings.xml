@@ -76,9 +76,9 @@
   <!-- Description for the shake to summarize toggle in settings -->
   <string name="mozac_summarize_settings_shake_to_summarize_description">Abane o seu dispositivo de um lado para o outro para obter um resumo da página.</string>
   <!-- Label for the shake sensitivity slider in settings -->
-  <string name="mozac_summarize_settings_shake_sensitivity">Sensibilidade a tremer</string>
+  <string name="mozac_summarize_settings_shake_sensitivity">Sensibilidade do agitar</string>
   <!-- Description for the shake sensitivity slider in settings -->
-  <string name="mozac_summarize_settings_shake_sensitivity_description">Ajuste o quão forte precisa de tremer para acionar a resumo.</string>
+  <string name="mozac_summarize_settings_shake_sensitivity_description">Defina a intensidade com que deve agitar para ativar o resumo.</string>
   <!-- Low option label for the shake sensitivity slider in settings -->
   <string name="mozac_summarize_settings_shake_sensitivity_low">Baixa</string>
   <!-- Medium option label for the shake sensitivity slider in settings -->

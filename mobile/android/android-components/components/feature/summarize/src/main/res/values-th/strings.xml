@@ -77,6 +77,8 @@
   <string name="mozac_summarize_settings_shake_to_summarize_description">เขย่าเครื่องซ้ายขวาเพื่อสรุปหน้าเว็บ</string>
   <!-- Label for the shake sensitivity slider in settings -->
   <string name="mozac_summarize_settings_shake_sensitivity">ความไวต่อการสั่นสะเทือน</string>
+  <!-- Description for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_description">ปรับความแรงในการเขย่าเพื่อเริ่มการสรุปข้อความ</string>
   <!-- Low option label for the shake sensitivity slider in settings -->
   <string name="mozac_summarize_settings_shake_sensitivity_low">ต่ำ</string>
   <!-- Medium option label for the shake sensitivity slider in settings -->

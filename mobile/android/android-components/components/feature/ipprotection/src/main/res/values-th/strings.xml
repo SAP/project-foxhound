@@ -9,6 +9,8 @@
 <resources>
   <!-- Title of an alert shown when there is an internal VPN error, and the VPN should be disabled to continue using the browser. -->
   <string name="mozac_feature_ipprotection_unavaliable_dialog_title">ดำเนินการต่อโดยไม่ต้องใช้ VPN?</string>
+  <!-- Body of an alert shown when there is an internal VPN error, and the VPN should be disabled to continue using the browser. -->
+  <string name="mozac_feature_ipprotection_unavaliable_dialog_body">ขณะนี้ไม่ได้ใช้งาน VPN อยู่ ทำให้ตำแหน่งที่ตั้งของคุณอาจถูกมองเห็นได้ เรียกดูต่อไปโดยไม่มี VPN หรือเลือกแท็บเพื่อปิด</string>
   <!-- Title for a button on the alert shown when VPN errors. The button allows user to navigate into tabs tray, to close those they deem sensitive. -->
   <string name="mozac_feature_ipprotection_unavaliable_dialog_confirm_button">จัดการแท็บ</string>
   <!-- Title for a button on the alert shown when VPN errors. The button disabled the VPN, and allows the user to continue using the browser without the extra safety feature. -->

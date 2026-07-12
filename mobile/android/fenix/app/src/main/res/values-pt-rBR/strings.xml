@@ -665,9 +665,13 @@
   <!-- Marketing onboarding primary button text. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage,UnusedResources">Ajude o Firefox</string>
   <!-- Marketing onboarding primary button text. -->
+  <string name="nova_onboarding_marketing_primary_button_text_3">Sim</string>
+  <!-- Marketing onboarding primary button text. -->
   <string name="nova_onboarding_marketing_primary_button_text_2">Permitir e continuar</string>
   <!-- Marketing onboarding secondary button text. -->
-  <string name="nova_onboarding_marketing_secondary_button_text">Não, obrigado</string>
+  <string name="nova_onboarding_marketing_secondary_button_text" tools:ignore="UnusedResources">Não, obrigado</string>
+  <!-- Marketing onboarding secondary button text. -->
+  <string name="nova_onboarding_marketing_secondary_button_text_2">Não</string>
   <!-- Notifications onboarding title. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_notifications_title" tools:ignore="BrandUsage,UnusedResources">Notificações ajudam você a ficar mais seguro com o Firefox</string>
   <!-- Notifications onboarding subtitle. 'Firefox' is intentionally hardcoded. -->
@@ -1967,6 +1971,8 @@
   <string name="webcompat_reporter_label_whats_broken_3">O que não está funcionando?</string>
   <!-- Content description for the icon button that clears the selected broken site reason in the WebCompat Reporter. -->
   <string name="webcompat_reporter_clear_reason_content_description">Limpar motivo selecionado</string>
+  <!-- The error message of the description when the user selects "Something else" as the reason, but left the description empty or too short. -->
+  <string name="webcompat_reporter_description_error">Digite pelo menos 10 caracteres</string>
   <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_label_whats_broken_2">Qual o problema?</string>
   <!-- The placeholder text for the dropdown where a user selects a high-level reason why the site is broken. -->
@@ -3947,6 +3953,8 @@
     %s is a placeholder for the name of the certificate authority that issued the certificate.
   -->
   <string name="connection_security_panel_verified_by">Homologado por %s</string>
+  <!-- Content description (not visible, for screen readers etc.) for the handle used to drag the protections dashboard to the bottom of the screen and close it. -->
+  <string name="tracker_protections_dashboard_close_handlebar_content_description">Fechar painel</string>
   <!--
     Text for the connection security panel when the site uses a QWAC.
     %s is a placeholder for the organization for which the certificate was issued.
@@ -4070,6 +4078,24 @@
   <string name="microsurvey_sync_title" tools:ignore="BrandUsage,UnusedResources">Qual é seu nível de satisfação com a experiência de sincronização no Firefox?</string>
   <!-- Text shown in the survey title for 'describe your experience so far' microsurvey. Note: The word "Firefox" should NOT be translated. -->
   <string name="microsurvey_describe_your_experience_title" tools:ignore="BrandUsage,UnusedResources">Ajude-nos a melhorar o Firefox. Qual opção descreve melhor sua experiência até agora?</string>
+  <!--
+    Uninstall Survey
+
+    Title text for the uninstall survey dialog, asking the user for the reason they are removing the app
+  -->
+  <string name="microsurvey_uninstall_survey_title">Sua opinião é importante. Por que está desinstalando?</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_1">Problemas em páginas web</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_2">Problemas com vídeos e downloads</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_3">Problemas de desempenho</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_4">Problemas de funcionalidade e design</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_5">Problemas de privacidade</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_6">Problemas com pagamentos e assinaturas</string>
   <!-- Button label shown at the bottom of the uninstall survey -->
   <string name="uninstall_survey_button_label">Enviar comentário e desinstalar</string>
   <!--
@@ -4709,6 +4735,8 @@
   <string name="firefox_labs_feature_enable_dialog_message">Para ativar este recurso, reinicie o %s.</string>
   <!-- The description text that is displayed in the confirmation dialog on the Firefox Labs screen for toggling "off" experimental features. %s is the name of the app (for example "Firefox Nightly") -->
   <string name="firefox_labs_feature_disable_dialog_message">Para desativar este recurso, reinicie o %s.</string>
+  <!-- Helper text shown beneath a Firefox Labs item when it is blocked from being turned on. -->
+  <string name="firefox_labs_feature_conflict">Este recurso não está disponível para testar.</string>
   <!-- Text displayed on the Firefox Labs screen when there are no Labs experimental features present. -->
   <string name="firefox_labs_no_labs_available_description">Nenhum recurso experimental para testar agora</string>
 </resources>

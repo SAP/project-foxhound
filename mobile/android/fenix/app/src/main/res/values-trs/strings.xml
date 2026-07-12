@@ -23,6 +23,8 @@
   <string name="content_description_normal_browsing">Riña aché nun nāsinùnjt</string>
   <!-- Placeholder text shown in the search bar before a user enters text for the default engine -->
   <string name="search_hint">Gachrūn nuguan\' ruhuât nanà\'uìt</string>
+  <!-- Shorter placeholder text shown in the search bar when an additional action (voice search) is rendered alongside the hint. -->
+  <string name="search_hint_short">Nānà\'huì\'</string>
   <!-- Placeholder text shown in the search bar before a user enters text for a general engine -->
   <string name="search_hint_general_engine">Nānà\'huì\' riña web</string>
   <!-- Placeholder text shown in search bar when using history search -->
@@ -641,10 +643,12 @@
   <string name="nova_onboarding_marketing_body_6" tools:ignore="BrandUsage,UnusedResources">Rūgûñu’ūnjt ñûnj da’ gīni’in doj guìi ñûnj sa gī’hiât huin sisī gānïnt gānatà’ Mozilla riña hìaj gini’hiājt sisī arâj sunt Firefox. %1$s</string>
   <!-- Marketing onboarding body link text. -->
   <string name="nova_onboarding_marketing_body_link_text">Dàj arâj sun ñunj nej nuguan’an</string>
+  <!-- Marketing onboarding body link text. -->
+  <string name="nova_onboarding_marketing_body_link_text_1">Gāhuin chrūn doj</string>
   <!-- Marketing onboarding primary button text. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage,UnusedResources">Rūgûñu’ūnj Firefox</string>
   <!-- Marketing onboarding secondary button text. -->
-  <string name="nova_onboarding_marketing_secondary_button_text">Sī ga’hue, guruhuât</string>
+  <string name="nova_onboarding_marketing_secondary_button_text" tools:ignore="UnusedResources">Sī ga’hue, guruhuât</string>
   <!-- Notifications onboarding title. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_notifications_title" tools:ignore="BrandUsage,UnusedResources">Rugûñu’ūnj nej nuguan’ atāj a riñat da’ gāchē nu sà’ riña Firefox</string>
   <!-- Notifications onboarding subtitle. 'Firefox' is intentionally hardcoded. -->
@@ -1450,6 +1454,24 @@
   <!-- Text shown on the cancel button in the Close last tab and delete tab group confirmation dialog. -->
   <string name="close_tab_and_delete_group_confirmation_dialog_cancel">Dūyichin\'</string>
   <!--
+    Color labels for tab groups, used for accessibility and selection UI.
+
+    Tab group color: Yellow
+  -->
+  <string name="tab_group_color_yellow">Sa māhiāj a</string>
+  <!-- Tab group color: Orange -->
+  <string name="tab_group_color_orange">Sa yakaa</string>
+  <!-- Tab group color: Red -->
+  <string name="tab_group_color_red">Sa māre</string>
+  <!-- Tab group color: Pink -->
+  <string name="tab_group_color_pink">Sa ra\'u</string>
+  <!-- Tab group color: Blue -->
+  <string name="tab_group_color_blue">Sa kuāan</string>
+  <!-- Tab group color: Green -->
+  <string name="tab_group_color_green">Sa mārèe</string>
+  <!-- Tab group color: Grey -->
+  <string name="tab_group_color_grey">Sa daj</string>
+  <!--
     History
 
     Text for the button to search all history
@@ -1480,6 +1502,8 @@
   <string name="history_older">Sa nâ doj</string>
   <!-- Text shown when no history exists -->
   <string name="history_empty_message">Nitāj à\'ngō sa gini\'iājt</string>
+  <!-- Text for the snackbar to confirm that a single download item has been removed. %1$s is the name of the download item. -->
+  <string name="download_delete_single_item_snackbar_2">Nādure\' “%1$s”</string>
   <!-- Text for the snackbar action button to view in progress download details. -->
   <string name="download_in_progress_snackbar_action_details">A\'ngô nej sa nika</string>
   <!-- Text for the snackbar to confirm that a download has completed. -->
@@ -1563,6 +1587,10 @@
   <string name="webcompat_reporter_send">Ga\'nìnj gan\'an</string>
   <!-- Label for the “Send” button shown in the WebCompat Report preview panel, which the user taps to submit the report. -->
   <string name="webcompat_reporter_preview_bottom_sheet_send">Ga\'nìnj gan\'an</string>
+  <!-- Text shown on the save button for the Edit URL confirmation dialog in the WebCompatReporter. -->
+  <string name="webcompat_reporter_edit_url_dialog_save">Nā\'nïnj sà\'</string>
+  <!-- Text shown on the dismiss button for the Edit URL confirmation dialog in the WebCompatReporter. -->
+  <string name="webcompat_reporter_edit_url_dialog_dismiss">Si yakaj guendât</string>
   <!--
     Crashes
 
@@ -1577,6 +1605,8 @@
   <string name="tab_crash_restore">Nāgi\'iaj nākà rakïj ñanj</string>
   <!-- Unsubmitted crash dialog negative button to dismiss the dialog -->
   <string name="unsubmitted_crash_dialog_negative_button">Nārán</string>
+  <!-- Unsubmitted crash dialog negative button to dismiss the dialog -->
+  <string name="unsubmitted_crash_dialog_negative_button_2">NĀRÁN</string>
   <string name="unsubmitted_crash_dialog_learn_more">Gāhuin chrūn doj</string>
   <!-- Unsubmitted crash dialog button to open a web page with more details on the feature and privacy policy -->
   <string name="unsubmitted_crash_requested_by_devs_learn_more">Gāhuin chrūn doj</string>
@@ -2172,6 +2202,8 @@
   <string name="preferences_passwords_exceptions">Sa huā gi\'iát</string>
   <!-- Text on button to remove all saved login exceptions -->
   <string name="preferences_passwords_exceptions_remove_all">Nādure’ daran’ nej sa nitāj si ni’ñānj an</string>
+  <!-- Hint for search box in passwords list -->
+  <string name="preferences_passwords_saved_logins_search_2">Nānà\'huì\' nej da\'nga\' huìi</string>
   <!-- Content description for the logins navigation bar back button -->
   <string name="logins_navigate_back_button_content_description">Ne’ rūkùu</string>
   <!-- The header for the site that a login is for -->
@@ -2230,6 +2262,8 @@
   <string name="preferences_ip_protection_off">Dūnâ\'àj</string>
   <!-- Badge label shown in the menu item when the browser VPN is paused -->
   <string name="ip_protection_menu_paused">Dūnikïn\' akuan\'</string>
+  <!-- Used as text for a link in ip_protection_onboarding_body. Make sure to adapt capitalization if the link is in the middle of the sentence. -->
+  <string name="ip_protection_onboarding_body_link_promo">Gāhuin chrūn doj</string>
   <!--
     Autofill
 
@@ -2599,6 +2633,16 @@
 
   <!-- Link text for terms_of_use_prompt_body_line_two_alternative that links to a site with more information about the Terms of Use -->
   <string name="terms_of_use_prompt_body_line_two_alternative_link" tools:ignore="UnusedResources">hiuj nan</string>
+  <!-- Section header for the Africa confederation group in the sports widget country selector. -->
+  <string name="sports_widget_confederation_africa">Afrika</string>
+  <!-- Section header for the Asia confederation group in the sports widget country selector. -->
+  <string name="sports_widget_confederation_asia">Asia</string>
+  <!-- Section header for the CONCACAF confederation group in the sports widget country selector. "CONCACAF" is the abbreviation for "Confederation of North, Central America and Caribbean Association Football". -->
+  <string name="sports_widget_confederation_concacaf">CONCACAF</string>
+  <!-- Section header for the Europe confederation group in the sports widget country selector. -->
+  <string name="sports_widget_confederation_europe">Rukûnee</string>
+  <!-- Section header for the Oceania confederation group in the sports widget country selector. -->
+  <string name="sports_widget_confederation_oceania">Oseanîa</string>
   <!-- Sports widget group stage label for group C in the soccer tournament. -->
   <string name="sports_widget_group_c">Yi\'nïn\' C</string>
   <!-- Sports widget group stage label for group D in the soccer tournament. -->
@@ -2633,8 +2677,32 @@
   <string name="sports_widget_extra_time">Diû nata\'a</string>
   <!-- Sports widget match status label shown during penalties of a match. -->
   <string name="sports_widget_penalties">Nej penal</string>
+  <!--
+    Sports widget countdown label for days. D is short for Day. The layout only allows for 1–2 characters:
+    if there is an equivalent single character for your language, use that (e.g. T for German).
+    Your translation will be automatically truncated at 2 characters to avoid layout issues.
+  -->
+  <string name="sports_widget_countdown_days">D</string>
+  <!--
+    Sports widget countdown pill abbreviated label for hours. H is short for Hour. The layout only allows for 1–2 characters:
+    if there is an equivalent single character for your language, use that (e.g. S for German).
+    Your translation will be automatically truncated at 2 characters to avoid layout issues.
+  -->
+  <string name="sports_widget_countdown_hours">H</string>
+  <!--
+    Sports widget countdown pill abbreviated label for minutes. M is short for Minute. The layout only allows for 1–2 characters:
+    if there is an equivalent single character for your language, use that.
+    Your translation will be automatically truncated at 2 characters to avoid layout issues
+  -->
+  <string name="sports_widget_countdown_minutes">M</string>
+  <!-- Content description (for accessibility, not displayed) for the close button on the sports widget card. -->
+  <string name="sports_widget_close_content_description">Nārán</string>
+  <!-- Content description (for accessibility, not displayed) for the overflow (more options) menu button on the sports widget card. -->
+  <string name="sports_widget_more_options_content_description">Doj sa gā’hue nāgi\'hiát</string>
   <!-- ==== End of Terms of use popup prompt. ==== -->
 
   <!-- The second active link used in privacy_notice_updated_homepage_message -->
   <string name="privacy_notice_updated_homepage_message_learn_more" tools:ignore="UnusedResources">Gāhuin chrūn doj</string>
+  <!-- The text on the dialog on the Firefox Labs screen for the negative button when toggling "on" and "off" experimental features. This is used to cancel the action and return to the previous screen. -->
+  <string name="firefox_labs_dialog_cancel_button">Dūyichin\'</string>
 </resources>
