@@ -152,9 +152,12 @@ add_task(async function test_hidden_in_popup() {
  * Check that the chat context menu is hidden inside a Smart Window,
  * both directly and when accessed from a sidebar panel sub-window.
  */
-add_task(async function test_hidden_in_smart_window() {
+add_task(async function test_visible_in_smart_window() {
   await SpecialPowers.pushPrefEnv({
-    set: [["browser.ml.chat.provider", "http://localhost:8080"]],
+    set: [
+      ["browser.ml.chat.provider", "http://localhost:8080"],
+      ["browser.ml.chat.shortcuts.smartwindow", true],
+    ],
   });
 
   const { GenAI } = ChromeUtils.importESModule(
@@ -164,34 +167,115 @@ add_task(async function test_hidden_in_smart_window() {
   const aiWindowDoc = {
     documentElement: { hasAttribute: attr => attr === "ai-window" },
   };
-  const buildMenu = async documentGlobal => {
+  const buildMenu = async (
+    documentGlobal,
+    selectionInfo = { text: "selected" }
+  ) => {
     let hidden = null;
     await GenAI.buildAskChatMenu(menu, {
       browser: {
         browsingContext: { currentURI: { spec: "https://example.com" } },
         documentGlobal,
       },
-      selectionInfo: {},
+      selectionInfo,
       showItem: (item, show) => {
         hidden = !show;
       },
-      source: null,
+      source: "page",
       contextTabs: null,
     });
     return hidden;
   };
 
   Assert.ok(
-    await buildMenu({ document: aiWindowDoc }),
-    "Menu hidden when documentGlobal is the Smart Window"
+    !(await buildMenu({ document: aiWindowDoc })),
+    "Menu shown when documentGlobal is the Smart Window with selection"
   );
   Assert.ok(
-    await buildMenu({
+    !(await buildMenu({
       document: { documentElement: { hasAttribute: () => false } },
       browsingContext: { topChromeWindow: { document: aiWindowDoc } },
-    }),
-    "Menu hidden when documentGlobal is a sidebar sub-window inside a Smart Window"
+    })),
+    "Menu shown when documentGlobal is a sidebar sub-window inside a Smart Window with selection"
   );
+  Assert.ok(
+    await buildMenu({ document: aiWindowDoc }, {}),
+    "Menu hidden in Smart Window when there is no selection"
+  );
+
+  await SpecialPowers.popPrefEnv();
+
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.ml.chat.provider", "http://localhost:8080"],
+      ["browser.ml.chat.shortcuts.smartwindow", false],
+    ],
+  });
+
+  Assert.ok(
+    await buildMenu({ document: aiWindowDoc }),
+    "Menu hidden in Smart Window when smartwindow shortcuts pref is off"
+  );
+
+  await SpecialPowers.popPrefEnv();
+});
+
+/**
+ * Check that handleAskChat submits to Smart Window when selection is from a sidebar sub-window
+ */
+add_task(async function test_smart_window_sidebar_ask_chat() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.ml.chat.shortcuts.smartwindow", true]],
+  });
+
+  const { GenAI } = ChromeUtils.importESModule(
+    "resource:///modules/GenAI.sys.mjs"
+  );
+  const { sinon } = ChromeUtils.importESModule(
+    "resource://testing-common/Sinon.sys.mjs"
+  );
+  const { AIWindowUI } = ChromeUtils.importESModule(
+    "moz-src:///browser/components/aiwindow/ui/modules/AIWindowUI.sys.mjs"
+  );
+
+  const submitChatMessage = sinon.stub();
+  const isSidebarOpenStub = sinon
+    .stub(AIWindowUI, "isSidebarOpen")
+    .returns(true);
+  const getSidebarAiWindowStub = sinon
+    .stub(AIWindowUI, "_getSidebarAiWindow")
+    .returns({ submitChatMessage });
+
+  const aiWindowDoc = {
+    documentElement: { hasAttribute: attr => attr === "ai-window" },
+  };
+
+  await GenAI.handleAskChat(
+    { id: "summarize", label: "Summarize" },
+    {
+      window: {
+        browsingContext: {
+          topChromeWindow: { document: aiWindowDoc },
+        },
+      },
+      selection: "hello",
+      contentType: "selection",
+      entry: "page",
+    }
+  );
+
+  Assert.ok(
+    submitChatMessage.calledOnce,
+    "submitChatMessage called from sidebar sub-window"
+  );
+  Assert.equal(
+    submitChatMessage.firstCall.args[0].text,
+    "Summarize: hello",
+    "Prompt is label + selection"
+  );
+
+  isSidebarOpenStub.restore();
+  getSidebarAiWindowStub.restore();
 
   await SpecialPowers.popPrefEnv();
 });

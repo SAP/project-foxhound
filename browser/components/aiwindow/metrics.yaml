@@ -60,7 +60,7 @@ smart_window:
       submit_type: &submit_type
         type: string
         description: >
-          How the request was submitted: button, enter, follow-up, starter, or suggestion
+          How the request was submitted: button, enter, follow-up, shortcuts, starter, or suggestion
       tabs:
         type: quantity
         unit: count

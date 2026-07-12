@@ -7,6 +7,9 @@ const { GenAI } = ChromeUtils.importESModule(
 const { sinon } = ChromeUtils.importESModule(
   "resource://testing-common/Sinon.sys.mjs"
 );
+const { AIWindowUI } = ChromeUtils.importESModule(
+  "moz-src:///browser/components/aiwindow/ui/modules/AIWindowUI.sys.mjs"
+);
 
 /**
  * Check that shortcuts aren't shown by default
@@ -31,33 +34,83 @@ add_task(async function test_no_shortcuts() {
 });
 
 /**
- * Check that shortcuts aren't shown in a smartwindow
+ * Check that shortcuts in Smart Window submit to Smart Window
  */
-add_task(async function test_no_shortcuts_with_smartwindow() {
+add_task(async function test_smart_window_ask_chat() {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["browser.ml.chat.shortcuts", true],
-      ["browser.ml.chat.provider", "http://localhost:8080"],
+      ["browser.ml.chat.shortcuts.smartwindow", true],
     ],
   });
+
+  const submitChatMessage = sinon.stub();
+  const isSidebarOpenStub = sinon
+    .stub(AIWindowUI, "isSidebarOpen")
+    .returns(true);
+  const getSidebarAiWindowStub = sinon
+    .stub(AIWindowUI, "_getSidebarAiWindow")
+    .returns({ submitChatMessage });
+
   const win = await BrowserTestUtils.openNewBrowserWindow();
-  win.document.documentElement.setAttribute("ai-window", "");
 
-  await BrowserTestUtils.openNewForegroundTab(
-    win.gBrowser,
-    "data:text/plain,hi"
-  );
-  win.goDoCommand("cmd_selectAll");
+  try {
+    win.document.documentElement.setAttribute("ai-window", "");
 
-  const selectionShortcutActionPanel = win.document.getElementById(
-    "selection-shortcut-action-panel"
-  );
-  Assert.ok(
-    !selectionShortcutActionPanel.hasAttribute("panelopen"),
-    "Shortcuts not shown in a smartwindow"
-  );
+    await BrowserTestUtils.openNewForegroundTab(
+      win.gBrowser,
+      "data:text/plain,hi"
+    );
+    const browser = win.gBrowser.selectedBrowser;
+    await SimpleTest.promiseFocus(browser);
 
-  await BrowserTestUtils.closeWindow(win);
+    const selectPromise = SpecialPowers.spawn(browser, [], () => {
+      ContentTaskUtils.waitForCondition(() => content.getSelection());
+    });
+    win.goDoCommand("cmd_selectAll");
+    await selectPromise;
+    BrowserTestUtils.synthesizeMouseAtCenter(
+      browser,
+      { type: "mouseup" },
+      browser
+    );
+
+    const selectionPanel = win.document.getElementById(
+      "selection-shortcut-action-panel"
+    );
+    await TestUtils.waitForCondition(
+      () => selectionPanel.getAttribute("panelopen") === "true"
+    );
+    Assert.ok(
+      selectionPanel.hasAttribute("panelopen"),
+      "Shortcuts shown in Smart Window"
+    );
+
+    const popup = win.document.getElementById("chat-shortcuts-options-panel");
+    const shortcuts = win.document.getElementById("ai-action-button");
+    shortcuts.click();
+    await BrowserTestUtils.waitForEvent(popup, "popupshown");
+
+    popup.querySelector("toolbarbutton").click();
+
+    await TestUtils.waitForCondition(() => submitChatMessage.calledOnce);
+    Assert.equal(
+      submitChatMessage.firstCall.args[0].text,
+      "Summarize: hi",
+      "Prompt is label + selection"
+    );
+    Assert.equal(
+      submitChatMessage.firstCall.args[0].submitType,
+      "shortcuts",
+      "submitType is shortcuts"
+    );
+  } finally {
+    isSidebarOpenStub.restore();
+    getSidebarAiWindowStub.restore();
+    await BrowserTestUtils.closeWindow(win);
+  }
+
+  await SpecialPowers.popPrefEnv();
 });
 
 /**
