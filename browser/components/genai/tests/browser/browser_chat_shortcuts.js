@@ -37,6 +37,7 @@ add_task(async function test_no_shortcuts() {
  * Check that shortcuts in Smart Window submit to Smart Window
  */
 add_task(async function test_smart_window_ask_chat() {
+  Services.fog.testResetFOG();
   await SpecialPowers.pushPrefEnv({
     set: [
       ["browser.ml.chat.shortcuts", true],
@@ -104,9 +105,65 @@ add_task(async function test_smart_window_ask_chat() {
       "shortcuts",
       "submitType is shortcuts"
     );
+
+    const events = Glean.genaiChatbot.promptClick.testGetValue();
+    Assert.equal(events.length, 1, "One prompt click");
+    Assert.equal(events[0].extra.smart_window, "true", "Is smart window");
   } finally {
     isSidebarOpenStub.restore();
     getSidebarAiWindowStub.restore();
+    await BrowserTestUtils.closeWindow(win);
+  }
+
+  await SpecialPowers.popPrefEnv();
+});
+
+/**
+ * Check that Smart Window shortcuts show even when classic window
+ * shortcuts have been hidden via browser.ml.chat.shortcuts.
+ */
+add_task(async function test_smart_window_ask_chat_ignores_classic_toggle() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.ml.chat.shortcuts", false],
+      ["browser.ml.chat.shortcuts.smartwindow", true],
+    ],
+  });
+
+  const win = await BrowserTestUtils.openNewBrowserWindow();
+
+  try {
+    win.document.documentElement.setAttribute("ai-window", "");
+
+    await BrowserTestUtils.openNewForegroundTab(
+      win.gBrowser,
+      "data:text/plain,hi"
+    );
+    const browser = win.gBrowser.selectedBrowser;
+    await SimpleTest.promiseFocus(browser);
+
+    const selectPromise = SpecialPowers.spawn(browser, [], () => {
+      ContentTaskUtils.waitForCondition(() => content.getSelection());
+    });
+    win.goDoCommand("cmd_selectAll");
+    await selectPromise;
+    BrowserTestUtils.synthesizeMouseAtCenter(
+      browser,
+      { type: "mouseup" },
+      browser
+    );
+
+    const selectionPanel = win.document.getElementById(
+      "selection-shortcut-action-panel"
+    );
+    await TestUtils.waitForCondition(
+      () => selectionPanel.getAttribute("panelopen") === "true"
+    );
+    Assert.ok(
+      selectionPanel.hasAttribute("panelopen"),
+      "Shortcuts shown in Smart Window even with classic shortcuts disabled"
+    );
+  } finally {
     await BrowserTestUtils.closeWindow(win);
   }
 
@@ -261,6 +318,7 @@ add_task(async function test_show_shortcuts() {
     Assert.equal(events[0].extra.prompt, "summarize", "Picked summarize");
     Assert.equal(events[0].extra.provider, "localhost", "With localhost");
     Assert.equal(events[0].extra.selection, 2, "Selected hi");
+    Assert.equal(events[0].extra.smart_window, "false", "Not smart window");
     Assert.equal(events[0].extra.source, "shortcuts", "From shortcuts menu");
 
     SidebarController.hide();

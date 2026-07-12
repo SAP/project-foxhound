@@ -213,8 +213,8 @@ add_task(async function test_visible_in_smart_window() {
   });
 
   Assert.ok(
-    await buildMenu({ document: aiWindowDoc }),
-    "Menu hidden in Smart Window when smartwindow shortcuts pref is off"
+    !(await buildMenu({ document: aiWindowDoc })),
+    "Menu still shown in Smart Window even when smartwindow shortcuts pref is off"
   );
 
   await SpecialPowers.popPrefEnv();
@@ -341,6 +341,7 @@ add_task(async function test_open_sidebar() {
   Assert.equal(events[0].extra.prompt, "summarize", "Picked summarize");
   Assert.equal(events[0].extra.provider, "localhost", "With localhost");
   Assert.equal(events[0].extra.selection, "0", "No selection");
+  Assert.equal(events[0].extra.smart_window, "false", "Not smart window");
   Assert.equal(events[0].extra.source, "page", "From page menu");
 
   await SpecialPowers.popPrefEnv();
