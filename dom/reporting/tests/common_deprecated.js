@@ -105,7 +105,7 @@ function test_deprecatedMethodWithDataURI() {
       let obs = new ReportingObserver((reports, o) => {
         obs.disconnect();
         let report = reports[0];
-        const message = (report.url == "data:...") ? "passed" : "failed";
+        const message = (report.url == "data") ? "passed" : "failed";
         window.opener.postMessage(message, "http://mochi.test:8888");
         close();
       });

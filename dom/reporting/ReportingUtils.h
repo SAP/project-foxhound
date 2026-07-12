@@ -5,6 +5,7 @@
 #ifndef mozilla_dom_ReportingUtils_h
 #define mozilla_dom_ReportingUtils_h
 
+#include "mozilla/SourceLocation.h"
 #include "nsString.h"
 
 class nsAtom;
@@ -19,6 +20,8 @@ class ReportBody;
 class ReportingUtils final {
  public:
   static void StripURL(nsIURI* aURI, nsACString& outStrippedURL);
+  static void StripLocationFileName(const mozilla::JSCallingLocation& aLocation,
+                                    nsACString& outStrippedFileName);
 
   static void Report(nsIGlobalObject* aGlobal, nsAtom* aType,
                      const nsAString& aGroupName, const nsAString& aURL,
