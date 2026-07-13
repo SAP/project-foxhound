@@ -10,8 +10,7 @@ resulting zip file. Mainly for creating test inputs to the
 nsIX509CertDB.openSignedAppFileAsync API.
 """
 from base64 import b64encode
-from cbor2 import dumps
-from cbor2.types import CBORTag
+from cbor2 import CBORTag, dumps
 from hashlib import sha1, sha256
 import argparse
 from io import StringIO
@@ -133,11 +132,11 @@ def addManifestEntry(filename, hashes, contents, entries):
     entries.append(entry)
 
 
-def getCert(subject, keyName, issuerName, ee, issuerKey="", validity=""):
+def getCert(subject, keyName, issuerName, ee, issuerKey="", validity="", tamperSpki=False):
     """Helper function to create an X509 cert from a specification.
     Takes the subject, the subject key name to use, the issuer name,
     a bool whether this is an EE cert or not, and optionally an issuer key
-    name."""
+    name, a validity period, and whether or not to tamper with the SPKI."""
     certSpecification = (
         "issuer:%s\n" % issuerName
         + "subject:"
@@ -156,13 +155,15 @@ def getCert(subject, keyName, issuerName, ee, issuerKey="", validity=""):
         certSpecification += "\nissuerKey:%s" % issuerKey
     if validity:
         certSpecification += "\nvalidity:%s" % validity
+    if tamperSpki:
+        certSpecification += "\ntamperSpki:"
     certSpecificationStream = StringIO()
     print(certSpecification, file=certSpecificationStream)
     certSpecificationStream.seek(0)
     return pycert.Certificate(certSpecificationStream)
 
 
-def coseAlgorithmToSignatureParams(coseAlgorithm, issuerName, issuerKey, certValidity):
+def coseAlgorithmToSignatureParams(coseAlgorithm, issuerName, issuerKey, certValidity, tamperSpki):
     """Given a COSE algorithm ('ES256', 'ES384', 'ES512'), an issuer
     name, the name of the issuer's key, and a validity period, returns a
     (algorithm id, pykey.ECCKey, encoded certificate) triplet for use
@@ -188,6 +189,7 @@ def coseAlgorithmToSignatureParams(coseAlgorithm, issuerName, issuerKey, certVal
         True,
         issuerKey,
         certValidity,
+        tamperSpki,
     )
     return (algId, key, ee.toDER())
 
@@ -199,6 +201,7 @@ def signZip(
     rootName,
     rootKey,
     certValidity,
+    tamperSpki,
     manifestHashes,
     signatureHashes,
     pkcs7Hashes,
@@ -269,6 +272,7 @@ def signZip(
                     coseIssuerName,
                     issuerKey,
                     certValidity,
+                    tamperSpki,
                 )
                 for coseAlgorithm in coseAlgorithms
             ]
@@ -399,6 +403,12 @@ def main(outputFile, appPath, *args):
         default=[],
     )
     parser.add_argument(
+        "-t",
+        "--tamper-spki",
+        action="store_true",
+        help="Whether or not to tamper with the SPKI (only supported for COSE signatures)",
+    )
+    parser.add_argument(
         "-z",
         "--pad-headers",
         action="store",
@@ -432,6 +442,7 @@ def main(outputFile, appPath, *args):
         parsed.root,
         parsed.root_key,
         parsed.cert_validity,
+        parsed.tamper_spki,
         [hashNameToFunctionAndIdentifier(h) for h in parsed.manifest_hash],
         [hashNameToFunctionAndIdentifier(h) for h in parsed.signature_hash],
         parsed.pkcs7_hash,

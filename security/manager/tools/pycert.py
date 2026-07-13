@@ -16,6 +16,7 @@ subject:<subject distinguished name specification>
 [validity:<YYYYMMDD-YYYYMMDD|duration in days>]
 [issuerKey:<key specification>]
 [subjectKey:<key specification>]
+[tamperSpki:]
 [signature:{sha256WithRSAEncryption,sha1WithRSAEncryption,
             md5WithRSAEncryption,ecdsaWithSHA256,ecdsaWithSHA384,
             ecdsaWithSHA512}]
@@ -391,6 +392,7 @@ class Certificate:
         self.savedEmbeddedSCTListData = None
         self.subjectKey = pykey.keyFromSpecification("default")
         self.issuerKey = pykey.keyFromSpecification("default")
+        self.tamperSpki = False
         self.serialNumber = None
         self.decodeParams(paramStream)
         # If a serial number wasn't specified, generate one based on
@@ -456,6 +458,8 @@ class Certificate:
             self.setupKey("issuer", value)
         elif param == "subjectKey":
             self.setupKey("subject", value)
+        elif param == "tamperSpki":
+            self.tamperSpki = True
         elif param == "signature":
             self.signature = value
         elif param == "serialNumber":
@@ -798,9 +802,20 @@ class Certificate:
         tbsCertificate["issuer"] = self.getIssuer()
         tbsCertificate["validity"] = self.getValidity()
         tbsCertificate["subject"] = self.getSubject()
-        tbsCertificate["subjectPublicKeyInfo"] = (
-            self.subjectKey.asSubjectPublicKeyInfo()
-        )
+        if self.tamperSpki:
+            algorithmIdentifier = rfc5280.AlgorithmIdentifier()
+            algorithmIdentifier["algorithm"] = univ.ObjectIdentifier(
+                "1.3.6.1.4.1.13769.666.666.666.1.500.9.1"
+            )
+            algorithmIdentifier["parameters"] = univ.Null()
+            spki = rfc5280.SubjectPublicKeyInfo()
+            spki["algorithm"] = algorithmIdentifier
+            spki["subjectPublicKey"] = univ.BitString("'0500'H")
+            tbsCertificate["subjectPublicKeyInfo"] = spki
+        else:
+            tbsCertificate["subjectPublicKeyInfo"] = (
+                self.subjectKey.asSubjectPublicKeyInfo()
+            )
         if self.extensions:
             extensions = rfc5280.Extensions().subtype(
                 explicitTag=tag.Tag(tag.tagClassContext, tag.tagFormatSimple, 3)
