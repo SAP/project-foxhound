@@ -947,9 +947,7 @@ describe("ASRouter", () => {
               data: {
                 actions: [
                   { type: "CONFIRM_LAUNCH_ON_LOGIN" },
-                  // We currently only allow one action, but this can be updated
-                  // if/when the list is expanded.
-                  { type: "CONFIRM_LAUNCH_ON_LOGIN" },
+                  { type: "PIN_FIREFOX_TO_TASKBAR" },
                 ],
               },
             },

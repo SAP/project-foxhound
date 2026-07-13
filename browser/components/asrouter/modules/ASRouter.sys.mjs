@@ -1604,7 +1604,12 @@ export class _ASRouter {
    * @returns {boolean}
    */
   _isAllowedActionOnlyMessageAction(action) {
-    const ALLOWED_ACTION_MESSAGE_ACTIONS = ["CONFIRM_LAUNCH_ON_LOGIN"];
+    const ALLOWED_ACTION_MESSAGE_ACTIONS = [
+      "CONFIRM_LAUNCH_ON_LOGIN",
+      // This pinning action is ONLY to be used in cases where an OS level
+      // prompt will ask a user's consent to pin.
+      "PIN_FIREFOX_TO_TASKBAR",
+    ];
     if (!action) {
       return false;
     }
