@@ -52,6 +52,10 @@ add_task(async function test_OS_data() {
       "number",
       "Windows build number should be a number"
     );
+    Assert.ok(
+      os.windowsUBR === null || typeof os.windowsUBR == "number",
+      "Windows UBR should be a number or null"
+    );
     equal(os.macVersion, null, "Mac version should not be set");
     equal(os.darwinVersion, null, "Darwin version should not be set");
   }
@@ -70,6 +74,7 @@ add_task(async function test_OS_data() {
       null,
       "Windows build number version should not be set"
     );
+    equal(os.windowsUBR, null, "Windows UBR should not be set");
   }
 
   // if on Linux, no versions should be set
@@ -82,6 +87,7 @@ add_task(async function test_OS_data() {
       null,
       "Windows build number version should not be set"
     );
+    equal(os.windowsUBR, null, "Windows UBR should not be set");
   }
 });
 
