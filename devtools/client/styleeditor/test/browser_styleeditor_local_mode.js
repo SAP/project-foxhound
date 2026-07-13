@@ -31,10 +31,43 @@ add_task(async function () {
   await ui.selectStyleSheet(editor.styleSheet);
   const styleEditor = await editor.getSourceEditor();
   const text = styleEditor.sourceEditor.getText();
-  const expectedText = await (
+  const originalContent = await (
     await fetch(TEST_BASE_HTTPS + "simple.css")
   ).text();
-  is(text, expectedText, "style inspector content is correct");
+  is(text, originalContent, "style inspector content is correct");
+
+  info(
+    "Change the stylesheet text and see if we can save changes to the local file"
+  );
+  let dirty = editor.sourceEditor.once("dirty-change");
+  const newContent = "* { color: green }";
+  editor.sourceEditor.setText(newContent);
+  await dirty;
+
+  let onSaved = editor.once("property-change");
+  editor.summary.querySelector(".stylesheet-saveButton").click();
+  await onSaved;
+
+  let updatedFileContent = await (
+    await fetch(TEST_BASE_HTTPS + "simple.css", { cache: "no-store" })
+  ).text();
+  is(updatedFileContent, newContent);
+
+  info(
+    "Revert back to original text content to avoid introducing changes in local repo"
+  );
+  dirty = editor.sourceEditor.once("dirty-change");
+  editor.sourceEditor.setText(originalContent);
+  await dirty;
+
+  onSaved = editor.once("property-change");
+  editor.summary.querySelector(".stylesheet-saveButton").click();
+  await onSaved;
+
+  updatedFileContent = await (
+    await fetch(TEST_BASE_HTTPS + "simple.css")
+  ).text();
+  is(updatedFileContent, originalContent);
 });
 
 function getSupportsFile(path) {

@@ -39,6 +39,12 @@ const PREF_NOTICED = "devtools.local-mode.noticed";
 // Map of Pref observer and toolbox event listener functions keyed by toolbox object
 const gToolboxObservers = new WeakMap();
 
+// Actively registered mappings.
+// This is a Map where keys are origins (string)
+// and values are a local folder absolute path (string).
+// "firefox.localhost": "/home/me/hello-world"
+let gActiveMappings = new Map();
+
 const ORIGIN_INDEX_REGEXP = /firefox(?<origin_index>\d*)\.localhost/;
 
 // Shared RegExp instance to extract the index in a local mapping preference.
@@ -94,9 +100,51 @@ export const LocalModeMappings = {
 
   clearTransientMappings,
 
+  getLocalFileForURL,
+
   LOCAL_MODE_MAPPINGS_PREF_PREFIX,
 };
 EventEmitter.decorate(LocalModeMappings);
+
+/**
+ * For any URL, see if the file is possibly coming from a Local Mode mapping
+ *
+ * @param {string} url
+ * @return {string}
+ *         If served from Local Mode, absolute path to the matching local file
+ */
+function getLocalFileForURL(url) {
+  if (gActiveMappings.size == 0) {
+    return false;
+  }
+  let host, pathname;
+  try {
+    const urlObject = new URL(url);
+    const { protocol } = urlObject;
+    if (protocol != "http:" && protocol != "https:") {
+      return false;
+    }
+    host = urlObject.host;
+    pathname = urlObject.pathname;
+  } catch (e) {
+    // If the URL is invalid, consider it as not mapped
+    return false;
+  }
+
+  const localFolderPath = gActiveMappings.get(host);
+  if (!localFolderPath) {
+    return false;
+  }
+  const path = decodeURI(pathname.replace(/^\//, ""));
+
+  // On Windows, replace all URI's '/' path separators with '\'
+  let systemPath = path;
+  if (Services.appinfo.OS === "WINNT") {
+    systemPath = systemPath.replace(/\//g, "\\");
+  }
+
+  return PathUtils.joinRelative(localFolderPath, systemPath);
+}
 
 /**
  * Read all local mode mapping preferences and returns a JS dictionary
@@ -225,8 +273,7 @@ async function updateMappings(toolbox, startup = false) {
     return;
   }
 
-  const networkFront = await targetCommand.watcherFront.getNetworkParentActor();
-  await networkFront.setLocalModeMappings(serverMappings);
+  await updateActiveServerMappings(targetCommand, serverMappings);
 
   // If the currently debugged document matches any of the local mode origins,
   // and is an error page, it probably means that the page was loaded/restored
@@ -240,6 +287,22 @@ async function updateMappings(toolbox, startup = false) {
   }
 
   LocalModeMappings.emit("updated");
+}
+
+/**
+ * Communicate a new list of mappings to the server, while memoizing this list.
+ *
+ * @param {TargetCommand} targetCommand
+ * @param {object} mappings
+ *                 See NetworkObserver.setLocalModeMappings for definition
+ */
+async function updateActiveServerMappings(targetCommand, mappings) {
+  const networkFront = await targetCommand.watcherFront.getNetworkParentActor();
+  await networkFront.setLocalModeMappings(mappings);
+
+  // Convert the dictionary, required by the RDP method (setLocalModeMappings)
+  // to a Map for better runtime performance
+  gActiveMappings = new Map(Object.entries(mappings));
 }
 
 /**
@@ -421,9 +484,10 @@ function showLocalModeNotice(toolbox) {
         // Setup a transient mapping and load the https URL while dismissing the notice
         gTransientMappings[origin] = path;
 
-        const networkFront =
-          await toolbox.commands.targetCommand.watcherFront.getNetworkParentActor();
-        await networkFront.setLocalModeMappings(getAllServerMappings());
+        await updateActiveServerMappings(
+          toolbox.commands.targetCommand,
+          getAllServerMappings()
+        );
 
         await toolbox.commands.targetCommand.navigateTo(url + "/" + filename);
       },
