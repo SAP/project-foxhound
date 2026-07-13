@@ -960,6 +960,9 @@ bool CoseVerificationCallback(const uint8_t* aPayload, size_t aPayloadLen,
     return false;
   }
   UniqueSECKEYPublicKey key(SECKEY_ExtractPublicKey(spki.get()));
+  if (!key) {
+    return false;
+  }
   SECItem signatureItem = {siBuffer, const_cast<uint8_t*>(aSignature),
                            static_cast<unsigned int>(aSignatureLen)};
   rv = PK11_VerifyWithMechanism(key.get(), mechanism, &param, &signatureItem,
