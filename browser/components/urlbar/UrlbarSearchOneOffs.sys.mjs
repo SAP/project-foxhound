@@ -27,7 +27,7 @@ export class UrlbarSearchOneOffs extends SearchOneOffs {
    *   The parent UrlbarView.
    */
   constructor(view) {
-    super(view.panel.querySelector(".search-one-offs"));
+    super(view.input.querySelector(".search-one-offs"));
     this.view = view;
     this.input = view.input;
     lazy.UrlbarPrefs.addObserver(this);
