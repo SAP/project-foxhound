@@ -49,6 +49,8 @@ add_task(async function test_actor_disabled() {
     set: [
       ["browser.ml.chat.provider", ""],
       ["browser.ml.chat.page", false],
+      ["browser.ml.chat.shortcuts", false],
+      ["browser.ml.chat.shortcuts.smartwindow", false],
     ],
   });
   await BrowserTestUtils.withNewTab("about:blank", async browser => {

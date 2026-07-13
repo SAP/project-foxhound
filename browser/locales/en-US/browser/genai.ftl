@@ -46,6 +46,9 @@ genai-prompts-proofread =
 
 ## Chatbot menu shortcuts
 
+genai-menu-ask-smart-window =
+    .label = Ask…
+    .accesskey = z
 genai-menu-no-provider-2 =
     .label = Ask an AI Chatbot
     .accesskey = z
@@ -77,6 +80,8 @@ genai-shortcut-button =
 genai-menu-new-badge = New
 genai-menu-summarize-page = Summarize Page
 
+genai-input-ask-smart-window =
+    .placeholder = Ask…
 genai-input-ask-generic =
     .placeholder = Ask AI chatbot…
 # $provider (string) - name of the provider
