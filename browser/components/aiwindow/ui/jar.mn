@@ -74,3 +74,5 @@ browser.jar:
   content/browser/aiwindow/components/smartwindow-heading.css       (components/smartwindow-heading/smartwindow-heading.css)
   content/browser/aiwindow/components/ai-action-result.mjs          (components/ai-action-result/ai-action-result.mjs)
   content/browser/aiwindow/components/ai-action-result.css          (components/ai-action-result/ai-action-result.css)
+  content/browser/aiwindow/components/smartwindow-topsites.mjs       (components/smartwindow-topsites/smartwindow-topsites.mjs)
+  content/browser/aiwindow/components/smartwindow-topsites.css       (components/smartwindow-topsites/smartwindow-topsites.css)
