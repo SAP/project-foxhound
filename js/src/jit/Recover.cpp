@@ -40,18 +40,19 @@ bool MNode::writeRecoverData(CompactBufferWriter& writer) const {
   MOZ_CRASH("This instruction is not serializable");
 }
 
-void RInstruction::readRecoverData(CompactBufferReader& reader,
-                                   RInstructionStorage* raw) {
+uint32_t RInstruction::readRecoverData(CompactBufferReader& reader,
+                                       RInstructionStorage* raw) {
   uint32_t op = reader.readUnsigned();
   switch (Opcode(op)) {
 #define MATCH_OPCODES_(op)                                                  \
-  case Recover_##op:                                                        \
+  case Recover_##op: {                                                      \
     static_assert(sizeof(R##op) <= sizeof(RInstructionStorage),             \
                   "storage space must be big enough to store R" #op);       \
     static_assert(alignof(R##op) <= alignof(RInstructionStorage),           \
                   "storage space must be aligned adequate to store R" #op); \
-    new (raw->addr()) R##op(reader);                                        \
-    break;
+    auto* ins = new (raw->addr()) R##op(reader);                            \
+    return ins->numOperands();                                              \
+  }
 
     RECOVER_OPCODE_LIST(MATCH_OPCODES_)
 #undef MATCH_OPCODES_

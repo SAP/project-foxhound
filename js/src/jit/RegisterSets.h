@@ -456,7 +456,7 @@ class TypedRegisterSet {
   uint32_t getPushSizeInBytes() const { return T::GetPushSizeInBytes(*this); }
 
   size_t offsetOfPushedRegister(RegType reg) const {
-    MOZ_ASSERT(hasRegisterIndex(reg));
+    MOZ_RELEASE_ASSERT(hasRegisterIndex(reg));
     return T::OffsetOfPushedRegister(bits(), reg);
   }
 };

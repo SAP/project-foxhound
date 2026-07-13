@@ -845,7 +845,7 @@ void IonScript::copyICEntries(const uint32_t* icEntries) {
 }
 
 const SafepointIndex* IonScript::getSafepointIndex(uint32_t disp) const {
-  MOZ_ASSERT(numSafepointIndices() > 0);
+  MOZ_RELEASE_ASSERT(numSafepointIndices() > 0);
 
   const SafepointIndex* table = safepointIndices();
   if (numSafepointIndices() == 1) {
@@ -859,7 +859,7 @@ const SafepointIndex* IonScript::getSafepointIndex(uint32_t disp) const {
   uint32_t max = table[maxEntry].displacement();
 
   // Raise if the element is not in the list.
-  MOZ_ASSERT(min <= disp && disp <= max);
+  MOZ_RELEASE_ASSERT(min <= disp && disp <= max);
 
   // Approximate the location of the FrameInfo.
   size_t guess = (disp - min) * (maxEntry - minEntry) / (max - min) + minEntry;

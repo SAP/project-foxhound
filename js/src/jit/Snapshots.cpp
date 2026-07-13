@@ -363,12 +363,18 @@ void RValueAllocation::readPayload(CompactBufferReader& reader,
     case PAYLOAD_STACK_OFFSET:
       p->stackOffset = reader.readSigned();
       break;
-    case PAYLOAD_GPR:
-      p->gpr = Register::FromCode(reader.readByte());
+    case PAYLOAD_GPR: {
+      uint8_t code = reader.readByte();
+      MOZ_RELEASE_ASSERT(code < Registers::Total);
+      p->gpr = Register::FromCode(code);
       break;
-    case PAYLOAD_FPU:
-      p->fpu.data = reader.readByte();
+    }
+    case PAYLOAD_FPU: {
+      uint8_t code = reader.readByte();
+      MOZ_RELEASE_ASSERT(code < FloatRegisters::Total);
+      p->fpu.data = code;
       break;
+    }
     case PAYLOAD_PACKED_TAG:
       p->type = JSValueType(*mode & PACKED_TAG_MASK);
       *mode = *mode & ~PACKED_TAG_MASK;
@@ -584,7 +590,10 @@ SnapshotWriter::SnapshotWriter()
 
 RecoverReader::RecoverReader(SnapshotReader& snapshot, const uint8_t* recovers,
                              uint32_t size)
-    : reader_(nullptr, nullptr), numInstructions_(0), numInstructionsRead_(0) {
+    : reader_(nullptr, nullptr),
+      numInstructions_(0),
+      numInstructionsRead_(0),
+      numOperands_(0) {
   if (!recovers) {
     return;
   }
@@ -597,7 +606,8 @@ RecoverReader::RecoverReader(SnapshotReader& snapshot, const uint8_t* recovers,
 RecoverReader::RecoverReader(const RecoverReader& rr)
     : reader_(rr.reader_),
       numInstructions_(rr.numInstructions_),
-      numInstructionsRead_(rr.numInstructionsRead_) {
+      numInstructionsRead_(rr.numInstructionsRead_),
+      numOperands_(rr.numOperands_) {
   if (reader_.currentPosition()) {
     rr.instruction()->cloneInto(&rawData_);
   }
@@ -607,6 +617,7 @@ RecoverReader& RecoverReader::operator=(const RecoverReader& rr) {
   reader_ = rr.reader_;
   numInstructions_ = rr.numInstructions_;
   numInstructionsRead_ = rr.numInstructionsRead_;
+  numOperands_ = rr.numOperands_;
   if (reader_.currentPosition()) {
     rr.instruction()->cloneInto(&rawData_);
   }
@@ -615,15 +626,15 @@ RecoverReader& RecoverReader::operator=(const RecoverReader& rr) {
 
 void RecoverReader::readRecoverHeader() {
   numInstructions_ = reader_.readUnsigned();
-  MOZ_ASSERT(numInstructions_);
+  MOZ_RELEASE_ASSERT(numInstructions_ > 0);
 
   JitSpew(JitSpew_IonSnapshots, "Read recover header with instructionCount %u",
           numInstructions_);
 }
 
 void RecoverReader::readInstruction() {
-  MOZ_ASSERT(moreInstructions());
-  RInstruction::readRecoverData(reader_, &rawData_);
+  MOZ_RELEASE_ASSERT(moreInstructions());
+  numOperands_ = RInstruction::readRecoverData(reader_, &rawData_);
   numInstructionsRead_++;
 }
 

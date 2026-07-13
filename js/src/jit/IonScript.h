@@ -363,7 +363,7 @@ class alignas(8) IonScript final : public TrailingArray<IonScript> {
     return mallocSizeOf(this);
   }
   HeapPtr<Value>& getConstant(size_t index) {
-    MOZ_ASSERT(index < numConstants());
+    MOZ_RELEASE_ASSERT(index < numConstants());
     return constants()[index];
   }
   uint32_t localSlotsSize() const { return localSlotsSize_; }
@@ -371,7 +371,7 @@ class alignas(8) IonScript final : public TrailingArray<IonScript> {
   uint32_t frameSize() const { return frameSize_; }
   const SafepointIndex* getSafepointIndex(uint32_t disp) const;
   const SafepointIndex* getSafepointIndex(uint8_t* retAddr) const {
-    MOZ_ASSERT(containsCodeAddress(retAddr));
+    MOZ_RELEASE_ASSERT(containsCodeAddress(retAddr));
     return getSafepointIndex(retAddr - method()->raw());
   }
   const OsiIndex* getOsiIndex(uint32_t disp) const;
@@ -405,7 +405,7 @@ class alignas(8) IonScript final : public TrailingArray<IonScript> {
   size_t invalidationCount() const { return invalidationCount_; }
   void incrementInvalidationCount() { invalidationCount_++; }
   void decrementInvalidationCount(JS::GCContext* gcx) {
-    MOZ_ASSERT(invalidationCount_);
+    MOZ_RELEASE_ASSERT(invalidationCount_);
     invalidationCount_--;
     if (!invalidationCount_) {
       Destroy(gcx, this);

@@ -2183,7 +2183,7 @@ const RResumePoint* SnapshotIterator::resumePoint() const {
 }
 
 uint32_t SnapshotIterator::numAllocations() const {
-  return instruction()->numOperands();
+  return recover_.numOperands();
 }
 
 uint32_t SnapshotIterator::pcOffset() const {
@@ -2196,7 +2196,7 @@ ResumeMode SnapshotIterator::resumeMode() const {
 
 void SnapshotIterator::skipInstruction() {
   MOZ_ASSERT(snapshot_.numAllocationsRead() == 0);
-  size_t numOperands = instruction()->numOperands();
+  size_t numOperands = recover_.numOperands();
   for (size_t i = 0; i < numOperands; i++) {
     skip();
   }
@@ -2615,13 +2615,13 @@ uintptr_t MachineState::read(Register reg) const {
 
 template <typename T>
 T MachineState::read(FloatRegister reg) const {
-  MOZ_ASSERT(reg.size() == sizeof(T));
+  MOZ_RELEASE_ASSERT(reg.size() == sizeof(T));
 
 #if !defined(JS_CODEGEN_NONE) && !defined(JS_CODEGEN_WASM32)
   if (state_.is<BailoutState>()) {
     uint32_t offset = reg.getRegisterDumpOffsetInBytes();
-    MOZ_ASSERT((offset % sizeof(T)) == 0);
-    MOZ_ASSERT((offset + sizeof(T)) <= sizeof(RegisterDump::FPUArray));
+    MOZ_RELEASE_ASSERT((offset % sizeof(T)) == 0);
+    MOZ_RELEASE_ASSERT(offset <= sizeof(RegisterDump::FPUArray) - sizeof(T));
 
     const BailoutState& state = state_.as<BailoutState>();
     char* addr = reinterpret_cast<char*>(state.floatRegs.begin()) + offset;
