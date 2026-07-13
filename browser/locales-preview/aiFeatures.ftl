@@ -32,6 +32,9 @@ ai-window-is-default-window =
 ai-window-open-sidebar =
     .label = Open assistant automatically
     .description = Show the assistant sidebar on each new tab. Close it anytime.
+ai-window-smart-cursor-in-smart-window =
+    .label = Show shortcuts when selecting text
+    .description = Get quick access to summarize, explain, and more.
 
 smart-window-model-section =
     .label = Assistant model

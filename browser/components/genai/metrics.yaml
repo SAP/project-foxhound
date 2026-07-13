@@ -456,8 +456,10 @@ genai.chatbot:
       Chatbot prompt requested.
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1974185
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2044112
     data_reviews:
       - https://phabricator.services.mozilla.com/D255286
+      - https://phabricator.services.mozilla.com/D309646
     data_sensitivity:
       - interaction
     expires: 154
@@ -481,6 +483,9 @@ genai.chatbot:
       selection:
         type: quantity
         description: Page content length.
+      smart_window:
+        type: boolean
+        description: Whether the prompt was sent from Smart Window.
       source:
         type: string
         description: Entrypoint for the request, e.g., callout, footer, page.

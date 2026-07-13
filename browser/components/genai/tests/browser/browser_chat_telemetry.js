@@ -173,6 +173,7 @@ add_task(async function test_summarize_telemetry() {
     "Reader mode is false for about:blank"
   );
   Assert.equal(events[0].extra.selection, "0", "Has selection length");
+  Assert.equal(events[0].extra.smart_window, "false", "Not smart window");
   Assert.equal(events[0].extra.source, "test_entry", "Correct source");
 
   SidebarController.hide({ dismissPanel: true });

@@ -37,6 +37,7 @@ let previousAssistantModel = "No model";
 Preferences.addAll([
   // browser.ai.control.* prefs defined in main.js
   { id: "browser.ml.chat.provider", type: "string" },
+  { id: "browser.ml.chat.shortcuts.smartwindow", type: "bool" },
   { id: "browser.smartwindow.apiKey", type: "string" },
   { id: "browser.smartwindow.enabled", type: "bool" },
   { id: "browser.smartwindow.endpoint", type: "string" },
@@ -707,6 +708,11 @@ Preferences.addSetting({
 Preferences.addSetting({
   id: "openSidebarByDefault",
   pref: "browser.smartwindow.sidebar.openByDefault",
+});
+
+Preferences.addSetting({
+  id: "smartCursorInSmartWindow",
+  pref: "browser.ml.chat.shortcuts.smartwindow",
 });
 
 Preferences.addSetting({
@@ -1514,6 +1520,11 @@ SettingGroupManager.registerGroups({
       {
         id: "openSidebarByDefault",
         l10nId: "ai-window-open-sidebar",
+        control: "moz-checkbox",
+      },
+      {
+        id: "smartCursorInSmartWindow",
+        l10nId: "ai-window-smart-cursor-in-smart-window",
         control: "moz-checkbox",
       },
     ],
