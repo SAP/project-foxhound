@@ -14,6 +14,7 @@ Messages
 There are JSON schemas for each type of message that the Firefox Messaging
 System handles:
 
+* :searchfox:`Action Only <browser/components/asrouter/content-src/templates/OnboardingMessage/ActionOnlyMessage.schema.json>`
 * :searchfox:`CFR URLBar Chiclet <browser/components/asrouter/content-src/templates/CFR/templates/CFRUrlbarChiclet.schema.json>`
 * :searchfox:`Extension Doorhanger <browser/components/asrouter/content-src/templates/CFR/templates/ExtensionDoorhanger.schema.json>`
 * :searchfox:`Infobar <browser/components/asrouter/content-src/templates/CFR/templates/InfoBar.schema.json>`

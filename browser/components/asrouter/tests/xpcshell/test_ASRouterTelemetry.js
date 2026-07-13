@@ -297,6 +297,23 @@ add_task(async function test_applyMomentsPolicy() {
   Assert.equal(pingType, "moments");
 });
 
+add_task(async function test_applyActionOnlyPolicy() {
+  info(
+    "ASRouterTelemetry.applyActionOnlyPolicy should set client_id and set pingType"
+  );
+  let instance = new ASRouterTelemetry();
+  let { ping, pingType } = await instance.applyActionOnlyPolicy({
+    action: "foo",
+  });
+
+  Assert.equal(
+    ping.client_id,
+    Services.prefs.getCharPref("toolkit.telemetry.cachedClientID")
+  );
+  Assert.equal(pingType, "action_only");
+  Assert.equal(ping.action, undefined);
+});
+
 add_task(async function test_applyMenuMessagePolicy() {
   info(
     "ASRouterTelemetry.applyMenuMessagePolicy should set client_id and set pingType"
@@ -403,6 +420,12 @@ add_task(async function test_createASRouterEvent_call_correctPolicy() {
     action: "toast_notification_user_event",
     event: "IMPRESSION",
     message_id: "TEST_TOAST_NOTIFICATION1",
+  });
+
+  await testCallCorrectPolicy("applyActionOnlyPolicy", {
+    action: "action_only_user_event",
+    event: "IMPRESSION",
+    message_id: "action_only_message_01",
   });
 
   await testCallCorrectPolicy("applyUndesiredEventPolicy", {

@@ -63,6 +63,9 @@ SCHEMAS = [
         schema_id="chrome://browser/content/asrouter/schemas/MessagingExperiment.schema.json",
         schema_path=Path("MessagingExperiment.schema.json"),
         message_types={
+            "ActionOnlyMessage": (
+                SCHEMA_DIR / "OnboardingMessage" / "ActionOnlyMessage.schema.json"
+            ),
             "BookmarksBarButton": (
                 SCHEMA_DIR / "OnboardingMessage" / "BookmarksBarButton.schema.json"
             ),
