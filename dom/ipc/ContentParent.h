@@ -572,16 +572,6 @@ class ContentParent final : public PContentParent,
       bool aUserActivation, bool aTextDirectiveUserActivation,
       CreateWindowResolver&& aResolve);
 
-  mozilla::ipc::IPCResult RecvCreateWindowInDifferentProcess(
-      PBrowserParent* aThisTab, const MaybeDiscarded<BrowsingContext>& aParent,
-      const uint32_t& aChromeFlags, const bool& aCalledFromJS,
-      const bool& aTopLevelCreatedByWebContent, nsIURI* aURIToLoad,
-      const nsACString& aFeatures, const UserActivation::Modifiers& aModifiers,
-      const nsAString& aName, nsIPrincipal* aTriggeringPrincipal,
-      nsIPolicyContainer* aPolicyContainer, nsIReferrerInfo* aReferrerInfo,
-      const OriginAttributes& aOriginAttributes, bool aUserActivation,
-      bool aTextDirectiveUserActivation);
-
   static void BroadcastBlobURLRegistration(
       const nsACString& aURI, BlobImpl* aBlobImpl, nsIPrincipal* aPrincipal,
       const nsCString& aPartitionKey, ContentParent* aIgnoreThisCP = nullptr);
