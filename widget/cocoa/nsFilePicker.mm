@@ -301,8 +301,13 @@ static void UpdatePanelFileTypes(NSOpenPanel* aPanel, NSArray* aFilters) {
     if (baseName.length > 0) {
       [mSavePanel setNameFieldStringValue:
                       [baseName stringByAppendingPathExtension:newExtension]];
+      // Keep the panel's allowed type in sync with the name field so the new
+      // extension is preserved on the saved file.
+      mSavePanel.allowedFileTypes = @[ newExtension ];
     }
   }
+  // For the "All Files" filter GetFilterList returns nil; we leave the name
+  // field and the allowed type untouched so the current extension is kept.
 
   NS_OBJC_END_TRY_IGNORE_BLOCK;
 }
@@ -497,6 +502,14 @@ void nsFilePicker::PresentSavePanel(nsIFilePickerShownCallback* aCallback) {
            selector:@selector(menuChangedItem:)
                name:NSMenuWillSendActionNotification
              object:[popupButton menu]];
+  }
+
+  // Declare the default file's extension as the allowed type so that saving
+  // without changing the format popup keeps it on the file. The observer
+  // updates this when the user changes the format.
+  NSString* defaultExtension = defaultFilename.pathExtension;
+  if (defaultExtension.length != 0) {
+    thePanel.allowedFileTypes = @[ defaultExtension ];
   }
 
   // Allow users to change the extension.
