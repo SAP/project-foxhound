@@ -241,6 +241,15 @@ void FrameMetrics::UpdatePendingScrollInfo(const ScrollPositionUpdate& aInfo) {
 
   SetLayoutScrollOffset(aInfo.GetDestination());
   ClampAndSetVisualScrollOffset(aInfo.GetDestination() + relativeOffset);
+  // The layout offset was set to the raw destination while the visual offset
+  // was clamped independently, so the two are no longer guaranteed to be in
+  // their proper relationship: equal for non-root content, the layout viewport
+  // enclosing the visual viewport for root content. (The independent clamps can
+  // also disagree at sub-pixel precision, since the main thread clamps the
+  // destination in app units while this clamps in CSS pixels.) Re-establish
+  // that relationship the same way every other visual-offset mutator does, e.g.
+  // AsyncPanZoomController::SetVisualScrollOffset.
+  RecalculateLayoutViewportOffset();
   mScrollGeneration = aInfo.GetGeneration();
 }
 
