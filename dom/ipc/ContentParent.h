@@ -778,20 +778,18 @@ class ContentParent final : public PContentParent,
   static mozilla::StaticAutoPtr<std::vector<std::string>> sMacSandboxParams;
 #endif
 
-  // Set aLoadUri to true to load aURIToLoad and to false to only create the
-  // window. aURIToLoad should always be provided, if available, to ensure
-  // compatibility with GeckoView.
+  // aURIToLoad should always be provided, if available, to ensure compatibility
+  // with GeckoView.
   mozilla::ipc::IPCResult CommonCreateWindow(
       PBrowserParent* aThisTab, BrowsingContext& aParent, bool aSetOpener,
       const uint32_t& aChromeFlags, const bool& aCalledFromJS,
       const bool& aForPrinting, const bool& aForWindowDotPrint,
       const bool& aIsTopLevelCreatedByWebContent, nsIURI* aURIToLoad,
       const nsACString& aFeatures, const UserActivation::Modifiers& aModifiers,
-      BrowserParent* aNextRemoteBrowser, const nsAString& aName,
-      nsresult& aResult, nsCOMPtr<nsIRemoteTab>& aNewRemoteTab,
-      bool* aWindowIsNew, int32_t& aOpenLocation,
-      nsIPrincipal* aTriggeringPrincipal, nsIReferrerInfo* aReferrerInfo,
-      bool aLoadUri, nsIPolicyContainer* aPolicyContainer,
+      BrowserParent* aNextRemoteBrowser, nsresult& aResult,
+      nsCOMPtr<nsIRemoteTab>& aNewRemoteTab, bool* aWindowIsNew,
+      int32_t& aOpenLocation, nsIPrincipal* aTriggeringPrincipal,
+      nsIReferrerInfo* aReferrerInfo, nsIPolicyContainer* aPolicyContainer,
       const OriginAttributes& aOriginAttributes, bool aUserActivation,
       bool aTextDirectiveUserActivation);
 
