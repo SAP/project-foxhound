@@ -3256,8 +3256,27 @@ void MacroAssembler::extractCurrentIndexAndKindFromIterator(Register iterator,
                          PropertyIteratorObject::offsetOfIteratorSlot());
   loadPrivate(nativeIterAddr, outIndex);
 
+#ifdef DEBUG
+  // Assert the Active flag is set.
+  Label iterActive;
+  branchTest32(Assembler::NonZero,
+               Address(outIndex, NativeIterator::offsetOfFlags()),
+               Imm32(NativeIterator::Flags::Active), &iterActive);
+  assumeUnreachable("iterator-index fast path on an inactive iterator");
+  bind(&iterActive);
+#endif
+
   // Load the property count into outKind.
   load32(Address(outIndex, NativeIterator::offsetOfPropertyCount()), outKind);
+
+  // The cursor must not be 0 because then we would access indices[cursor - 1]
+  // below.
+  Label cursorOk;
+  branch32(Assembler::NotEqual,
+           Address(outIndex, NativeIterator::offsetOfPropertyCursor()),
+           Imm32(0), &cursorOk);
+  assumeUnreachable("iterator-index fast path on a closed iterator");
+  bind(&cursorOk);
 
   // We need two bits of wiggle room in a u32 here for the logic below.
   static_assert(NativeIterator::PropCountLimit <= 1 << 30);
