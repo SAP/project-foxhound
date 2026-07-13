@@ -8982,6 +8982,8 @@ bool BaseCompiler::emitArrayFill() {
     freePtr(RegPtr(PreBarrierReg));
   }
 
+  sync();
+
   // Perform the fill loop using `numElements` as the loop variable, counting
   // down to zero.
   Label done;
