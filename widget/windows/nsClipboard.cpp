@@ -1579,6 +1579,11 @@ nsresult nsClipboard::SaveStorageOrStream(IDataObject* aDataObject, UINT aIndex,
     return NS_ERROR_FAILURE;
   }
 
+  // Don't leave a partially-written file behind if we bail out on a read or
+  // write error below.
+  // NB: This must initialize before/run after fileCloseGuard.
+  auto fileDeleteGuard =
+      mozilla::MakeScopeExit([&] { DeleteFile(flatFileName.get()); });
   auto fileCloseGuard = mozilla::MakeScopeExit([&] { CloseHandle(handle); });
 
   const ULONG bufferSize = 4096;
@@ -1590,6 +1595,10 @@ nsresult nsClipboard::SaveStorageOrStream(IDataObject* aDataObject, UINT aIndex,
     if (FAILED(result)) {
       return NS_ERROR_FAILURE;
     }
+    if (bytesRead > bufferSize) {
+      // It obviously couldn't legitimately write more than the buffer holds.
+      return NS_ERROR_FAILURE;
+    }
     if (bytesRead == 0) {
       break;
     }
@@ -1598,5 +1607,6 @@ nsresult nsClipboard::SaveStorageOrStream(IDataObject* aDataObject, UINT aIndex,
       return NS_ERROR_FAILURE;
     }
   }
+  fileDeleteGuard.release();
   return NS_OK;
 }
