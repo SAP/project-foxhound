@@ -2053,11 +2053,29 @@ LNAPermission nsHttpChannel::UpdateLocalNetworkAccessPermissions(
 
   // Skip LNA checks if the triggering principal and target are same origin
   // Note: This could be a case where there is a network change or device
-  // migration to a private or corporate network
+  // migration to a private or corporate network.
+  //
+  // This only holds when we connect directly to the origin's own endpoint. If
+  // the connection was rerouted via Alt-Svc to a different host/port, a
+  // same-origin URL no longer implies we are talking to the origin itself: a
+  // public origin could steer same-origin traffic to an attacker-selected
+  // private address. Don't grant the exemption in that case.
+  // This exemption (same origin) should apply only to secure contexts.
+
+  bool reroutedElsewhere =
+      mConnectionInfo && !mConnectionInfo->GetRoutedHost().IsEmpty() &&
+      (!mConnectionInfo->GetRoutedHost().Equals(mConnectionInfo->GetOrigin()) ||
+       mConnectionInfo->RoutedPort() != mConnectionInfo->OriginPort());
+
+  const bool triggeringPrincipalIsPotentiallyTrustworthy =
+      mLoadInfo->TriggeringPrincipal()->GetIsOriginPotentiallyTrustworthy();
+
   bool isSameOrigin = false;
   nsresult rv =
       mLoadInfo->TriggeringPrincipal()->IsSameOrigin(mURI, &isSameOrigin);
-  if (NS_SUCCEEDED(rv) && isSameOrigin) {
+
+  if (NS_SUCCEEDED(rv) && isSameOrigin && !reroutedElsewhere &&
+      triggeringPrincipalIsPotentiallyTrustworthy) {
     userPerms = LNAPermission::Granted;
     return userPerms;
   }
@@ -2099,18 +2117,14 @@ LNAPermission nsHttpChannel::UpdateLocalNetworkAccessPermissions(
   }
 
   // Check if we should block LNA requests from insecure contexts
-  if (StaticPrefs::network_lna_block_insecure_contexts()) {
-    nsCOMPtr<nsIPrincipal> triggeringPrincipal =
-        mLoadInfo->TriggeringPrincipal();
-    if (triggeringPrincipal &&
-        !triggeringPrincipal->GetIsOriginPotentiallyTrustworthy()) {
-      LOG(
-          ("nsHttpChannel::UpdateLocalNetworkAccessPermissions [this=%p] "
-           "blocking LNA request from insecure context\n",
-           this));
-      userPerms = LNAPermission::Denied;
-      return userPerms;
-    }
+  if (StaticPrefs::network_lna_block_insecure_contexts() &&
+      !triggeringPrincipalIsPotentiallyTrustworthy) {
+    LOG(
+        ("nsHttpChannel::UpdateLocalNetworkAccessPermissions [this=%p] "
+         "blocking LNA request from insecure context\n",
+         this));
+    userPerms = LNAPermission::Denied;
+    return userPerms;
   }
 
   // Step 3
