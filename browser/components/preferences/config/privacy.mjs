@@ -3730,9 +3730,28 @@ Preferences.addSetting({
   pref: "privacy.trackingprotection.pbmode.enabled",
 });
 
+// We don't expose email tracking protection directly on the privacy UI;
+// instead it follows the tracking protection controls. The all-windows email
+// pref mirrors the all-windows tracking protection pref, and the private
+// windows email pref mirrors the private windows tracking protection pref.
+Preferences.addSetting({
+  id: "trackingProtectionEmailEnabled",
+  pref: "privacy.trackingprotection.emailtracking.enabled",
+});
+
+Preferences.addSetting({
+  id: "trackingProtectionEmailEnabledPBM",
+  pref: "privacy.trackingprotection.emailtracking.pbmode.enabled",
+});
+
 Preferences.addSetting({
   id: "etpCustomTrackingProtectionEnabledContext",
-  deps: ["trackingProtectionEnabled", "trackingProtectionEnabledPBM"],
+  deps: [
+    "trackingProtectionEnabled",
+    "trackingProtectionEnabledPBM",
+    "trackingProtectionEmailEnabled",
+    "trackingProtectionEmailEnabledPBM",
+  ],
   get(_, { trackingProtectionEnabled, trackingProtectionEnabledPBM }) {
     if (trackingProtectionEnabled.value && trackingProtectionEnabledPBM.value) {
       return "all";
@@ -3741,20 +3760,37 @@ Preferences.addSetting({
     }
     return null;
   },
-  set(value, { trackingProtectionEnabled, trackingProtectionEnabledPBM }) {
+  set(
+    value,
+    {
+      trackingProtectionEnabled,
+      trackingProtectionEnabledPBM,
+      trackingProtectionEmailEnabled,
+      trackingProtectionEmailEnabledPBM,
+    }
+  ) {
     if (value == "all") {
       trackingProtectionEnabled.value = true;
       trackingProtectionEnabledPBM.value = true;
+      trackingProtectionEmailEnabled.value = true;
+      trackingProtectionEmailEnabledPBM.value = true;
     } else if (value == "pbmOnly") {
       trackingProtectionEnabled.value = false;
       trackingProtectionEnabledPBM.value = true;
+      trackingProtectionEmailEnabled.value = false;
+      trackingProtectionEmailEnabledPBM.value = true;
     }
   },
 });
 
 Preferences.addSetting({
   id: "etpCustomTrackingProtectionEnabled",
-  deps: ["trackingProtectionEnabled", "trackingProtectionEnabledPBM"],
+  deps: [
+    "trackingProtectionEnabled",
+    "trackingProtectionEnabledPBM",
+    "trackingProtectionEmailEnabled",
+    "trackingProtectionEmailEnabledPBM",
+  ],
   disabled: ({ trackingProtectionEnabled, trackingProtectionEnabledPBM }) => {
     return (
       trackingProtectionEnabled.locked || trackingProtectionEnabledPBM.locked
@@ -3765,13 +3801,25 @@ Preferences.addSetting({
       trackingProtectionEnabled.value || trackingProtectionEnabledPBM.value
     );
   },
-  set(value, { trackingProtectionEnabled, trackingProtectionEnabledPBM }) {
+  set(
+    value,
+    {
+      trackingProtectionEnabled,
+      trackingProtectionEnabledPBM,
+      trackingProtectionEmailEnabled,
+      trackingProtectionEmailEnabledPBM,
+    }
+  ) {
     if (value) {
       trackingProtectionEnabled.value = false;
       trackingProtectionEnabledPBM.value = true;
+      trackingProtectionEmailEnabled.value = false;
+      trackingProtectionEmailEnabledPBM.value = true;
     } else {
       trackingProtectionEnabled.value = false;
       trackingProtectionEnabledPBM.value = false;
+      trackingProtectionEmailEnabled.value = false;
+      trackingProtectionEmailEnabledPBM.value = false;
     }
   },
 });

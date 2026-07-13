@@ -7,6 +7,9 @@ const CAT_PREF = "browser.contentblocking.category";
 const COOKIE_BEHAVIOR_PREF = "network.cookie.cookieBehavior";
 const TP_PREF = "privacy.trackingprotection.enabled";
 const TP_PBM_PREF = "privacy.trackingprotection.pbmode.enabled";
+const EMAIL_TP_PREF = "privacy.trackingprotection.emailtracking.enabled";
+const EMAIL_TP_PBM_PREF =
+  "privacy.trackingprotection.emailtracking.pbmode.enabled";
 const CRYPTOMINING_PREF = "privacy.trackingprotection.cryptomining.enabled";
 const FINGERPRINTING_PREF = "privacy.trackingprotection.fingerprinting.enabled";
 const SUSPECT_FP_PREF = "privacy.fingerprintingProtection";
@@ -71,6 +74,8 @@ add_task(async function test_custom_tracking_protection_controls() {
       [CAT_PREF, "custom"],
       [TP_PREF, false],
       [TP_PBM_PREF, true],
+      [EMAIL_TP_PREF, false],
+      [EMAIL_TP_PBM_PREF, true],
     ],
   });
 
@@ -92,6 +97,16 @@ add_task(async function test_custom_tracking_protection_controls() {
     !Services.prefs.getBoolPref(TP_PREF),
     "All-windows tracking protection pref remains false"
   );
+  // Email tracking protection follows tracking protection (bug 2049331): with
+  // the toggle off, it must be disabled in both contexts.
+  ok(
+    !Services.prefs.getBoolPref(EMAIL_TP_PREF),
+    "All-windows email tracking protection disabled when toggle is off"
+  );
+  ok(
+    !Services.prefs.getBoolPref(EMAIL_TP_PBM_PREF),
+    "Private-windows email tracking protection disabled when toggle is off"
+  );
 
   prefChange = TestUtils.waitForPrefChange(
     TP_PBM_PREF,
@@ -104,6 +119,14 @@ add_task(async function test_custom_tracking_protection_controls() {
     !Services.prefs.getBoolPref(TP_PREF),
     "All-windows tracking protection pref still false after re-enabling toggle"
   );
+  ok(
+    !Services.prefs.getBoolPref(EMAIL_TP_PREF),
+    "All-windows email tracking protection stays disabled for private-only TP"
+  );
+  ok(
+    Services.prefs.getBoolPref(EMAIL_TP_PBM_PREF),
+    "Private-windows email tracking protection enabled with the toggle"
+  );
 
   info("Switch context to protect all windows");
   await changeMozSelectValue(tpContext, "all");
@@ -115,6 +138,14 @@ add_task(async function test_custom_tracking_protection_controls() {
     Services.prefs.getBoolPref(TP_PBM_PREF),
     "Tracking protection PBM pref stays enabled"
   );
+  ok(
+    Services.prefs.getBoolPref(EMAIL_TP_PREF),
+    "All-windows email tracking protection enabled for all windows"
+  );
+  ok(
+    Services.prefs.getBoolPref(EMAIL_TP_PBM_PREF),
+    "Private-windows email tracking protection enabled for all windows"
+  );
 
   info("Switch back to private windows only");
   await changeMozSelectValue(tpContext, "pbmOnly");
@@ -125,6 +156,14 @@ add_task(async function test_custom_tracking_protection_controls() {
   ok(
     Services.prefs.getBoolPref(TP_PBM_PREF),
     "Private windows pref stays enabled"
+  );
+  ok(
+    !Services.prefs.getBoolPref(EMAIL_TP_PREF),
+    "All-windows email tracking protection disabled when choosing private only"
+  );
+  ok(
+    Services.prefs.getBoolPref(EMAIL_TP_PBM_PREF),
+    "Private-windows email tracking protection stays enabled"
   );
 
   gBrowser.removeCurrentTab();
