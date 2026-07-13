@@ -1968,7 +1968,11 @@
     Link displayed in enhanced tracking protection panel to access tracking protection settings
   -->
   <string name="etp_settings">Iɣewwaren n tɣellist</string>
-  <!-- Preference title for enhanced tracking protection settings -->
+  <!--
+    Enhanced Tracking Protection
+
+    Preference title for enhanced tracking protection settings
+  -->
   <string name="preference_enhanced_tracking_protection">Ammesten yettwasǧehden mgal aḍfar</string>
   <!-- Preference summary for enhanced tracking protection settings on/off switch -->
   <string name="preference_enhanced_tracking_protection_summary">Tura, Ammesten asemday mgal inagan n tuqqna, d ẓẓerb-nneɣ iǧehden ugar mgal ineḍfaren n gar yismal ar tura.</string>

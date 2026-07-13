@@ -1973,6 +1973,8 @@
   <string name="webcompat_reporter_clear_reason_content_description">Пок кардани сабаби интихобшуда</string>
   <!-- The error message of the description when the user selects "Something else" as the reason, but left the description empty or too short. -->
   <string name="webcompat_reporter_description_error">Лутфан, ақаллан 10 аломатро ворид намоед</string>
+  <!-- The label/title of a mandatory field in the Web Compat Reporter feature for adding additional information. -->
+  <string name="webcompat_reporter_label_mandatory_description">Мушкилотро ба таври муфассал тавсиф кунед, то ин маълумот ба мо дар таҳқиқи масъала кумак кунад</string>
   <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_label_whats_broken_2">Чӣ вайрон шудааст?</string>
   <!-- The placeholder text for the dropdown where a user selects a high-level reason why the site is broken. -->
@@ -1987,6 +1989,8 @@
   <string name="webcompat_reporter_add_more_info">Илова кардани маълумоти бештар</string>
   <!-- The button text for the cancel button to leave the Web Compat Reporter feature. -->
   <string name="webcompat_reporter_cancel">Бекор кардан</string>
+  <!-- The button text for the send button to submit the provided form data. -->
+  <string name="webcompat_reporter_send_report">Фиристодани гузориш</string>
   <!-- The button text for the send button to submit the provided form data. -->
   <string name="webcompat_reporter_send">Фиристодан</string>
   <!-- Text for a snackbar to confirm the successful submission of a WebCompat report. -->
@@ -2605,7 +2609,11 @@
     Link displayed in enhanced tracking protection panel to access tracking protection settings
   -->
   <string name="etp_settings">Танзимоти муҳофизат</string>
-  <!-- Preference title for enhanced tracking protection settings -->
+  <!--
+    Enhanced Tracking Protection
+
+    Preference title for enhanced tracking protection settings
+  -->
   <string name="preference_enhanced_tracking_protection">Муҳофизати такмилёфта аз пайгирӣ</string>
   <!-- Preference summary for enhanced tracking protection settings on/off switch -->
   <string name="preference_enhanced_tracking_protection_summary">Акнун браузери мо дорои хусусияти «Муҳофизати пурра аз кукиҳо» мебошад, ки барои васоити пайгирии байнисомонавӣ монеаи пурқувват мебошад.</string>
@@ -4085,17 +4093,17 @@
   -->
   <string name="microsurvey_uninstall_survey_title">Изҳори назари шумо муҳим аст. Сабаби лағв кардани насби барнома дар чӣ аст?</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_1">Мушкилиҳо бо саҳифаҳои сомона</string>
+  <string name="uninstall_survey_option_1_v2">Суст ё беэътимод мебошад</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_2">Мушкилиҳо бо видео ва боргириҳо</string>
+  <string name="uninstall_survey_option_2_v2">Сомонаҳо дуруст кор накарданд</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_3">Мушкилиҳо бо самаранокӣ</string>
+  <string name="uninstall_survey_option_3_v2">Хусусиятҳои зарурӣ вуҷуд надоранд</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_4">Мушкилиҳо бо вазифаҳо ва намуди зоҳирӣ</string>
+  <string name="uninstall_survey_option_4_v2">Видеоҳо, боргириҳо ё расона кор накарданд</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_5">Мушкилиҳои марбут ба махфият</string>
+  <string name="uninstall_survey_option_5_v2">Истифодаи он душвор аст ё тарҳи нодуруст дорад</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_6">Мушкилиҳо бо пардохт ва обуна</string>
+  <string name="uninstall_survey_option_6_v2">Мушкилӣ дар масъалаҳои махфият ё амният</string>
   <!-- Button label shown at the bottom of the uninstall survey -->
   <string name="uninstall_survey_button_label">Ирсоли изҳори назар ва лағв кардани насб</string>
   <!--
@@ -4689,6 +4697,22 @@
   <string name="context_menu_open_image_with_google_lens">Ҷустуҷӯ ба воситаи «Google Lens»</string>
   <!-- Toast shown when the user denies the camera permission requested by the Lens camera screen -->
   <string name="lens_camera_permission_denied">Дастрасӣ манъ аст</string>
+  <!--
+    Title shown at the top of the camera screen, next to the close button, telling the
+    user that the photo they capture will be sent to Google Lens for a visual search.
+  -->
+  <string name="lens_camera_title_lens">Google Lens</string>
+  <!--
+    Title shown at the top of the camera screen, next to the close button, telling the
+    user that the camera is being used to scan a QR code.
+  -->
+  <string name="lens_camera_title_qr">Рамзи «QR»</string>
+  <!-- Title for the Google Lens Search Settings page feature toggle -->
+  <string name="search_settings_google_lens_title">Фаъол кардани ҷустуҷӯ ба воситаи «Google Lens»</string>
+  <!-- Description for the Google Lens Search Settings page feature toggle -->
+  <string name="search_settings_google_lens_description">Тасвирҳо ва аксҳоро барои ҷустуҷӯи дидорӣ ба «Google» ирсол мекунад.</string>
+  <!-- Caption shown under the Google Lens toggle clarifying when the feature is available -->
+  <string name="preferences_google_lens_availability_caption">Танҳо дар сурате дастрас аст, вақте ки «Google» дар боло фаъол мебошад ва ҳангоми тамошобинӣ ҳамчун низоми ҷустуҷӯии фаъоли шумо истифода мешавад.</string>
   <!-- Title for the Google Lens AI feature toggle -->
   <string name="ai_controls_google_lens_title">Google Lens</string>
   <!-- Description for the Google Lens AI feature toggle -->

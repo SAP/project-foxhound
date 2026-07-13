@@ -15,8 +15,8 @@
       above this string and is used to select the correct plural form. Do not include the number in
       the translation.
     -->
-    <item quantity="one">Rastreador bloqueado nesta semana</item>
-    <item quantity="other">Rastreadores bloqueados nesta semana</item>
+    <item quantity="one">Rastreador bloqueado esta semana</item>
+    <item quantity="other">Rastreadores bloqueados esta semana</item>
   </plurals>
   <plurals name="mozac_protections_dashboard_data_saved">
     <!-- Label showing data saved in megabytes. %1$d is the number of MB saved -->
@@ -34,14 +34,14 @@
   <!-- Tracker category: Other trackers -->
   <string name="protections_dashboard_category_others">Outros</string>
   <!-- Title shown in the protection dashboard header next to the shield icon -->
-  <string name="mozac_protections_dashboard_trackers_blocked_this_week_title">Rastreadores bloqueados nesta semana</string>
+  <string name="mozac_protections_dashboard_trackers_blocked_this_week_title">Rastreadores bloqueados esta semana</string>
   <!--
     Title shown when no trackers have been blocked yet
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
   <string name="mozac_protections_dashboard_empty_title">O %1$s bloqueia rastreadores enquanto você navega.</string>
   <!-- Subtitle shown when no trackers have been blocked yet -->
-  <string name="mozac_protections_dashboard_empty_subtitle">Você os vê aqui.</string>
+  <string name="mozac_protections_dashboard_empty_subtitle">Eles são listados aqui.</string>
   <plurals name="mozac_protections_dashboard_total_blocked_since_2">
     <!--
       Footer line shown in the dashboard summarizing total trackers blocked

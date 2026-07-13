@@ -1485,7 +1485,11 @@
     Link displayed in enhanced tracking protection panel to access tracking protection settings
   -->
   <string name="etp_settings">Sazkariyên parastinê</string>
-  <!-- Preference title for enhanced tracking protection settings -->
+  <!--
+    Enhanced Tracking Protection
+
+    Preference title for enhanced tracking protection settings
+  -->
   <string name="preference_enhanced_tracking_protection">Parastina ji şopandinê ya pêşketî</string>
   <!-- Preference summary for enhanced tracking protection settings on/off switch -->
   <string name="preference_enhanced_tracking_protection_summary">Niha taybetiya Parastina Tevahî ya Çerezan li dijî kodên şopandina navmalperî bariyera me ya herî xurt e.</string>

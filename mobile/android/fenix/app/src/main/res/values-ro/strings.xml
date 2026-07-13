@@ -2612,7 +2612,11 @@
     Link displayed in enhanced tracking protection panel to access tracking protection settings
   -->
   <string name="etp_settings">Setări de protecție</string>
-  <!-- Preference title for enhanced tracking protection settings -->
+  <!--
+    Enhanced Tracking Protection
+
+    Preference title for enhanced tracking protection settings
+  -->
   <string name="preference_enhanced_tracking_protection">Protecție îmbunătățită împotriva urmăririi</string>
   <!-- Preference summary for enhanced tracking protection settings on/off switch -->
   <string name="preference_enhanced_tracking_protection_summary">Acum includem Protecție Totală pentru Cookie-uri, cea mai puternică barieră de până acum împotriva trackerelor cross-site.</string>
@@ -4101,18 +4105,6 @@
     Title text for the uninstall survey dialog, asking the user for the reason they are removing the app
   -->
   <string name="microsurvey_uninstall_survey_title">Feedbackul tău contează. De ce dezinstalezi?</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_1">Probleme cu pagina web</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_2">Probleme video și cu descărcările</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_3">Probleme de performanță</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_4">Probleme de funcționalitate și design</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_5">Probleme legate de confidențialitate</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_6">Probleme legate de plăți și abonamente</string>
   <!-- Button label shown at the bottom of the uninstall survey -->
   <string name="uninstall_survey_button_label">Trimite feedback și dezinstalează</string>
   <!--

@@ -2605,7 +2605,11 @@
     Link displayed in enhanced tracking protection panel to access tracking protection settings
   -->
   <string name="etp_settings">Innstillinger for beskyttelse</string>
-  <!-- Preference title for enhanced tracking protection settings -->
+  <!--
+    Enhanced Tracking Protection
+
+    Preference title for enhanced tracking protection settings
+  -->
   <string name="preference_enhanced_tracking_protection">Utvidet sporingsbeskyttelse</string>
   <!-- Preference summary for enhanced tracking protection settings on/off switch -->
   <string name="preference_enhanced_tracking_protection_summary">Nå med total beskyttelse mot infokapsler, vår kraftigste barriere til nå mot sporing på tvers av nettsteder.</string>
@@ -4084,18 +4088,6 @@
     Title text for the uninstall survey dialog, asking the user for the reason they are removing the app
   -->
   <string name="microsurvey_uninstall_survey_title">Din tilbakemelding er viktig. Hvorfor avinstallerer du?</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_1">Nettsideproblemer</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_2">Video- og nedlastingsproblemer</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_3">Ytelsesproblemer</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_4">Funksjons- og designproblemer</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_5">Personvernrelaterte problemer</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_6">Betalings- og abonnementsproblemer</string>
   <!-- Button label shown at the bottom of the uninstall survey -->
   <string name="uninstall_survey_button_label">Send tilbakemelding og avinstaller</string>
   <!--

@@ -733,6 +733,12 @@
   <string name="preferences_category_general">General</string>
   <!-- Preference category for all links about Fenix -->
   <string name="preferences_category_about">Davart</string>
+  <!-- Preference category for settings related to changing the default search engine -->
+  <string name="preferences_category_select_default_search_engine_2">Maschina da tschertgar predefinida per la navigaziun normala</string>
+  <!-- Preference category for settings related to changing the private browsing search engine -->
+  <string name="preferences_category_select_private_search_engine">Maschina da tschertgar predefinida per il modus privat</string>
+  <!-- Option to set the private browsing mode to use the normal default search engine -->
+  <string name="search_engine_use_default">Utilisar la medema maschina da tschertgar sco per la navigaziun normala</string>
   <!-- Preference for settings related to managing search shortcuts for the quick search menu -->
   <string name="preferences_manage_search_shortcuts_2">Administrar maschinas da tschertgar alternativas</string>
   <!-- Summary for preference for settings related to managing search shortcuts for the quick search menu -->
@@ -745,6 +751,8 @@
   <string name="preferences_search">Tschertga</string>
   <!-- Preference for settings related to Search engines -->
   <string name="preferences_search_engines">Maschinas da tschertgar</string>
+  <!-- Settings item to add a search widget on the device's homescreen. -->
+  <string name="preferences_add_search_widget_from_settings">Widget sin il visur da partenza</string>
   <!-- Preference for settings related to Search engines suggestions -->
   <string name="preferences_search_engines_suggestions">Propostas da maschinas da tschertgar</string>
   <!-- Preference Category for settings related to Search address bar -->
@@ -916,6 +924,8 @@
   <string name="preferences_show_nonsponsored_suggestions">Propostas da %1$s</string>
   <!-- Summary for preference to show Firefox Suggest search suggestions for web content -->
   <string name="preferences_show_nonsponsored_suggestions_summary">Retschaiva propostas dal web en connex cun tia tschertga</string>
+  <!-- Preference title for switch preference to show search optimization cards -->
+  <string name="preferences_show_search_optimization_cards" tools:ignore="BrandUsage">Retschaiver propostas da Mozilla durant tippar</string>
   <!-- Preference for link sharing -->
   <string name="preferences_link_sharing">Cundivisiun da colliaziuns</string>
   <!-- Title for the link sharing toggle. %1$s is replaced by the brand name (e.g. Firefox). -->
@@ -945,6 +955,9 @@
   <string name="preference_downloads_folder_permission_lost" tools:ignore="UnusedResources">Ti n’has betg il dretg d’utilisar quest ordinatur. Emprova da tscherner in auter.</string>
   <!-- Preference title for choosing an app to handle downloads -->
   <string name="preferences_choose_app_for_downloads">Administrar las telechargiadas cun in’autra app</string>
+  <!-- Preference category for deleting or removing downloads -->
+  <string name="preferences_category_delete_or_remove_downloads">Stizzar u allontanar telechargiadas</string>
+  <string name="preferences_downloads_delete_from_device">Stizzar da l’apparat</string>
   <!-- Preference for enabling gecko engine logs -->
   <string name="preferences_enable_gecko_logs">Activar la protocollaziun da Gecko</string>
   <!-- Message to indicate users that we are quitting the application to apply the changes -->
@@ -2340,7 +2353,11 @@
     Link displayed in enhanced tracking protection panel to access tracking protection settings
   -->
   <string name="etp_settings">Parameters da protecziun</string>
-  <!-- Preference title for enhanced tracking protection settings -->
+  <!--
+    Enhanced Tracking Protection
+
+    Preference title for enhanced tracking protection settings
+  -->
   <string name="preference_enhanced_tracking_protection">Protecziun avanzada cunter il fastizar</string>
   <!-- Preference summary for enhanced tracking protection settings on/off switch -->
   <string name="preference_enhanced_tracking_protection_summary">Ussa cun la protecziun totala cunter cookies, enfin ussa nossa bloccada la pli effectiva da cookies che vulan ta persequitar sur pliras websites.</string>

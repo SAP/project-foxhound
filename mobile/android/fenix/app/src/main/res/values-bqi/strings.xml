@@ -1973,6 +1973,8 @@
   <string name="webcompat_reporter_clear_reason_content_description">دلیل پسند بیڌه ن پاک کۊنین</string>
   <!-- The error message of the description when the user selects "Something else" as the reason, but left the description empty or too short. -->
   <string name="webcompat_reporter_description_error">ٱقلن 10 کاراکتر بزنین</string>
+  <!-- The label/title of a mandatory field in the Web Compat Reporter feature for adding additional information. -->
+  <string name="webcompat_reporter_label_mandatory_description">موشکل ن وا جۊزعیات بۊگۊین تا و ایما من واجۊری وو هل کردنس هیاری بڌه</string>
   <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_label_whats_broken_2">چ موشکلی پؽش ٱووڌه؟</string>
   <!-- The placeholder text for the dropdown where a user selects a high-level reason why the site is broken. -->
@@ -1987,6 +1989,8 @@
   <string name="webcompat_reporter_add_more_info">ٱووردن دووسمندیا قلوه</string>
   <!-- The button text for the cancel button to leave the Web Compat Reporter feature. -->
   <string name="webcompat_reporter_cancel">لقو</string>
+  <!-- The button text for the send button to submit the provided form data. -->
+  <string name="webcompat_reporter_send_report">فشناڌن گوزارش</string>
   <!-- The button text for the send button to submit the provided form data. -->
   <string name="webcompat_reporter_send">فشناڌن</string>
   <!-- Text for a snackbar to confirm the successful submission of a WebCompat report. -->
@@ -2605,7 +2609,11 @@
     Link displayed in enhanced tracking protection panel to access tracking protection settings
   -->
   <string name="etp_settings">سامووا زفت کردنی</string>
-  <!-- Preference title for enhanced tracking protection settings -->
+  <!--
+    Enhanced Tracking Protection
+
+    Preference title for enhanced tracking protection settings
+  -->
   <string name="preference_enhanced_tracking_protection">زفت وابیڌن پؽش رئڌه جلاو رڌجۊری</string>
   <!-- Preference summary for enhanced tracking protection settings on/off switch -->
   <string name="preference_enhanced_tracking_protection_summary">سکو زفت وابیڌن کامل ن ری و ری کۊکی داره؛ زۊردار ترین سد ایما زد رڌجۊرا منجا وبگهی.</string>
@@ -4085,17 +4093,17 @@
   -->
   <string name="microsurvey_uninstall_survey_title">منشڌ ایسا موهم هڌ. سیچه هونی ای برنومه ن لقو پۊرنیڌن اکۊنین؟</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_1">موشکلا بلگه وبگه</string>
+  <string name="uninstall_survey_option_1_v2">کوند یا قیر قابل ائتماڌ هڌ</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_2">موشکلا ویدیۉ وو دانلود کزدن</string>
+  <string name="uninstall_survey_option_2_v2">وبگه یل و خۊوی کار نؽکردن</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_3">موشکلا عملکرد</string>
+  <string name="uninstall_survey_option_3_v2">ویژیی یلی ک مو اخوم وۊجۊد نڌارن</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_4">موشکلا عملکرد وو تراهی</string>
+  <string name="uninstall_survey_option_4_v2">ویدیو یل، دانلودا یا وارسگرا کار نکردن</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_5">موشکلا هریم سیخومی</string>
+  <string name="uninstall_survey_option_5_v2">و کار گرؽڌنس سخته یا تراهی زعیفی داره</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_6">موشکلا پرداخت وو اشتراک</string>
+  <string name="uninstall_survey_option_6_v2">دل نگروویا سی ٱمنیت یا هریم سیخومی</string>
   <!-- Button label shown at the bottom of the uninstall survey -->
   <string name="uninstall_survey_button_label">فشناڌن منشڌ وو لقو پۊرنیڌن</string>
   <!--
@@ -4689,6 +4697,22 @@
   <string name="context_menu_open_image_with_google_lens">پیتینیڌن وا گۊگل لنز</string>
   <!-- Toast shown when the user denies the camera permission requested by the Lens camera screen -->
   <string name="lens_camera_permission_denied">موجوز رڌ وابی</string>
+  <!--
+    Title shown at the top of the camera screen, next to the close button, telling the
+    user that the photo they capture will be sent to Google Lens for a visual search.
+  -->
+  <string name="lens_camera_title_lens">گۊگل لنز</string>
+  <!--
+    Title shown at the top of the camera screen, next to the close button, telling the
+    user that the camera is being used to scan a QR code.
+  -->
+  <string name="lens_camera_title_qr">QR کود</string>
+  <!-- Title for the Google Lens Search Settings page feature toggle -->
+  <string name="search_settings_google_lens_title">و کار وندن پیتینیڌن گۊگل لنز</string>
+  <!-- Description for the Google Lens Search Settings page feature toggle -->
+  <string name="search_settings_google_lens_description">شؽواتا ن سی پیتینیڌن بسری و گۊگل افشنه.</string>
+  <!-- Caption shown under the Google Lens toggle clarifying when the feature is available -->
+  <string name="preferences_google_lens_availability_caption">تینا مجالی من دسرس هڌ ک گۊگل ای روء و کار ونده بۊ وو موتور پیتینیڌن و کار ونده ایسا مجال گشتن بۊوس.</string>
   <!-- Title for the Google Lens AI feature toggle -->
   <string name="ai_controls_google_lens_title">گۊگل لنز</string>
   <!-- Description for the Google Lens AI feature toggle -->

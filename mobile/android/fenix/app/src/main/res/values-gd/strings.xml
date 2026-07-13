@@ -2268,7 +2268,11 @@
     Link displayed in enhanced tracking protection panel to access tracking protection settings
   -->
   <string name="etp_settings">Roghainnean an dìon</string>
-  <!-- Preference title for enhanced tracking protection settings -->
+  <!--
+    Enhanced Tracking Protection
+
+    Preference title for enhanced tracking protection settings
+  -->
   <string name="preference_enhanced_tracking_protection">Dìon adhartach o thracadh</string>
   <!-- Preference summary for enhanced tracking protection settings on/off switch -->
   <string name="preference_enhanced_tracking_protection_summary">Le làn-dìon o bhriosgaidean a-nis, am balla-bacaidh as treasa againn fhathast an aghaidh gleusan a thracaicheas tu air feadh làraichean.</string>

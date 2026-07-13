@@ -1988,6 +1988,8 @@
   <!-- The button text for the cancel button to leave the Web Compat Reporter feature. -->
   <string name="webcompat_reporter_cancel">Avbryt</string>
   <!-- The button text for the send button to submit the provided form data. -->
+  <string name="webcompat_reporter_send_report">Send rapport</string>
+  <!-- The button text for the send button to submit the provided form data. -->
   <string name="webcompat_reporter_send">Send</string>
   <!-- Text for a snackbar to confirm the successful submission of a WebCompat report. -->
   <string name="webcompat_reporter_success_snackbar_text_2">Rapport sendt</string>
@@ -2605,7 +2607,11 @@
     Link displayed in enhanced tracking protection panel to access tracking protection settings
   -->
   <string name="etp_settings">Verneinnstillingar</string>
-  <!-- Preference title for enhanced tracking protection settings -->
+  <!--
+    Enhanced Tracking Protection
+
+    Preference title for enhanced tracking protection settings
+  -->
   <string name="preference_enhanced_tracking_protection">Utvida sporingsvern</string>
   <!-- Preference summary for enhanced tracking protection settings on/off switch -->
   <string name="preference_enhanced_tracking_protection_summary">No med totalt vern mot infokapslar, den mest kraftfulle barrieren vår til no mot sporarar på fleire nettstadar.</string>
@@ -4084,18 +4090,6 @@
     Title text for the uninstall survey dialog, asking the user for the reason they are removing the app
   -->
   <string name="microsurvey_uninstall_survey_title">Tilbakemeldinga di er viktig. Kvifor avinstallerer du?</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_1">Nettsideproblem</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_2">Video- og nedlastingsproblem</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_3">Ytingsproblem</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_4">Funksjons- og designproblem</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_5">Personvernrelaterte problem</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_6">Betalings- og abonnementsproblem</string>
   <!-- Button label shown at the bottom of the uninstall survey -->
   <string name="uninstall_survey_button_label">Send inn tilbakemelding og avinstaller</string>
   <!--
@@ -4689,6 +4683,20 @@
   <string name="context_menu_open_image_with_google_lens">Søk med Google Lens</string>
   <!-- Toast shown when the user denies the camera permission requested by the Lens camera screen -->
   <string name="lens_camera_permission_denied">Løyve nekta</string>
+  <!--
+    Title shown at the top of the camera screen, next to the close button, telling the
+    user that the photo they capture will be sent to Google Lens for a visual search.
+  -->
+  <string name="lens_camera_title_lens">Google Lens</string>
+  <!--
+    Title shown at the top of the camera screen, next to the close button, telling the
+    user that the camera is being used to scan a QR code.
+  -->
+  <string name="lens_camera_title_qr">QR-kode</string>
+  <!-- Title for the Google Lens Search Settings page feature toggle -->
+  <string name="search_settings_google_lens_title">Slå på Google Lens-søk</string>
+  <!-- Caption shown under the Google Lens toggle clarifying when the feature is available -->
+  <string name="preferences_google_lens_availability_caption">Berre tilgjengeleg når Google er aktivert ovanfor og er den aktive søkjemotoren din medan du surfar.</string>
   <!-- Title for the Google Lens AI feature toggle -->
   <string name="ai_controls_google_lens_title">Google Lens</string>
   <!-- Description for the Google Lens AI feature toggle -->

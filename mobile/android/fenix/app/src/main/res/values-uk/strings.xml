@@ -1980,6 +1980,8 @@
   <string name="webcompat_reporter_clear_reason_content_description">Очистити вибрану причину</string>
   <!-- The error message of the description when the user selects "Something else" as the reason, but left the description empty or too short. -->
   <string name="webcompat_reporter_description_error">Введіть щонайменше 10 символів</string>
+  <!-- The label/title of a mandatory field in the Web Compat Reporter feature for adding additional information. -->
+  <string name="webcompat_reporter_label_mandatory_description">Детально опишіть проблему, щоб ми могли її дослідити</string>
   <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_label_whats_broken_2">Що не так?</string>
   <!-- The placeholder text for the dropdown where a user selects a high-level reason why the site is broken. -->
@@ -1994,6 +1996,8 @@
   <string name="webcompat_reporter_add_more_info">Додати інформацію</string>
   <!-- The button text for the cancel button to leave the Web Compat Reporter feature. -->
   <string name="webcompat_reporter_cancel">Скасувати</string>
+  <!-- The button text for the send button to submit the provided form data. -->
+  <string name="webcompat_reporter_send_report">Надіслати звіт</string>
   <!-- The button text for the send button to submit the provided form data. -->
   <string name="webcompat_reporter_send">Надіслати</string>
   <!-- Text for a snackbar to confirm the successful submission of a WebCompat report. -->
@@ -2612,7 +2616,11 @@
     Link displayed in enhanced tracking protection panel to access tracking protection settings
   -->
   <string name="etp_settings">Налаштування захисту</string>
-  <!-- Preference title for enhanced tracking protection settings -->
+  <!--
+    Enhanced Tracking Protection
+
+    Preference title for enhanced tracking protection settings
+  -->
   <string name="preference_enhanced_tracking_protection">Розширений захист від стеження</string>
   <!-- Preference summary for enhanced tracking protection settings on/off switch -->
   <string name="preference_enhanced_tracking_protection_summary">Тепер із функцією Total Cookie Protection, наша найпотужніша перепона від стеження між сайтами.</string>
@@ -4102,17 +4110,17 @@
   -->
   <string name="microsurvey_uninstall_survey_title">Ваша думка важлива. Чому ви видаляєте?</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_1">Проблеми з вебсторінками</string>
+  <string name="uninstall_survey_option_1_v2">Повільна й нестабільна робота</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_2">Проблеми з відео та завантаженням</string>
+  <string name="uninstall_survey_option_2_v2">Неналежна робота вебсайтів</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_3">Проблеми з продуктивністю</string>
+  <string name="uninstall_survey_option_3_v2">Бракує потрібних мені функцій</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_4">Проблеми з функціоналом і дизайном</string>
+  <string name="uninstall_survey_option_4_v2">Не працювали відео, завантаження або медіафайли</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_5">Проблеми, пов’язані з приватністю</string>
+  <string name="uninstall_survey_option_5_v2">Труднощі або незручності з використанням</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_6">Проблеми з платежами та передплатою</string>
+  <string name="uninstall_survey_option_6_v2">Проблеми з приватністю або безпекою</string>
   <!-- Button label shown at the bottom of the uninstall survey -->
   <string name="uninstall_survey_button_label">Надіслати відгук та видалити</string>
   <!--
@@ -4706,6 +4714,22 @@
   <string name="context_menu_open_image_with_google_lens">Пошук за допомогою Google Об’єктива</string>
   <!-- Toast shown when the user denies the camera permission requested by the Lens camera screen -->
   <string name="lens_camera_permission_denied">Дозвіл відхилено</string>
+  <!--
+    Title shown at the top of the camera screen, next to the close button, telling the
+    user that the photo they capture will be sent to Google Lens for a visual search.
+  -->
+  <string name="lens_camera_title_lens">Google Об’єктив</string>
+  <!--
+    Title shown at the top of the camera screen, next to the close button, telling the
+    user that the camera is being used to scan a QR code.
+  -->
+  <string name="lens_camera_title_qr">QR-код</string>
+  <!-- Title for the Google Lens Search Settings page feature toggle -->
+  <string name="search_settings_google_lens_title">Увімкнути пошук через Google Об’єктив</string>
+  <!-- Description for the Google Lens Search Settings page feature toggle -->
+  <string name="search_settings_google_lens_description">Надсилання зображень і фотографій до Google для візуального пошуку.</string>
+  <!-- Caption shown under the Google Lens toggle clarifying when the feature is available -->
+  <string name="preferences_google_lens_availability_caption">Доступно лише якщо Google увімкнено й використовується як пошукова система під час перегляду вебсторінок.</string>
   <!-- Title for the Google Lens AI feature toggle -->
   <string name="ai_controls_google_lens_title">Google Об’єктив</string>
   <!-- Description for the Google Lens AI feature toggle -->

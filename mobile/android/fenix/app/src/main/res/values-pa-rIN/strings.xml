@@ -1973,6 +1973,8 @@
   <string name="webcompat_reporter_clear_reason_content_description">ਚੁਣੇ ਕਾਰਨ ਨੂੰ ਮਿਟਾਓ</string>
   <!-- The error message of the description when the user selects "Something else" as the reason, but left the description empty or too short. -->
   <string name="webcompat_reporter_description_error">ਘੱਟੋ-ਘੱਟ 10 ਅੱਖਰ ਦਿਓ</string>
+  <!-- The label/title of a mandatory field in the Web Compat Reporter feature for adding additional information. -->
+  <string name="webcompat_reporter_label_mandatory_description">ਮਸਲੇ ਬਾਰੇ ਜਾਂਚ ਕਰਨ ਲਈ ਸਾਡੀ ਮਦਦ ਵਾਸਤੇ ਵੇਰਵੇ ਸਮੇਤ ਸਮੱਸਿਆ ਦੀ ਜਾਣਕਾਰੀ ਦਿਓ</string>
   <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_label_whats_broken_2">ਕੀ ਖ਼ਰਾਬ ਹੈ?</string>
   <!-- The placeholder text for the dropdown where a user selects a high-level reason why the site is broken. -->
@@ -1987,6 +1989,8 @@
   <string name="webcompat_reporter_add_more_info">ਹੋਰ ਜਾਣਕਾਰੀ ਨੂੰ ਜੋੜੋ</string>
   <!-- The button text for the cancel button to leave the Web Compat Reporter feature. -->
   <string name="webcompat_reporter_cancel">ਰੱਦ ਕਰੋ</string>
+  <!-- The button text for the send button to submit the provided form data. -->
+  <string name="webcompat_reporter_send_report">ਰਿਪੋਰਟ ਭੇਜੋ</string>
   <!-- The button text for the send button to submit the provided form data. -->
   <string name="webcompat_reporter_send">ਭੇਜੋ</string>
   <!-- Text for a snackbar to confirm the successful submission of a WebCompat report. -->
@@ -2605,7 +2609,11 @@
     Link displayed in enhanced tracking protection panel to access tracking protection settings
   -->
   <string name="etp_settings">ਸੁਰੱਖਿਆ ਸੈਟਿੰਗਾਂ</string>
-  <!-- Preference title for enhanced tracking protection settings -->
+  <!--
+    Enhanced Tracking Protection
+
+    Preference title for enhanced tracking protection settings
+  -->
   <string name="preference_enhanced_tracking_protection">ਟਰੈਕ ਹੋਣ ਤੋਂ ਵਾਧਾ ਕੀਤੀ ਸੁਰੱਖਿਆ</string>
   <!-- Preference summary for enhanced tracking protection settings on/off switch -->
   <string name="preference_enhanced_tracking_protection_summary">ਨਵੀਂ ਆਈ ਕੁੱਲ ਕੂਕੀ ਸੁਰੱਖਿਆ, ਅੰਤਰ-ਸਾਈਟ ਟਰੈਕਰਾਂ ਖ਼ਿਲਾਫ਼ ਸਾਡੀ ਸਭ ਤੋਂ ਮਜ਼ਬੂਤ ਢਾਲ ਹੈ।</string>
@@ -4085,17 +4093,17 @@
   -->
   <string name="microsurvey_uninstall_survey_title">ਤੁਹਾਡੇ ਸੁਝਾਅ ਸਾਡੇ ਲਈ ਅਸਰ ਰੱਖਦੇ ਹਨ। ਤੁਸੀਂ ਅਣ-ਇੰਸਟਾਲ ਕਿਉਂ ਕਰ ਰਹੇ ਹੋ?</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_1">ਵੈੱਬ-ਸਫ਼ੇ ਨਾਲ ਮਸਲੇ</string>
+  <string name="uninstall_survey_option_1_v2">ਇਹ ਹੌਲੀ ਜਾਂ ਗ਼ੈਰ-ਭਰੋਸੇਯੋਗ</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_2">ਵੀਡੀਓ ਅਤੇ ਡਾਊਨੋਲਡ ਮਸਲੇ</string>
+  <string name="uninstall_survey_option_2_v2">ਵੈੱਬਸਾਈਟ ਠੀਕ ਤਰ੍ਹਾਂ ਕੰਮ ਨਹੀਂ ਕਰਦੀ ਹੈ</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_3">ਕਾਰਗੁਜ਼ਾਰੀ ਸੰਬੰਧੀ ਮਸਲੇ</string>
+  <string name="uninstall_survey_option_3_v2">ਮੈਨੂੰ ਚਾਹੀਦੇ ਫ਼ੀਚਰ ਨਹੀਂ ਹਨ</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_4">ਫੰਕਸ਼ਨ ਅਤੇ ਡਿਜ਼ਾਇਨ ਮਸਲੇ</string>
+  <string name="uninstall_survey_option_4_v2">ਵੀਡੀਓ, ਡਾਊਨਲੋਡ ਜਾਂ ਮੀਡੀਆ ਕੰਮ ਨਹੀਂ ਕਰਦਾ ਹੈ</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_5">ਪਰਦੇਦਾਰੀ ਨਾਲ ਸੰਬੰਧਿਤ ਮਸਲੇ</string>
+  <string name="uninstall_survey_option_5_v2">ਵਰਤਣਾ ਔਖਾ ਹੈ ਜਾਂ ਠੀਕ ਤਰ੍ਹਾਂ ਡਿਜ਼ਾਇਨ ਨਹੀਂ ਕੀਤਾ ਹੈ</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_6">ਭੁਗਤਾਨ ਅਤੇ ਮੈਂਬਰੀ ਮਸਲੇ</string>
+  <string name="uninstall_survey_option_6_v2">ਪਰਦੇਦਾਰੀ ਜਾਂ ਸੁਰੱਖਿਆ ਫ਼ਿਕਰ</string>
   <!-- Button label shown at the bottom of the uninstall survey -->
   <string name="uninstall_survey_button_label">ਸੁਝਾਅ ਭੇਜੋ ਅਤੇ ਅਣ-ਇੰਸਟਾਲ ਕਰੋ</string>
   <!--
@@ -4689,6 +4697,22 @@
   <string name="context_menu_open_image_with_google_lens">Google Lens ਨਾਲ ਖੋਜੋ</string>
   <!-- Toast shown when the user denies the camera permission requested by the Lens camera screen -->
   <string name="lens_camera_permission_denied">ਇਜਾਜ਼ਤ ਤੋਂ ਇਨਕਾਰ ਕੀਤਾ</string>
+  <!--
+    Title shown at the top of the camera screen, next to the close button, telling the
+    user that the photo they capture will be sent to Google Lens for a visual search.
+  -->
+  <string name="lens_camera_title_lens">Google Lens</string>
+  <!--
+    Title shown at the top of the camera screen, next to the close button, telling the
+    user that the camera is being used to scan a QR code.
+  -->
+  <string name="lens_camera_title_qr">QR ਕੋਡ</string>
+  <!-- Title for the Google Lens Search Settings page feature toggle -->
+  <string name="search_settings_google_lens_title">Google Lens ਖੋਜ ਨੂੰ ਸਮਰੱਥ ਕਰੋ</string>
+  <!-- Description for the Google Lens Search Settings page feature toggle -->
+  <string name="search_settings_google_lens_description">ਦਿੱਖ ਖੋਜ ਲਈ Google ਨੂੰ ਚਿੱਤਰ ਅਤੇ ਫ਼ੋਟੋ ਭੇਜਦਾ ਹੈ।</string>
+  <!-- Caption shown under the Google Lens toggle clarifying when the feature is available -->
+  <string name="preferences_google_lens_availability_caption">ਜਦੋਂ ਉੱਤੇ Google ਸਮਰੱਥ ਹੁੰਦਾ ਹੈ ਤਾਂ ਹੀ ਮੌਜੂਦ ਹੁੰਦਾ ਹੈ ਅਤੇ ਬਰਾਊਜ਼ ਕਰਨ ਦੇ ਦੌਰਾਨ ਤੁਹਾਡਾ ਸਰਗਰਮ ਖੋਜ ਇੰਜਣ ਹੁੰਦਾ ਹੈ।</string>
   <!-- Title for the Google Lens AI feature toggle -->
   <string name="ai_controls_google_lens_title">Google Lens</string>
   <!-- Description for the Google Lens AI feature toggle -->

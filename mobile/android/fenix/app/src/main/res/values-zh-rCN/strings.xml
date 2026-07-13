@@ -2592,7 +2592,11 @@
     Link displayed in enhanced tracking protection panel to access tracking protection settings
   -->
   <string name="etp_settings">保护设置</string>
-  <!-- Preference title for enhanced tracking protection settings -->
+  <!--
+    Enhanced Tracking Protection
+
+    Preference title for enhanced tracking protection settings
+  -->
   <string name="preference_enhanced_tracking_protection">增强型跟踪保护</string>
   <!-- Preference summary for enhanced tracking protection settings on/off switch -->
   <string name="preference_enhanced_tracking_protection_summary">现已支持“全方位 Cookie 保护”功能，这是我们迄今针对跨站跟踪器最为强大的屏障。</string>
@@ -4053,18 +4057,12 @@
   <string name="microsurvey_sync_title" tools:ignore="BrandUsage,UnusedResources">您对 Firefox 的同步体验满意度如何？</string>
   <!-- Text shown in the survey title for 'describe your experience so far' microsurvey. Note: The word "Firefox" should NOT be translated. -->
   <string name="microsurvey_describe_your_experience_title" tools:ignore="BrandUsage,UnusedResources">帮助我们改进 Firefox。以下哪项最符合您目前的使用体验？</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_1">网页问题</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_2">视频和下载问题</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_3">性能问题</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_4">功能和设计问题</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_5">隐私相关问题</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_6">付款和订阅问题</string>
+  <!--
+    Uninstall Survey
+
+    Title text for the uninstall survey dialog, asking the user for the reason they are removing the app
+  -->
+  <string name="microsurvey_uninstall_survey_title">我们十分重视您的反馈意见。请问您为什么决定卸载？</string>
   <!-- Button label shown at the bottom of the uninstall survey -->
   <string name="uninstall_survey_button_label">提交反馈并卸载</string>
   <!--

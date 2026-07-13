@@ -51,6 +51,10 @@
   <string name="menu_open_with_a_browser2">Oscail in…</string>
   <!-- Menu item: Add the current page as a shortcut to the device's home screen (launcher). -->
   <string name="menu_add_to_home_screen">Cuir leis an scáileán Baile</string>
+  <!-- Menu item: Add the current site as a shortcut on the Home screen -->
+  <string name="menu_add_to_shortcuts">Cuir le hAicearraí</string>
+  <!-- Menu item: Remove the current site as a shortcut from the Home screen -->
+  <string name="menu_remove_from_shortcuts">Bain as Aicearraí</string>
   <!-- Menu item: Shows information about features and changes that are new to this version -->
   <string name="menu_settings">Socruithe</string>
   <string name="menu_about">Maidir leis</string>

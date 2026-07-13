@@ -37,8 +37,24 @@
   <string name="mozac_feature_summarize_loading_title">Povzemanje …</string>
   <!-- Content description for the settings icon button in the summarized view -->
   <string name="mozac_summarize_settings_button_content_description">Nastavitve povzemanja strani</string>
+  <!-- Title for the settings screen shown in the summarization bottom sheet -->
+  <string name="mozac_summarize_settings_title">Povzetki strani</string>
   <!-- Link text to learn more about page summaries in settings -->
   <string name="mozac_summarize_settings_learn_more">Več o tem</string>
+  <!-- Section header for gesture settings -->
+  <string name="mozac_summarize_settings_gestures">Poteze</string>
+  <!-- Label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity">Občutljivost na stresanje</string>
+  <!-- Low option label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_low">Nizka</string>
+  <!-- Medium option label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_medium">Srednja</string>
+  <!-- High option label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_high">Visoka</string>
   <!-- Disclaimer message -->
   <string name="mozac_feature_summarize_disclaimer_message">UI lahko dela napake</string>
+  <!-- Title for the page summary AI controllable feature -->
+  <string name="mozac_ai_controls_page_summary_title">Povzetki strani</string>
+  <!-- Description for the page summary AI controllable feature -->
+  <string name="mozac_ai_controls_page_summary_description">Strani in povzetki se nikoli ne shranjujejo.</string>
 </resources>

@@ -2633,7 +2633,11 @@
     Link displayed in enhanced tracking protection panel to access tracking protection settings
   -->
   <string name="etp_settings">Gosodiadau Diogelu</string>
-  <!-- Preference title for enhanced tracking protection settings -->
+  <!--
+    Enhanced Tracking Protection
+
+    Preference title for enhanced tracking protection settings
+  -->
   <string name="preference_enhanced_tracking_protection">Diogelwch Uwch Rhag Tracio</string>
   <!-- Preference summary for enhanced tracking protection settings on/off switch -->
   <string name="preference_enhanced_tracking_protection_summary">Nawr yn cynnwys Diogelwch Cwci Llwyr, ein rhwystr mwyaf pwerus eto yn erbyn tracwyr traws-gwefan.</string>
@@ -4152,18 +4156,6 @@
     Title text for the uninstall survey dialog, asking the user for the reason they are removing the app
   -->
   <string name="microsurvey_uninstall_survey_title">Mae eich adborth yn bwysig. Pam ydych chi\'n dadosod?</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_1">Materion tudalen we</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_2">Materion fideo a llwytho i lawr</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_3">Materion perfformiad</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_4">Materion swyddogaeth a dylunio</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_5">Materion yn ymwneud â phreifatrwydd</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_6">Materion talu a thanysgrifio</string>
   <!-- Button label shown at the bottom of the uninstall survey -->
   <string name="uninstall_survey_button_label">Cyflwyno adborth a dadosod</string>
   <!--

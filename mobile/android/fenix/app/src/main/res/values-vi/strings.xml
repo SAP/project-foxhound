@@ -449,7 +449,7 @@
   <!-- Content description (not visible, for screen readers etc.): Button shown near a history search result allowing to delete it from browsing history. -->
   <string name="mozac_browser_awesomebar_remove_suggestion" tools:ignore="UnusedResources">Xoá mục lịch sử này</string>
   <!-- Button in the app links prompt that keeps the user in the browser instead of opening the external app. %1$s is the name of the app (for example "Firefox"). -->
-  <string name="applinks_prompt_negative_button">Ở lại trong %1$s</string>
+  <string name="applinks_prompt_negative_button">Ở lại %1$s</string>
   <!--
     Home onboarding
 
@@ -660,9 +660,13 @@
   <!-- Marketing onboarding primary button text. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage,UnusedResources">Giúp đỡ Firefox</string>
   <!-- Marketing onboarding primary button text. -->
+  <string name="nova_onboarding_marketing_primary_button_text_3">Có</string>
+  <!-- Marketing onboarding primary button text. -->
   <string name="nova_onboarding_marketing_primary_button_text_2">Cho phép và tiếp tục</string>
   <!-- Marketing onboarding secondary button text. -->
   <string name="nova_onboarding_marketing_secondary_button_text" tools:ignore="UnusedResources">Không, cảm ơn</string>
+  <!-- Marketing onboarding secondary button text. -->
+  <string name="nova_onboarding_marketing_secondary_button_text_2">Không</string>
   <!-- Notifications onboarding title. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_notifications_title" tools:ignore="BrandUsage,UnusedResources">Thông báo giúp bạn an toàn hơn với Firefox</string>
   <!-- Notifications onboarding subtitle. 'Firefox' is intentionally hardcoded. -->
@@ -1957,6 +1961,8 @@
   <string name="webcompat_reporter_clear_reason_content_description">Xoá lý do đã chọn</string>
   <!-- The error message of the description when the user selects "Something else" as the reason, but left the description empty or too short. -->
   <string name="webcompat_reporter_description_error">Vui lòng nhập ít nhất 10 ký tự</string>
+  <!-- The label/title of a mandatory field in the Web Compat Reporter feature for adding additional information. -->
+  <string name="webcompat_reporter_label_mandatory_description">Hãy mô tả sự cố một cách chi tiết để giúp chúng tôi điều tra</string>
   <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_label_whats_broken_2">Cái gì bị hỏng?</string>
   <!-- The placeholder text for the dropdown where a user selects a high-level reason why the site is broken. -->
@@ -1971,6 +1977,8 @@
   <string name="webcompat_reporter_add_more_info">Thêm thông tin</string>
   <!-- The button text for the cancel button to leave the Web Compat Reporter feature. -->
   <string name="webcompat_reporter_cancel">Hủy bỏ</string>
+  <!-- The button text for the send button to submit the provided form data. -->
+  <string name="webcompat_reporter_send_report">Gửi báo cáo</string>
   <!-- The button text for the send button to submit the provided form data. -->
   <string name="webcompat_reporter_send">Gửi</string>
   <!-- Text for a snackbar to confirm the successful submission of a WebCompat report. -->
@@ -2589,7 +2597,11 @@
     Link displayed in enhanced tracking protection panel to access tracking protection settings
   -->
   <string name="etp_settings">Cài đặt bảo vệ</string>
-  <!-- Preference title for enhanced tracking protection settings -->
+  <!--
+    Enhanced Tracking Protection
+
+    Preference title for enhanced tracking protection settings
+  -->
   <string name="preference_enhanced_tracking_protection">Trình chống theo dõi nâng cao</string>
   <!-- Preference summary for enhanced tracking protection settings on/off switch -->
   <string name="preference_enhanced_tracking_protection_summary">Bây giờ với tính năng Trình chống cookie chung, hàng rào mạnh mẽ nhất của chúng tôi đối với các trình theo dõi trên nhiều trang web.</string>
@@ -4059,17 +4071,17 @@
   -->
   <string name="microsurvey_uninstall_survey_title">Ý kiến ​​phản hồi của bạn rất quan trọng. Tại sao bạn gỡ cài đặt?</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_1">Sự cố về trang web</string>
+  <string name="uninstall_survey_option_1_v2">Chậm hoặc không ổn định</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_2">Sự cố về video và tải xuống</string>
+  <string name="uninstall_survey_option_2_v2">Trang web không hoạt động đúng cách</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_3">Vấn đề về hiệu năng</string>
+  <string name="uninstall_survey_option_3_v2">Thiếu tính năng tôi cần</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_4">Vấn đề về chức năng và thiết kế</string>
+  <string name="uninstall_survey_option_4_v2">Video, tải xuống hoặc đa phương tiện không hoạt động</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_5">Vấn đề liên quan đến quyền riêng tư</string>
+  <string name="uninstall_survey_option_5_v2">Khó sử dụng hoặc thiết kế khó thao tác</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_6">Vấn đề về thanh toán và gói đăng ký</string>
+  <string name="uninstall_survey_option_6_v2">Quan ngại về quyền riêng tư và bảo mật</string>
   <!-- Button label shown at the bottom of the uninstall survey -->
   <string name="uninstall_survey_button_label">Gửi phản hồi và gỡ cài đặt</string>
   <!--
@@ -4663,6 +4675,22 @@
   <string name="context_menu_open_image_with_google_lens">Tìm kiếm với Google Ống kính</string>
   <!-- Toast shown when the user denies the camera permission requested by the Lens camera screen -->
   <string name="lens_camera_permission_denied">Quyền hạn bị từ chối</string>
+  <!--
+    Title shown at the top of the camera screen, next to the close button, telling the
+    user that the photo they capture will be sent to Google Lens for a visual search.
+  -->
+  <string name="lens_camera_title_lens">Google Ống kính</string>
+  <!--
+    Title shown at the top of the camera screen, next to the close button, telling the
+    user that the camera is being used to scan a QR code.
+  -->
+  <string name="lens_camera_title_qr">Mã QR</string>
+  <!-- Title for the Google Lens Search Settings page feature toggle -->
+  <string name="search_settings_google_lens_title">Bật tìm kiếm bằng Google Ống kính</string>
+  <!-- Description for the Google Lens Search Settings page feature toggle -->
+  <string name="search_settings_google_lens_description">Gửi hình ảnh lên Google để tìm kiếm trực quan.</string>
+  <!-- Caption shown under the Google Lens toggle clarifying when the feature is available -->
+  <string name="preferences_google_lens_availability_caption">Chỉ khả dụng khi Google được bật ở trên và là công cụ tìm kiếm đang hoạt động khi bạn duyệt web.</string>
   <!-- Title for the Google Lens AI feature toggle -->
   <string name="ai_controls_google_lens_title">Google Ống kính</string>
   <!-- Description for the Google Lens AI feature toggle -->

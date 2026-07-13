@@ -2605,7 +2605,11 @@
     Link displayed in enhanced tracking protection panel to access tracking protection settings
   -->
   <string name="etp_settings">Ajustes de protección</string>
-  <!-- Preference title for enhanced tracking protection settings -->
+  <!--
+    Enhanced Tracking Protection
+
+    Preference title for enhanced tracking protection settings
+  -->
   <string name="preference_enhanced_tracking_protection">Protección de seguimiento mejorada</string>
   <!-- Preference summary for enhanced tracking protection settings on/off switch -->
   <string name="preference_enhanced_tracking_protection_summary">Ahora con protección total contra cookies, nuestra barrera más poderosa hasta el momento contra los rastreadores entre sitios.</string>
@@ -4084,18 +4088,6 @@
     Title text for the uninstall survey dialog, asking the user for the reason they are removing the app
   -->
   <string name="microsurvey_uninstall_survey_title">Tus comentarios son importantes. ¿Por qué estás desinstalando?</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_1">Problemas con una página web</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_2">Problemas de vídeo y descargas</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_3">Problemas de rendimiento</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_4">Problemas de funcionalidades y diseño</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_5">Problemas relacionados con la privacidad</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_6">Problemas de pago y suscripción</string>
   <!-- Button label shown at the bottom of the uninstall survey -->
   <string name="uninstall_survey_button_label">Enviar comentarios y desinstalar</string>
   <!--

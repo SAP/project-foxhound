@@ -76,6 +76,18 @@
   <!-- Shortcut action to open new private tab -->
   <string name="home_screen_shortcut_open_new_private_tab_2">Cluaisín nua príobháideach</string>
   <!--
+    Recent Tabs
+
+    Header text for jumping back into the recent tab in the home screen
+  -->
+  <string name="recent_tabs_header">Léim ar ais isteach</string>
+  <!-- Button text for showing all the tabs in the tabs tray -->
+  <string name="recent_tabs_show_all">Taispeáin gach ceann</string>
+  <!-- Content description for the button which navigates the user to show all recent tabs in the tabs tray. -->
+  <string name="recent_tabs_show_all_content_description_2">Taispeáin gach cluaisín le déanaí</string>
+  <!-- Content description for the button which navigates the user to show all of their history. -->
+  <string name="past_explorations_show_all_content_description_2">Taispeáin gach taiscéalaíocht san am atá caite</string>
+  <!--
     Browser Fragment
 
     Content description (not visible, for screen readers etc.): Navigate backward (browsing history)
@@ -252,6 +264,8 @@
   <string name="preferences_account_settings">Socruithe cuntais</string>
   <!-- Preference for open links in third party apps -->
   <string name="preferences_open_links_in_apps">Oscail naisc in aipeanna</string>
+  <!-- Header text for jumping back into the recent tab in customize the home screen -->
+  <string name="customize_toggle_jump_back_in">Léim ar ais isteach</string>
   <!-- Preference for triggering sync -->
   <string name="preferences_sync_now">Sioncronaigh anois</string>
   <!-- Preference category for sync -->
@@ -650,7 +664,11 @@
     Link displayed in enhanced tracking protection panel to access tracking protection settings
   -->
   <string name="etp_settings">Socruithe Cosanta</string>
-  <!-- Preference title for enhanced tracking protection settings -->
+  <!--
+    Enhanced Tracking Protection
+
+    Preference title for enhanced tracking protection settings
+  -->
   <string name="preference_enhanced_tracking_protection">Ardchosaint ar Lorgaireacht</string>
   <!-- Text displayed that links to website about enhanced tracking protection -->
   <string name="preference_enhanced_tracking_protection_explanation_learn_more">Tuilleadh eolais</string>
@@ -802,6 +820,11 @@
     the certificate authority that verified the ticket
   -->
   <string name="certificate_info_verified_by">Fíoraithe ag: %1$s</string>
+  <!--
+    Context description text for the "Show all" button in the shortcuts home screen section
+    which navigates the user to a screen displaying all the shortcuts.
+  -->
+  <string name="homepage_shortcuts_show_all_content_description">Taispeáin gach aicearra</string>
   <!-- Title for the "Popular sites" section in the "Add to homepage" bottom sheet. -->
   <string name="homepage_shortcuts_popular_sites">Suíomhanna ardéilimh</string>
   <!-- Translations feature -->

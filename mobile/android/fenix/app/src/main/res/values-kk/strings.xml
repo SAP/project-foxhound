@@ -2605,7 +2605,11 @@
     Link displayed in enhanced tracking protection panel to access tracking protection settings
   -->
   <string name="etp_settings">Қорғаныс баптаулары</string>
-  <!-- Preference title for enhanced tracking protection settings -->
+  <!--
+    Enhanced Tracking Protection
+
+    Preference title for enhanced tracking protection settings
+  -->
   <string name="preference_enhanced_tracking_protection">Бақылаудан кеңейтілген қорғаныс</string>
   <!-- Preference summary for enhanced tracking protection settings on/off switch -->
   <string name="preference_enhanced_tracking_protection_summary">Енді сайтаралық трекерлерге қарсы ең күшті тосқауыл болып табылатын Cookie файлдарынан Толық қорғаныс функциясы бар.</string>
@@ -4084,18 +4088,6 @@
     Title text for the uninstall survey dialog, asking the user for the reason they are removing the app
   -->
   <string name="microsurvey_uninstall_survey_title">Сіздің пікіріңіз маңызды. Оны неліктен өшіріп жатырсыз?</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_1">Веб-бет мәселелері</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_2">Видео және жүктеу мәселелері</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_3">Өнімділік мәселелері</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_4">Функция және дизайн мәселелері</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_5">Жекелікке қатысты мәселелер</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_6">Төлем және жазылым мәселелері</string>
   <!-- Button label shown at the bottom of the uninstall survey -->
   <string name="uninstall_survey_button_label">Пікір жіберу және өшіру</string>
   <!--

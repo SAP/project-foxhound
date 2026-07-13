@@ -1502,7 +1502,11 @@
     Link displayed in enhanced tracking protection panel to access tracking protection settings
   -->
   <string name="etp_settings">Саклау көйләүләре</string>
-  <!-- Preference title for enhanced tracking protection settings -->
+  <!--
+    Enhanced Tracking Protection
+
+    Preference title for enhanced tracking protection settings
+  -->
   <string name="preference_enhanced_tracking_protection">Күзәтелүдән Көчәйтелгән Саклау</string>
   <!-- Description of enhanced tracking protection. %s is the name of the app (for example "Firefox"). -->
   <string name="preference_enhanced_tracking_protection_explanation_2">%s онлайнда нәрсә эшләгәнегезне ачыкларга омтылган күпчелек күзәтүчеләрдән Сезне саклый.</string>

@@ -2183,7 +2183,11 @@
     Link displayed in enhanced tracking protection panel to access tracking protection settings
   -->
   <string name="etp_settings">ᱨᱚᱯᱷᱟ ᱥᱟᱡᱟᱣ ᱠᱚ</string>
-  <!-- Preference title for enhanced tracking protection settings -->
+  <!--
+    Enhanced Tracking Protection
+
+    Preference title for enhanced tracking protection settings
+  -->
   <string name="preference_enhanced_tracking_protection">ᱵᱟᱲᱦᱟᱣᱟᱠᱟᱱ ᱯᱟᱸᱡᱟ ᱨᱚᱯᱷᱟ</string>
   <!-- Preference summary for enhanced tracking protection settings on/off switch -->
   <string name="preference_enhanced_tracking_protection_summary">ᱱᱤᱛᱚᱜ ᱢᱩᱴ ᱜᱚᱴᱟ ᱥᱟᱦᱴᱟ ᱠᱩᱠᱤ ᱦᱮᱡ ᱥᱮᱴᱮᱨ ᱮᱱᱟ, ᱱᱚᱣᱟ ᱫᱚ ᱠᱨᱚᱥ-ᱥᱟᱭᱤᱴ ᱴᱨᱮᱠᱚᱨ ᱠᱚ ᱞᱟᱹᱜᱤᱫ ᱱᱤᱛ ᱦᱟᱹᱵᱤᱡ ᱡᱚᱛᱚ ᱠᱷᱚᱱ ᱢᱟᱨᱟᱝ ᱟᱠᱚᱴ ᱥᱟᱫᱷᱚᱱ ᱠᱟᱱᱟ ᱾</string>

@@ -1973,6 +1973,8 @@
   <string name="webcompat_reporter_clear_reason_content_description">Մաքրել ընտրված պատճառը</string>
   <!-- The error message of the description when the user selects "Something else" as the reason, but left the description empty or too short. -->
   <string name="webcompat_reporter_description_error">Խնդրում ենք մուտքագրել առնվազն 10 նիշ</string>
+  <!-- The label/title of a mandatory field in the Web Compat Reporter feature for adding additional information. -->
+  <string name="webcompat_reporter_label_mandatory_description">Մանրամասն նկարագրեք խնդիրը, որպեսզի մենք կարողանանք այն ուսումնասիրել</string>
   <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_label_whats_broken_2">Ի՞նչն է խոտանվել:</string>
   <!-- The placeholder text for the dropdown where a user selects a high-level reason why the site is broken. -->
@@ -1987,6 +1989,8 @@
   <string name="webcompat_reporter_add_more_info">Ավելացնել ավելի շատ տեղեկություններ</string>
   <!-- The button text for the cancel button to leave the Web Compat Reporter feature. -->
   <string name="webcompat_reporter_cancel">Չեղարկել</string>
+  <!-- The button text for the send button to submit the provided form data. -->
+  <string name="webcompat_reporter_send_report">Ուղարկել զեկույց</string>
   <!-- The button text for the send button to submit the provided form data. -->
   <string name="webcompat_reporter_send">Ուղարկել</string>
   <!-- Text for a snackbar to confirm the successful submission of a WebCompat report. -->
@@ -2605,7 +2609,11 @@
     Link displayed in enhanced tracking protection panel to access tracking protection settings
   -->
   <string name="etp_settings">Պաշտպանության կարգավորումներ</string>
-  <!-- Preference title for enhanced tracking protection settings -->
+  <!--
+    Enhanced Tracking Protection
+
+    Preference title for enhanced tracking protection settings
+  -->
   <string name="preference_enhanced_tracking_protection">Ուժեղացված հետագծման պաշտպանություն</string>
   <!-- Preference summary for enhanced tracking protection settings on/off switch -->
   <string name="preference_enhanced_tracking_protection_summary">Այժմ գործում է Total Cookie Protection-ը, որը մեր ամենահզոր պատնեշն է միջկայքի հետագծերի դեմ:</string>
@@ -4085,17 +4093,17 @@
   -->
   <string name="microsurvey_uninstall_survey_title">Ձեր կարծիքը կարևոր է։ Ինչո՞ւ եք ապատեղադրում։</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_1">Կայքէջի խնդիրներ</string>
+  <string name="uninstall_survey_option_1_v2">Դանդաղ է կամ անվստահելի</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_2">Տեսանյութի և ներբեռնման խնդիրներ</string>
+  <string name="uninstall_survey_option_2_v2">Կայքերը ճիշտ չէին աշխատում</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_3">Արտադրողականության խնդիրներ</string>
+  <string name="uninstall_survey_option_3_v2">Ինձ անհրաժեշտ բացակայող գործառույթներ</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_4">Գործառույթների և դիզայնի հետ կապված խնդիրներ</string>
+  <string name="uninstall_survey_option_4_v2">Տեսանյութերը, ներբեռնումները կամ մեդիան չեն աշխատել</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_5">Գաղտնիության հետ կապված խնդիրներ</string>
+  <string name="uninstall_survey_option_5_v2">Դժվար է օգտագործել կամ վատ նախագծված է</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_6">Վճարման և բաժանորդագրության հետ կապված խնդիրներ</string>
+  <string name="uninstall_survey_option_6_v2">Գաղտնիության կամ անվտանգության հետ կապված մտահոգություններ</string>
   <!-- Button label shown at the bottom of the uninstall survey -->
   <string name="uninstall_survey_button_label">Ուղարկել կարծիք և ապատեղադրել</string>
   <!--
@@ -4689,6 +4697,22 @@
   <string name="context_menu_open_image_with_google_lens">Որոնել Google Lens-ով</string>
   <!-- Toast shown when the user denies the camera permission requested by the Lens camera screen -->
   <string name="lens_camera_permission_denied">Թույլտվությունը մերժված է</string>
+  <!--
+    Title shown at the top of the camera screen, next to the close button, telling the
+    user that the photo they capture will be sent to Google Lens for a visual search.
+  -->
+  <string name="lens_camera_title_lens">Google Lens</string>
+  <!--
+    Title shown at the top of the camera screen, next to the close button, telling the
+    user that the camera is being used to scan a QR code.
+  -->
+  <string name="lens_camera_title_qr">QR կոդ</string>
+  <!-- Title for the Google Lens Search Settings page feature toggle -->
+  <string name="search_settings_google_lens_title">Միացնել Google Lens որոնումը</string>
+  <!-- Description for the Google Lens Search Settings page feature toggle -->
+  <string name="search_settings_google_lens_description">Ուղարկում է պատկերներ և լուսանկարներ Google-ին՝ տեսողական որոնման համար։</string>
+  <!-- Caption shown under the Google Lens toggle clarifying when the feature is available -->
+  <string name="preferences_google_lens_availability_caption">Հասանելի է միայն այն դեպքում, երբ Google-ը միացված է վերևում և ձեր ակտիվ որոնողական համակարգն է զննարկման ժամանակ։</string>
   <!-- Title for the Google Lens AI feature toggle -->
   <string name="ai_controls_google_lens_title">Google Lens</string>
   <!-- Description for the Google Lens AI feature toggle -->

@@ -665,9 +665,13 @@
   <!-- Marketing onboarding primary button text. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage,UnusedResources">Firefox’a yardım edin</string>
   <!-- Marketing onboarding primary button text. -->
+  <string name="nova_onboarding_marketing_primary_button_text_3">Evet</string>
+  <!-- Marketing onboarding primary button text. -->
   <string name="nova_onboarding_marketing_primary_button_text_2">İzin ver ve devam et</string>
   <!-- Marketing onboarding secondary button text. -->
   <string name="nova_onboarding_marketing_secondary_button_text" tools:ignore="UnusedResources">Hayır</string>
+  <!-- Marketing onboarding secondary button text. -->
+  <string name="nova_onboarding_marketing_secondary_button_text_2">Hayır</string>
   <!-- Notifications onboarding title. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_notifications_title" tools:ignore="BrandUsage,UnusedResources">Bildirimler Firefox ile daha güvende kalmanızı sağlar</string>
   <!-- Notifications onboarding subtitle. 'Firefox' is intentionally hardcoded. -->
@@ -1969,6 +1973,8 @@
   <string name="webcompat_reporter_clear_reason_content_description">Seçilen nedeni temizle</string>
   <!-- The error message of the description when the user selects "Something else" as the reason, but left the description empty or too short. -->
   <string name="webcompat_reporter_description_error">Lütfen en az 10 karakter yazın</string>
+  <!-- The label/title of a mandatory field in the Web Compat Reporter feature for adding additional information. -->
+  <string name="webcompat_reporter_label_mandatory_description">Sorunu inceleyebilmemiz için problemi ayrıntılı olarak anlatın</string>
   <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_label_whats_broken_2">Bozuk olan nedir?</string>
   <!-- The placeholder text for the dropdown where a user selects a high-level reason why the site is broken. -->
@@ -1983,6 +1989,8 @@
   <string name="webcompat_reporter_add_more_info">Daha fazla bilgi ekle</string>
   <!-- The button text for the cancel button to leave the Web Compat Reporter feature. -->
   <string name="webcompat_reporter_cancel">İptal</string>
+  <!-- The button text for the send button to submit the provided form data. -->
+  <string name="webcompat_reporter_send_report">Raporu gönder</string>
   <!-- The button text for the send button to submit the provided form data. -->
   <string name="webcompat_reporter_send">Gönder</string>
   <!-- Text for a snackbar to confirm the successful submission of a WebCompat report. -->
@@ -2601,7 +2609,11 @@
     Link displayed in enhanced tracking protection panel to access tracking protection settings
   -->
   <string name="etp_settings">Koruma ayarları</string>
-  <!-- Preference title for enhanced tracking protection settings -->
+  <!--
+    Enhanced Tracking Protection
+
+    Preference title for enhanced tracking protection settings
+  -->
   <string name="preference_enhanced_tracking_protection">Gelişmiş izlenme koruması</string>
   <!-- Preference summary for enhanced tracking protection settings on/off switch -->
   <string name="preference_enhanced_tracking_protection_summary">Siteler arası takip kodlarına karşı en güçlü korumamız olan Komple Çerez Koruması da içinde.</string>
@@ -4081,17 +4093,17 @@
   -->
   <string name="microsurvey_uninstall_survey_title">Geri bildiriminiz bizim için önemli. Neden kaldırıyorsunuz?</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_1">Web sayfası sorunları</string>
+  <string name="uninstall_survey_option_1_v2">Yavaş veya stabil değil</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_2">Video ve indirme sorunları</string>
+  <string name="uninstall_survey_option_2_v2">Web siteleri düzgün çalışmıyor</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_3">Performans sorunları</string>
+  <string name="uninstall_survey_option_3_v2">İhtiyacım olan özellikler eksik</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_4">İşlev ve tasarım sorunları</string>
+  <string name="uninstall_survey_option_4_v2">Videolar, indirilen dosyalar veya medya dosyaları çalışmıyor</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_5">Gizlilikle ilgili sorunlar</string>
+  <string name="uninstall_survey_option_5_v2">Kullanımı zor veya kötü tasarlanmış</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_6">Ödeme ve abonelik sorunları</string>
+  <string name="uninstall_survey_option_6_v2">Gizlilik veya güvenlik endişeleri</string>
   <!-- Button label shown at the bottom of the uninstall survey -->
   <string name="uninstall_survey_button_label">Geri bildirim gönder ve kaldır</string>
   <!--
@@ -4685,6 +4697,22 @@
   <string name="context_menu_open_image_with_google_lens">Google Lens ile ara</string>
   <!-- Toast shown when the user denies the camera permission requested by the Lens camera screen -->
   <string name="lens_camera_permission_denied">İzin reddedildi</string>
+  <!--
+    Title shown at the top of the camera screen, next to the close button, telling the
+    user that the photo they capture will be sent to Google Lens for a visual search.
+  -->
+  <string name="lens_camera_title_lens">Google Lens</string>
+  <!--
+    Title shown at the top of the camera screen, next to the close button, telling the
+    user that the camera is being used to scan a QR code.
+  -->
+  <string name="lens_camera_title_qr">QR kodu</string>
+  <!-- Title for the Google Lens Search Settings page feature toggle -->
+  <string name="search_settings_google_lens_title">Google Lens aramasını etkinleştir</string>
+  <!-- Description for the Google Lens Search Settings page feature toggle -->
+  <string name="search_settings_google_lens_description">Resimleri ve fotoğrafları görsel arama için Google’a gönderir.</string>
+  <!-- Caption shown under the Google Lens toggle clarifying when the feature is available -->
+  <string name="preferences_google_lens_availability_caption">Yalnızca yukarıdan Google etkinleştirildiğinde ve aktif arama motorunuz olarak ayarlandığında kullanılabilir.</string>
   <!-- Title for the Google Lens AI feature toggle -->
   <string name="ai_controls_google_lens_title">Google Lens</string>
   <!-- Description for the Google Lens AI feature toggle -->

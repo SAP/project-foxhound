@@ -2605,7 +2605,11 @@
     Link displayed in enhanced tracking protection panel to access tracking protection settings
   -->
   <string name="etp_settings">Védelmi beállítások</string>
-  <!-- Preference title for enhanced tracking protection settings -->
+  <!--
+    Enhanced Tracking Protection
+
+    Preference title for enhanced tracking protection settings
+  -->
   <string name="preference_enhanced_tracking_protection">Fokozott követés elleni védelem</string>
   <!-- Preference summary for enhanced tracking protection settings on/off switch -->
   <string name="preference_enhanced_tracking_protection_summary">Mostantól Teljes sütivédelem funkcióval, amely az eddigi legerősebb akadály a webhelyek közti nyomkövetők ellen.</string>
@@ -4084,18 +4088,6 @@
     Title text for the uninstall survey dialog, asking the user for the reason they are removing the app
   -->
   <string name="microsurvey_uninstall_survey_title">Számít a visszajelzése. Miért távolítja el?</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_1">Weboldallal kapcsolatos problémák</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_2">Videó- és letöltési problémák</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_3">Teljesítményproblémák</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_4">Funkciók és dizájnproblémák</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_5">Adatvédelemmel kapcsolatos problémák</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_6">Fizetési és előfizetési problémák</string>
   <!-- Button label shown at the bottom of the uninstall survey -->
   <string name="uninstall_survey_button_label">Visszajelzés küldése és eltávolítás</string>
   <!--

@@ -2028,7 +2028,11 @@
     Link displayed in enhanced tracking protection panel to access tracking protection settings
   -->
   <string name="etp_settings">Postavke zaštite</string>
-  <!-- Preference title for enhanced tracking protection settings -->
+  <!--
+    Enhanced Tracking Protection
+
+    Preference title for enhanced tracking protection settings
+  -->
   <string name="preference_enhanced_tracking_protection">Napredna zaštita od praćenja</string>
   <!-- Preference summary for enhanced tracking protection settings on/off switch -->
   <string name="preference_enhanced_tracking_protection_summary">Sada sadrži potpunu zaštitu od kolačića, našu najmoćniju barijeru do sada protiv elemenata za praćenje trećih strana.</string>

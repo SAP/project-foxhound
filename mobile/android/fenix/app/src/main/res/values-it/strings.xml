@@ -1973,6 +1973,8 @@
   <string name="webcompat_reporter_clear_reason_content_description">Cancella il motivo selezionato</string>
   <!-- The error message of the description when the user selects "Something else" as the reason, but left the description empty or too short. -->
   <string name="webcompat_reporter_description_error">Inserire almeno 10 caratteri</string>
+  <!-- The label/title of a mandatory field in the Web Compat Reporter feature for adding additional information. -->
+  <string name="webcompat_reporter_label_mandatory_description">Fornisci una descrizione dettagliata del problema per aiutarci a esaminarlo</string>
   <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_label_whats_broken_2">Che cosa non funziona?</string>
   <!-- The placeholder text for the dropdown where a user selects a high-level reason why the site is broken. -->
@@ -1987,6 +1989,8 @@
   <string name="webcompat_reporter_add_more_info">Aggiungi altre informazioni</string>
   <!-- The button text for the cancel button to leave the Web Compat Reporter feature. -->
   <string name="webcompat_reporter_cancel">Annulla</string>
+  <!-- The button text for the send button to submit the provided form data. -->
+  <string name="webcompat_reporter_send_report">Invia segnalazione</string>
   <!-- The button text for the send button to submit the provided form data. -->
   <string name="webcompat_reporter_send">Invia</string>
   <!-- Text for a snackbar to confirm the successful submission of a WebCompat report. -->
@@ -2605,7 +2609,11 @@
     Link displayed in enhanced tracking protection panel to access tracking protection settings
   -->
   <string name="etp_settings">Impostazioni protezione</string>
-  <!-- Preference title for enhanced tracking protection settings -->
+  <!--
+    Enhanced Tracking Protection
+
+    Preference title for enhanced tracking protection settings
+  -->
   <string name="preference_enhanced_tracking_protection">Protezione antitracciamento avanzata</string>
   <!-- Preference summary for enhanced tracking protection settings on/off switch -->
   <string name="preference_enhanced_tracking_protection_summary">Adesso con Protezione totale per i cookie, la barriera più potente che abbiamo finora realizzato contro gli elementi traccianti intersito.</string>
@@ -4085,17 +4093,17 @@
   -->
   <string name="microsurvey_uninstall_survey_title">Il tuo parere è importante. Per quale motivo stai disinstallando?</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_1">Problemi con pagine web</string>
+  <string name="uninstall_survey_option_1_v2">È lento o poco affidabile</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_2">Problemi con video e download</string>
+  <string name="uninstall_survey_option_2_v2">I siti web non funzionavano correttamente</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_3">Problemi di prestazioni</string>
+  <string name="uninstall_survey_option_3_v2">Mancano funzionalità di cui ho bisogno</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_4">Problemi con funzionalità e design</string>
+  <string name="uninstall_survey_option_4_v2">Video, download o altri contenuti multimediali non funzionavano</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_5">Problemi relativi alla privacy</string>
+  <string name="uninstall_survey_option_5_v2">È difficile da usare o mal progettato</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_6">Problemi con pagamenti e abbonamenti</string>
+  <string name="uninstall_survey_option_6_v2">Preoccupazioni riguardo a privacy o sicurezza</string>
   <!-- Button label shown at the bottom of the uninstall survey -->
   <string name="uninstall_survey_button_label">Invia feedback e disinstalla</string>
   <!--
@@ -4689,6 +4697,22 @@
   <string name="context_menu_open_image_with_google_lens">Cerca con Google Lens</string>
   <!-- Toast shown when the user denies the camera permission requested by the Lens camera screen -->
   <string name="lens_camera_permission_denied">Permesso negato</string>
+  <!--
+    Title shown at the top of the camera screen, next to the close button, telling the
+    user that the photo they capture will be sent to Google Lens for a visual search.
+  -->
+  <string name="lens_camera_title_lens">Google Lens</string>
+  <!--
+    Title shown at the top of the camera screen, next to the close button, telling the
+    user that the camera is being used to scan a QR code.
+  -->
+  <string name="lens_camera_title_qr">Codice QR</string>
+  <!-- Title for the Google Lens Search Settings page feature toggle -->
+  <string name="search_settings_google_lens_title">Attiva la ricerca con Google Lens</string>
+  <!-- Description for the Google Lens Search Settings page feature toggle -->
+  <string name="search_settings_google_lens_description">Invia immagini e foto a Google per una ricerca visiva.</string>
+  <!-- Caption shown under the Google Lens toggle clarifying when the feature is available -->
+  <string name="preferences_google_lens_availability_caption">Disponibile solo se Google è attivo ed è impostato come motore di ricerca predefinito durante la navigazione.</string>
   <!-- Title for the Google Lens AI feature toggle -->
   <string name="ai_controls_google_lens_title">Google Lens</string>
   <!-- Description for the Google Lens AI feature toggle -->

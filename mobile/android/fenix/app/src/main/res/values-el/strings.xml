@@ -2605,7 +2605,11 @@
     Link displayed in enhanced tracking protection panel to access tracking protection settings
   -->
   <string name="etp_settings">Ρυθμίσεις προστασίας</string>
-  <!-- Preference title for enhanced tracking protection settings -->
+  <!--
+    Enhanced Tracking Protection
+
+    Preference title for enhanced tracking protection settings
+  -->
   <string name="preference_enhanced_tracking_protection">Ενισχυμένη προστασία από καταγραφή</string>
   <!-- Preference summary for enhanced tracking protection settings on/off switch -->
   <string name="preference_enhanced_tracking_protection_summary">Τώρα με Ολική προστασία cookie, η πιο ισχυρή μας φύλαξη ενάντια στους ιχνηλάτες μεταξύ ιστοτόπων.</string>
@@ -4084,18 +4088,6 @@
     Title text for the uninstall survey dialog, asking the user for the reason they are removing the app
   -->
   <string name="microsurvey_uninstall_survey_title">Τα σχόλιά σας έχουν σημασία. Γιατί κάνετε απεγκατάσταση;</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_1">Ζητήματα ιστοσελίδων</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_2">Ζητήματα βίντεο και λήψεων</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_3">Ζητήματα επιδόσεων</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_4">Ζητήματα λειτουργίας και σχεδίασης</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_5">Ζητήματα απορρήτου</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_6">Ζητήματα πληρωμών και συνδρομών</string>
   <!-- Button label shown at the bottom of the uninstall survey -->
   <string name="uninstall_survey_button_label">Υποβολή σχολίων και απεγκατάσταση</string>
   <!--

@@ -2317,7 +2317,11 @@
     Link displayed in enhanced tracking protection panel to access tracking protection settings
   -->
   <string name="etp_settings">പരിരക്ഷാ ക്രമീകരണങ്ങൾ</string>
-  <!-- Preference title for enhanced tracking protection settings -->
+  <!--
+    Enhanced Tracking Protection
+
+    Preference title for enhanced tracking protection settings
+  -->
   <string name="preference_enhanced_tracking_protection">മെച്ചപ്പെട്ട പിന്തുടർച്ച പരിരക്ഷണം</string>
   <!-- Text displayed that links to website about enhanced tracking protection -->
   <string name="preference_enhanced_tracking_protection_explanation_learn_more">കൂടുതല്‍ അറിയുക</string>
@@ -3672,16 +3676,6 @@
   <string name="microsurvey_search_title" tools:ignore="BrandUsage,UnusedResources">ഫയർഫോക്സു് തിരച്ചിൽ അനുഭവം കൊണ്ടു് താങ്ങൾക്കു് എത്രത്തോളം സംതൃപ്തിയുണ്ട്?</string>
   <!-- Text shown in the survey title for sync experience microsurvey. Note: The word "Firefox" should NOT be translated. -->
   <string name="microsurvey_sync_title" tools:ignore="BrandUsage,UnusedResources">ഫയർഫോക്സു് സമന്വയ അനുഭവം കൊണ്ടു് താങ്ങൾക്കു് എത്രത്തോളം സംതൃപ്തിയുണ്ട്?</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_1">വെബ്ബിടക്കുഴപ്പങ്ങൾ</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_3">പ്രകടനക്കുഴപ്പങ്ങൾ</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_4">പ്രവൎത്തനത്തിലും രൂപകല്പനയിലും ഉള്ള കുഴപ്പങ്ങൾ</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_5">സ്വകാര്യതയുമായി ബന്ധപ്പെട്ട കുഴപ്പങ്ങൾ</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_6">പണമടക്കലും വരികാരാവലും ബന്ധപ്പെട്ട കുഴപ്പങ്ങൾ</string>
   <!--
     Accessibility
 

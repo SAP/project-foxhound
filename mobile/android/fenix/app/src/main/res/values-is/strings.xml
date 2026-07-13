@@ -2578,7 +2578,11 @@
     Link displayed in enhanced tracking protection panel to access tracking protection settings
   -->
   <string name="etp_settings">Verndarstillingar</string>
-  <!-- Preference title for enhanced tracking protection settings -->
+  <!--
+    Enhanced Tracking Protection
+
+    Preference title for enhanced tracking protection settings
+  -->
   <string name="preference_enhanced_tracking_protection">Aukin rakningarvörn</string>
   <!-- Preference summary for enhanced tracking protection settings on/off switch -->
   <string name="preference_enhanced_tracking_protection_summary">Er nú með allsherjar vefkökuvörn (Total Cookie Protection), öflugustu hindrun okkar hingað til gegn rakningu á milli vefsvæða.</string>
@@ -4057,18 +4061,6 @@
     Title text for the uninstall survey dialog, asking the user for the reason they are removing the app
   -->
   <string name="microsurvey_uninstall_survey_title">Ábendingar þínar skipta máli. Af hverju ertu að taka þetta út?</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_1">Vandamál með vefsíður</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_2">Vandamál með myndskeið og niðurhal</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_3">Vandamál með afköst</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_4">Vandamál varðandi virkni og hönnun</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_5">Persónuverndartengd vandamál</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_6">Greiðslu- og áskriftarvandamál</string>
   <!-- Button label shown at the bottom of the uninstall survey -->
   <string name="uninstall_survey_button_label">Senda inn ábendingar og fjarlægja</string>
   <!--

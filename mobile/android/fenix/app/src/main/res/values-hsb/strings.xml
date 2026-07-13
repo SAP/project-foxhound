@@ -1987,6 +1987,8 @@
   <string name="webcompat_reporter_clear_reason_content_description">Wubranu přičinu zhašeć</string>
   <!-- The error message of the description when the user selects "Something else" as the reason, but left the description empty or too short. -->
   <string name="webcompat_reporter_description_error">Prošu zapodajće znajmjeńša 10 znamješkow</string>
+  <!-- The label/title of a mandatory field in the Web Compat Reporter feature for adding additional information. -->
+  <string name="webcompat_reporter_label_mandatory_description">Wopisajće problem nadrobnje, zo byšće nam pomhał, problem přespytować</string>
   <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_label_whats_broken_2">Što je wobškodźene?</string>
   <!-- The placeholder text for the dropdown where a user selects a high-level reason why the site is broken. -->
@@ -2001,6 +2003,8 @@
   <string name="webcompat_reporter_add_more_info">Dalše informacije přidać</string>
   <!-- The button text for the cancel button to leave the Web Compat Reporter feature. -->
   <string name="webcompat_reporter_cancel">Přetorhnyć</string>
+  <!-- The button text for the send button to submit the provided form data. -->
+  <string name="webcompat_reporter_send_report">Rozprawu pósłać</string>
   <!-- The button text for the send button to submit the provided form data. -->
   <string name="webcompat_reporter_send">Pósłać</string>
   <!-- Text for a snackbar to confirm the successful submission of a WebCompat report. -->
@@ -2619,7 +2623,11 @@
     Link displayed in enhanced tracking protection panel to access tracking protection settings
   -->
   <string name="etp_settings">Škitne nastajenja</string>
-  <!-- Preference title for enhanced tracking protection settings -->
+  <!--
+    Enhanced Tracking Protection
+
+    Preference title for enhanced tracking protection settings
+  -->
   <string name="preference_enhanced_tracking_protection">Polěpšeny slědowanski škit</string>
   <!-- Preference summary for enhanced tracking protection settings on/off switch -->
   <string name="preference_enhanced_tracking_protection_summary">Nětko z dospołnym škitom přećiwo plackam, našej najmócnišej barjeru přećiwo sydła přesahowacym slědowakam.</string>
@@ -4119,17 +4127,17 @@
   -->
   <string name="microsurvey_uninstall_survey_title">Waše měnjenje je wažne. Čehodla wotinstalujeće?</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_1">Problemy z webstronami</string>
+  <string name="uninstall_survey_option_1_v2">Je pomały abo njespušćomny</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_2">Problemy z widejemi a sćehnjenjemi</string>
+  <string name="uninstall_survey_option_2_v2">Websydła korektnje njefunguja</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_3">Problemy z wukonom</string>
+  <string name="uninstall_survey_option_3_v2">Falowace funkcije, kotrež trjebam</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_4">Problemy z funkcijemi a designom</string>
+  <string name="uninstall_survey_option_4_v2">Wideja, sćehnjenja abo medije njefunguja</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_5">Problemy z priwatnosću</string>
+  <string name="uninstall_survey_option_5_v2">Da so ćežko wužiwać abo je špatnje naćisnjeny</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_6">Problemy z płaćenjom a abonementom</string>
+  <string name="uninstall_survey_option_6_v2">Wobmyslenja priwatnosće abo wěstoty</string>
   <!-- Button label shown at the bottom of the uninstall survey -->
   <string name="uninstall_survey_button_label">Měnjenje zapodać a wotinstalować</string>
   <!--
@@ -4723,6 +4731,22 @@
   <string name="context_menu_open_image_with_google_lens">Z Google Lens pytać</string>
   <!-- Toast shown when the user denies the camera permission requested by the Lens camera screen -->
   <string name="lens_camera_permission_denied">Dowolnosć zapowědźena</string>
+  <!--
+    Title shown at the top of the camera screen, next to the close button, telling the
+    user that the photo they capture will be sent to Google Lens for a visual search.
+  -->
+  <string name="lens_camera_title_lens">Google Lens</string>
+  <!--
+    Title shown at the top of the camera screen, next to the close button, telling the
+    user that the camera is being used to scan a QR code.
+  -->
+  <string name="lens_camera_title_qr">QR-kod</string>
+  <!-- Title for the Google Lens Search Settings page feature toggle -->
+  <string name="search_settings_google_lens_title">Pytanje Google Lens zmóžnić</string>
+  <!-- Description for the Google Lens Search Settings page feature toggle -->
+  <string name="search_settings_google_lens_description">Sćele wobrazy a fota na Google za wizualne pytanje.</string>
+  <!-- Caption shown under the Google Lens toggle clarifying when the feature is available -->
+  <string name="preferences_google_lens_availability_caption">Jenož k dispoziciji, hdyž Google je horjeka zmóžnjeny a je waša aktiwna pytawa, mjeztym zo přehladujeće.</string>
   <!-- Title for the Google Lens AI feature toggle -->
   <string name="ai_controls_google_lens_title">Google Lens</string>
   <!-- Description for the Google Lens AI feature toggle -->

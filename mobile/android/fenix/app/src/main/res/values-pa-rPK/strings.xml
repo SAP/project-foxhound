@@ -1254,7 +1254,11 @@
     Link displayed in enhanced tracking protection panel to access tracking protection settings
   -->
   <string name="etp_settings">سرکھیا سیٹنگاں</string>
-  <!-- Preference title for enhanced tracking protection settings -->
+  <!--
+    Enhanced Tracking Protection
+
+    Preference title for enhanced tracking protection settings
+  -->
   <string name="preference_enhanced_tracking_protection">بہتر حفاظت والا</string>
   <!-- Preference summary for enhanced tracking protection settings on/off switch -->
   <string name="preference_enhanced_tracking_protection_summary">نویں آئی کُل کوکی سرکھیا، انتر سائیٹ ٹریکراں خلاف ساڈی سبھ توں مظبوط ڈھال اے۔</string>

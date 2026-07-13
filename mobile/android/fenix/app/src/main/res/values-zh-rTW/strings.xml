@@ -1968,6 +1968,8 @@
   <string name="webcompat_reporter_clear_reason_content_description">清除選擇的原因</string>
   <!-- The error message of the description when the user selects "Something else" as the reason, but left the description empty or too short. -->
   <string name="webcompat_reporter_description_error">請輸入至少 10 個字元</string>
+  <!-- The label/title of a mandatory field in the Web Compat Reporter feature for adding additional information. -->
+  <string name="webcompat_reporter_label_mandatory_description">請詳細描述問題，幫助我們調查問題</string>
   <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_label_whats_broken_2">哪個部分故障了？</string>
   <!-- The placeholder text for the dropdown where a user selects a high-level reason why the site is broken. -->
@@ -1982,6 +1984,8 @@
   <string name="webcompat_reporter_add_more_info">加入更多資訊</string>
   <!-- The button text for the cancel button to leave the Web Compat Reporter feature. -->
   <string name="webcompat_reporter_cancel">取消</string>
+  <!-- The button text for the send button to submit the provided form data. -->
+  <string name="webcompat_reporter_send_report">傳送報告</string>
   <!-- The button text for the send button to submit the provided form data. -->
   <string name="webcompat_reporter_send">傳送</string>
   <!-- Text for a snackbar to confirm the successful submission of a WebCompat report. -->
@@ -2600,7 +2604,11 @@
     Link displayed in enhanced tracking protection panel to access tracking protection settings
   -->
   <string name="etp_settings">保護設定</string>
-  <!-- Preference title for enhanced tracking protection settings -->
+  <!--
+    Enhanced Tracking Protection
+
+    Preference title for enhanced tracking protection settings
+  -->
   <string name="preference_enhanced_tracking_protection">加強型追蹤保護</string>
   <!-- Preference summary for enhanced tracking protection settings on/off switch -->
   <string name="preference_enhanced_tracking_protection_summary">現在提供 Total Cookie Protection 功能，這是我們針對跨網站追蹤器迄今最強大的屏障。</string>
@@ -4070,17 +4078,17 @@
   -->
   <string name="microsurvey_uninstall_survey_title">您的意見對我們很重要。請讓我們知道移除原因？</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_1">網頁問題</string>
+  <string name="uninstall_survey_option_1_v2">網站速度很慢或不穩定</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_2">影片或檔案下載問題</string>
+  <string name="uninstall_survey_option_2_v2">網站無法正常運作</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_3">效能問題</string>
+  <string name="uninstall_survey_option_3_v2">缺少我需要的功能</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_4">功能或設計問題</string>
+  <string name="uninstall_survey_option_4_v2">無法影片、下載檔案或播放媒體內容</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_5">與隱私權相關的問題</string>
+  <string name="uninstall_survey_option_5_v2">很難使用，或設計不良</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_6">付款與訂閱問題</string>
+  <string name="uninstall_survey_option_6_v2">有隱私權或安全性疑慮</string>
   <!-- Button label shown at the bottom of the uninstall survey -->
   <string name="uninstall_survey_button_label">送出意見回饋並移除</string>
   <!--
@@ -4674,6 +4682,22 @@
   <string name="context_menu_open_image_with_google_lens">使用 Google 智慧鏡頭搜尋</string>
   <!-- Toast shown when the user denies the camera permission requested by the Lens camera screen -->
   <string name="lens_camera_permission_denied">存取被拒</string>
+  <!--
+    Title shown at the top of the camera screen, next to the close button, telling the
+    user that the photo they capture will be sent to Google Lens for a visual search.
+  -->
+  <string name="lens_camera_title_lens">Google 智慧鏡頭</string>
+  <!--
+    Title shown at the top of the camera screen, next to the close button, telling the
+    user that the camera is being used to scan a QR code.
+  -->
+  <string name="lens_camera_title_qr">QR Code</string>
+  <!-- Title for the Google Lens Search Settings page feature toggle -->
+  <string name="search_settings_google_lens_title">開啟 Google 智慧鏡頭搜尋功能</string>
+  <!-- Description for the Google Lens Search Settings page feature toggle -->
+  <string name="search_settings_google_lens_description">將圖片或照片傳送到 Google 進行圖片搜尋。</string>
+  <!-- Caption shown under the Google Lens toggle clarifying when the feature is available -->
+  <string name="preferences_google_lens_availability_caption">僅在上方有開啟 Google，且 Google 也是您當下選用的搜尋引擎時可以使用。</string>
   <!-- Title for the Google Lens AI feature toggle -->
   <string name="ai_controls_google_lens_title">Google 智慧鏡頭</string>
   <!-- Description for the Google Lens AI feature toggle -->

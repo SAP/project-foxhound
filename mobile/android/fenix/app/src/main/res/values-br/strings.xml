@@ -1700,7 +1700,11 @@
     Link displayed in enhanced tracking protection panel to access tracking protection settings
   -->
   <string name="etp_settings">Arventennoù gwarez</string>
-  <!-- Preference title for enhanced tracking protection settings -->
+  <!--
+    Enhanced Tracking Protection
+
+    Preference title for enhanced tracking protection settings
+  -->
   <string name="preference_enhanced_tracking_protection">Gwarez heuliañ araoket</string>
   <!-- Preference summary for enhanced tracking protection settings on/off switch -->
   <string name="preference_enhanced_tracking_protection_summary">Bremañ gant ar gwarez e-enep an toupinoù, an harz brasañ a-enep an heulierien etre al lec’hiennoù an hini eo.</string>

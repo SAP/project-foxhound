@@ -1255,7 +1255,7 @@
   <string name="preferences_usage_data_description_1" tools:ignore="BrandUsage">Dados sobre seu dispositivo, configuração de hardware e uso nos ajudam a melhorar recursos, desempenho e estabilidade do Firefox.</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preferences_daily_usage_ping_title">Ping de uso diário</string>
-  <string name="preferences_daily_usage_ping_description" tools:ignore="BrandUsage">Isto ajuda a Mozilla a estimar o número de usuários ativos.</string>
+  <string name="preferences_daily_usage_ping_description" tools:ignore="BrandUsage">Ajuda a Mozilla a estimar o número de usuários ativos.</string>
   <string name="preferences_daily_usage_ping_learn_more">Saiba mais sobre ping de uso diário</string>
   <!-- Title for the crash reporting option in the privacy preferences dialog shown during onboarding. -->
   <string name="crash_reporting_snack_bar_message">Relatório enviado</string>
@@ -1973,6 +1973,8 @@
   <string name="webcompat_reporter_clear_reason_content_description">Limpar motivo selecionado</string>
   <!-- The error message of the description when the user selects "Something else" as the reason, but left the description empty or too short. -->
   <string name="webcompat_reporter_description_error">Digite pelo menos 10 caracteres</string>
+  <!-- The label/title of a mandatory field in the Web Compat Reporter feature for adding additional information. -->
+  <string name="webcompat_reporter_label_mandatory_description">Descreva o problema em detalhes para nos ajudar a investigar</string>
   <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_label_whats_broken_2">Qual o problema?</string>
   <!-- The placeholder text for the dropdown where a user selects a high-level reason why the site is broken. -->
@@ -1987,6 +1989,8 @@
   <string name="webcompat_reporter_add_more_info">Adicionar mais informações</string>
   <!-- The button text for the cancel button to leave the Web Compat Reporter feature. -->
   <string name="webcompat_reporter_cancel">Cancelar</string>
+  <!-- The button text for the send button to submit the provided form data. -->
+  <string name="webcompat_reporter_send_report">Enviar relatório</string>
   <!-- The button text for the send button to submit the provided form data. -->
   <string name="webcompat_reporter_send">Enviar</string>
   <!-- Text for a snackbar to confirm the successful submission of a WebCompat report. -->
@@ -2605,7 +2609,11 @@
     Link displayed in enhanced tracking protection panel to access tracking protection settings
   -->
   <string name="etp_settings">Configurações de proteção</string>
-  <!-- Preference title for enhanced tracking protection settings -->
+  <!--
+    Enhanced Tracking Protection
+
+    Preference title for enhanced tracking protection settings
+  -->
   <string name="preference_enhanced_tracking_protection">Proteção aprimorada contra rastreamento</string>
   <!-- Preference summary for enhanced tracking protection settings on/off switch -->
   <string name="preference_enhanced_tracking_protection_summary">Agora com a proteção total contra cookies, nossa mais poderosa barreira contra rastreadores entre sites.</string>
@@ -3071,7 +3079,7 @@
   <!-- Label for the recommended automatic location option on the browser VPN settings screen -->
   <string name="ip_protection_location_recommended_label">Recomendado</string>
   <!-- Description for the recommended automatic location option on the browser VPN settings screen -->
-  <string name="ip_protection_location_recommended_description">Seleciona o local de VPN mais rápido para você.</string>
+  <string name="ip_protection_location_recommended_description">Selecionar o local de VPN mais rápido para você.</string>
   <!-- Badge label shown in the menu item when the browser VPN is active -->
   <string name="preferences_ip_protection_on">Ativado</string>
   <!-- Badge label shown in the menu item when the browser VPN is off -->
@@ -3119,7 +3127,7 @@
     %1$s is a localized date (for example "Jun 9") indicating the end of the promotional period.
     %2$s is a link using ip_protection_onboarding_body_link_promo (“Learn more”) as text. It links to a support article about VPN on Firefox.
   -->
-  <string name="ip_protection_onboarding_body_promo">Ative para tornar sua navegação mais privativa e mais difícil de rastrear. Experimente agora para ter largura de banda ilimitada até %1$s. %2$s</string>
+  <string name="ip_protection_onboarding_body_promo">Ative para tornar sua navegação mais privativa e mais difícil de rastrear. Experimente agora para ter dados ilimitados até %1$s. %2$s</string>
   <!-- Used as text for a link in ip_protection_onboarding_body. Make sure to adapt capitalization if the link is in the middle of the sentence. -->
   <string name="ip_protection_onboarding_body_link_promo">Saiba mais</string>
   <!-- Label for the dismiss button on the onboarding bottom sheet. -->
@@ -4085,17 +4093,17 @@
   -->
   <string name="microsurvey_uninstall_survey_title">Sua opinião é importante. Por que está desinstalando?</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_1">Problemas em páginas web</string>
+  <string name="uninstall_survey_option_1_v2">É lento ou não é confiável</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_2">Problemas com vídeos e downloads</string>
+  <string name="uninstall_survey_option_2_v2">Sites não funcionavam corretamente</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_3">Problemas de desempenho</string>
+  <string name="uninstall_survey_option_3_v2">Faltam funcionalidades que eu preciso</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_4">Problemas de funcionalidade e design</string>
+  <string name="uninstall_survey_option_4_v2">Vídeos, downloads ou mídias não funcionaram</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_5">Problemas de privacidade</string>
+  <string name="uninstall_survey_option_5_v2">É difícil de usar ou foi mal projetado</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_6">Problemas com pagamentos e assinaturas</string>
+  <string name="uninstall_survey_option_6_v2">Preocupações com privacidade ou segurança</string>
   <!-- Button label shown at the bottom of the uninstall survey -->
   <string name="uninstall_survey_button_label">Enviar comentário e desinstalar</string>
   <!--
@@ -4547,7 +4555,7 @@
   <!-- Sports widget menu item to change the selected team. -->
   <string name="sports_widget_change_team">Mudar time</string>
   <!-- Sports widget menu item to get a custom wallpaper for the widget. -->
-  <string name="sports_widget_get_custom_wallpaper">Obter fundo de tela personalizado</string>
+  <string name="sports_widget_get_custom_wallpaper">Fundo de tela personalizado</string>
   <!-- Sports widget menu item to remove the widget from the homepage. -->
   <string name="sports_widget_remove">Remover</string>
   <!-- Sports widget card title shown after a team is eliminated, asking if the user still wants to continue following the soccer tournament. -->
@@ -4689,6 +4697,22 @@
   <string name="context_menu_open_image_with_google_lens">Pesquisar com Google Lens</string>
   <!-- Toast shown when the user denies the camera permission requested by the Lens camera screen -->
   <string name="lens_camera_permission_denied">Permissão negada</string>
+  <!--
+    Title shown at the top of the camera screen, next to the close button, telling the
+    user that the photo they capture will be sent to Google Lens for a visual search.
+  -->
+  <string name="lens_camera_title_lens">Google Lens</string>
+  <!--
+    Title shown at the top of the camera screen, next to the close button, telling the
+    user that the camera is being used to scan a QR code.
+  -->
+  <string name="lens_camera_title_qr">Código QR</string>
+  <!-- Title for the Google Lens Search Settings page feature toggle -->
+  <string name="search_settings_google_lens_title">Ativar pesquisa com Google Lens</string>
+  <!-- Description for the Google Lens Search Settings page feature toggle -->
+  <string name="search_settings_google_lens_description">Enviar imagens e fotos ao Google para pesquisa visual.</string>
+  <!-- Caption shown under the Google Lens toggle clarifying when the feature is available -->
+  <string name="preferences_google_lens_availability_caption">Disponível somente quando o Google está ativado acima e é o seu mecanismo de pesquisa ativo durante a navegação.</string>
   <!-- Title for the Google Lens AI feature toggle -->
   <string name="ai_controls_google_lens_title">Google Lens</string>
   <!-- Description for the Google Lens AI feature toggle -->

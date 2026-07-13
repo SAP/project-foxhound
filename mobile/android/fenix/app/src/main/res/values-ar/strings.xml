@@ -659,8 +659,12 @@
   <string name="nova_onboarding_marketing_body_link_text_1">اطّلع على المزيد</string>
   <!-- Marketing onboarding primary button text. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage,UnusedResources">ساعد Firefox</string>
+  <!-- Marketing onboarding primary button text. -->
+  <string name="nova_onboarding_marketing_primary_button_text_3">نعم</string>
   <!-- Marketing onboarding secondary button text. -->
   <string name="nova_onboarding_marketing_secondary_button_text" tools:ignore="UnusedResources">لا، شكرًا</string>
+  <!-- Marketing onboarding secondary button text. -->
+  <string name="nova_onboarding_marketing_secondary_button_text_2">لا</string>
   <!-- Notifications onboarding title. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_notifications_title" tools:ignore="BrandUsage,UnusedResources">تساعدك الإشعارات على البقاء أكثر أماناً مع Firefox</string>
   <!-- Notifications onboarding subtitle. 'Firefox' is intentionally hardcoded. -->
@@ -2614,7 +2618,11 @@
     Link displayed in enhanced tracking protection panel to access tracking protection settings
   -->
   <string name="etp_settings">إعدادات الحماية</string>
-  <!-- Preference title for enhanced tracking protection settings -->
+  <!--
+    Enhanced Tracking Protection
+
+    Preference title for enhanced tracking protection settings
+  -->
   <string name="preference_enhanced_tracking_protection">الحماية الموسّعة من التعقب</string>
   <!-- Preference summary for enhanced tracking protection settings on/off switch -->
   <string name="preference_enhanced_tracking_protection_summary">ندعم الآن ميزة الحماية الشاملة لملفات تعريف الارتباط، وهي أقوى حاجز حتى الآن ضد متعقّبات المواقع.</string>
@@ -4005,18 +4013,6 @@
     Title text for the uninstall survey dialog, asking the user for the reason they are removing the app
   -->
   <string name="microsurvey_uninstall_survey_title">رأيك يهمنا. لماذا تقوم بإلغاء التثبيت؟</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_1">مشاكل صفحة الوِب</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_2">مشاكل الفيديو والتنزيل</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_3">مشاكل أداء</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_4">مشاكل وظيفة وتصميم</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_5">قضايا متعلقة بالخصوصية</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_6">مشاكل الدفع والاشتراك</string>
   <!-- Button label shown at the bottom of the uninstall survey -->
   <string name="uninstall_survey_button_label">أرسل ملاحظاتك وألغِ التثبيت</string>
   <!--

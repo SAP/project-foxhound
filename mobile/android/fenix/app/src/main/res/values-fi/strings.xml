@@ -2601,7 +2601,11 @@
     Link displayed in enhanced tracking protection panel to access tracking protection settings
   -->
   <string name="etp_settings">Suojauksen asetukset</string>
-  <!-- Preference title for enhanced tracking protection settings -->
+  <!--
+    Enhanced Tracking Protection
+
+    Preference title for enhanced tracking protection settings
+  -->
   <string name="preference_enhanced_tracking_protection">Tehostettu seurannan suojaus</string>
   <!-- Preference summary for enhanced tracking protection settings on/off switch -->
   <string name="preference_enhanced_tracking_protection_summary">Sisältää nyt täydellisen evästesuojauksen, joka on toistaiseksi tehokkain esteemme sivustojen välistä seurantaa vastaan.</string>
@@ -4080,18 +4084,6 @@
     Title text for the uninstall survey dialog, asking the user for the reason they are removing the app
   -->
   <string name="microsurvey_uninstall_survey_title">Palautteesi on tärkeä. Miksi poistat asennuksen?</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_1">Verkkosivuongelmat</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_2">Video- ja latausongelmat</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_3">Suorituskykyongelmat</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_4">Toiminnalliset ja suunnitteluun liittyvät ongelmat</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_5">Tietosuojaan liittyvät ongelmat</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_6">Maksu- ja tilausongelmat</string>
   <!-- Button label shown at the bottom of the uninstall survey -->
   <string name="uninstall_survey_button_label">Lähetä palautetta ja poista sovellus</string>
   <!--

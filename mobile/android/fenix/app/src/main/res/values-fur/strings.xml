@@ -2605,7 +2605,11 @@
     Link displayed in enhanced tracking protection panel to access tracking protection settings
   -->
   <string name="etp_settings">Impostazions di protezion</string>
-  <!-- Preference title for enhanced tracking protection settings -->
+  <!--
+    Enhanced Tracking Protection
+
+    Preference title for enhanced tracking protection settings
+  -->
   <string name="preference_enhanced_tracking_protection">Protezion miorade da lis spiis</string>
   <!-- Preference summary for enhanced tracking protection settings on/off switch -->
   <string name="preference_enhanced_tracking_protection_summary">Cumò cu la Protezion Totâl dai Cookies, fin cumò la nestre bariere plui potente cuintri lis spiis inter-sît.</string>
@@ -4084,18 +4088,6 @@
     Title text for the uninstall survey dialog, asking the user for the reason they are removing the app
   -->
   <string name="microsurvey_uninstall_survey_title">Il to parê al conte. Parcè stâstu disinstalant?</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_1">Problemis cu lis pagjinis web</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_2">Problemis cul discjariâ e cui videos</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_3">Problemis di prestazions</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_4">Problemis cun funzionalitâts e la sô progjetatzion</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_5">Problemis in merit ae riservatece</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_6">Problemis cun paiaments e abonaments</string>
   <!-- Button label shown at the bottom of the uninstall survey -->
   <string name="uninstall_survey_button_label">Mande une opinion e disinstale</string>
   <!--

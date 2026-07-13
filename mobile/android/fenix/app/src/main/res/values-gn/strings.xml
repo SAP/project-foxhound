@@ -1988,6 +1988,8 @@
   <!-- The button text for the cancel button to leave the Web Compat Reporter feature. -->
   <string name="webcompat_reporter_cancel">Heja</string>
   <!-- The button text for the send button to submit the provided form data. -->
+  <string name="webcompat_reporter_send_report">Emondo marandu’i</string>
+  <!-- The button text for the send button to submit the provided form data. -->
   <string name="webcompat_reporter_send">Mondo</string>
   <!-- Text for a snackbar to confirm the successful submission of a WebCompat report. -->
   <string name="webcompat_reporter_success_snackbar_text_2">Marandu’i mondopyre</string>
@@ -2605,7 +2607,11 @@
     Link displayed in enhanced tracking protection panel to access tracking protection settings
   -->
   <string name="etp_settings">Ñemboheko ñemo’ãgua</string>
-  <!-- Preference title for enhanced tracking protection settings -->
+  <!--
+    Enhanced Tracking Protection
+
+    Preference title for enhanced tracking protection settings
+  -->
   <string name="preference_enhanced_tracking_protection">Tapykueho mo’ãha iporãvéva</string>
   <!-- Preference summary for enhanced tracking protection settings on/off switch -->
   <string name="preference_enhanced_tracking_protection_summary">Ko’ág̃a Total Cookie Protection ñemo’ã ndive, ore mba’ejokoha imbaretevéva jehapykueho tenda juasapyréva rovake.</string>
@@ -4085,17 +4091,7 @@
   -->
   <string name="microsurvey_uninstall_survey_title">Ne remiandu iporã oréve. ¿Mba’ére reipe’ahína?</string>
   <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_1">Apañuái ñanduti roguéndi</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_2">Apañuái ta’ãngamýi ha mboguejýndi</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_3">Apañuái jejapogua</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_4">Apañuái tembiapoite ha moha’ãngagua</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_5">Apañuái tekoñemi rehegua</string>
-  <!-- Uninstall survey answer option -->
-  <string name="uninstall_survey_option_6">Apañuái hepyme’ẽ ha mboheraguapygua</string>
+  <string name="uninstall_survey_option_1_v2">Imbegue térã naiporãi</string>
   <!-- Button label shown at the bottom of the uninstall survey -->
   <string name="uninstall_survey_button_label">Emondo temiandu ha eipe’aite</string>
   <!--
@@ -4689,6 +4685,16 @@
   <string name="context_menu_open_image_with_google_lens">Eheka Google Lens ndive</string>
   <!-- Toast shown when the user denies the camera permission requested by the Lens camera screen -->
   <string name="lens_camera_permission_denied">Ñemoneĩ mbotovepyre</string>
+  <!--
+    Title shown at the top of the camera screen, next to the close button, telling the
+    user that the photo they capture will be sent to Google Lens for a visual search.
+  -->
+  <string name="lens_camera_title_lens">Google Lens</string>
+  <!--
+    Title shown at the top of the camera screen, next to the close button, telling the
+    user that the camera is being used to scan a QR code.
+  -->
+  <string name="lens_camera_title_qr">QR ayvu</string>
   <!-- Title for the Google Lens AI feature toggle -->
   <string name="ai_controls_google_lens_title">Google Lens</string>
   <!-- Description for the Google Lens AI feature toggle -->
