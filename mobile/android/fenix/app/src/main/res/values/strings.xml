@@ -4223,18 +4223,10 @@
     <string name="context_menu_open_image_with_google_lens">Search with Google Lens</string>
     <!-- Toast shown when the user denies the camera permission requested by the Lens camera screen -->
     <string name="lens_camera_permission_denied">Permission denied</string>
-    <!-- Title shown at the top of the camera screen, next to the close button, telling the
-         user that the photo they capture will be sent to Google Lens for a visual search. -->
-    <string name="lens_camera_title_lens">Google Lens</string>
-    <!-- Title shown at the top of the camera screen, next to the close button, telling the
-         user that the camera is being used to scan a QR code. -->
-    <string name="lens_camera_title_qr">QR Code</string>
-    <!-- Title for the Google Lens Search Settings page feature toggle -->
-    <string name="search_settings_google_lens_title">Enable Google Lens search</string>
-    <!-- Description for the Google Lens Search Settings page feature toggle -->
-    <string name="search_settings_google_lens_description">Sends images and photos to Google for visual search.</string>
-    <!-- Caption shown under the Google Lens toggle clarifying when the feature is available -->
-    <string name="preferences_google_lens_availability_caption">Available only when Google is enabled above and is your active search engine while browsing.</string>
+    <!-- Title for the Google Lens AI feature toggle -->
+    <string name="ai_controls_google_lens_title">Google Lens</string>
+    <!-- Description for the Google Lens AI feature toggle -->
+    <string name="ai_controls_google_lens_description">Sends images and photos to Google for visual search.</string>
     <!-- Content description for the Google Lens half of the camera mode toggle -->
     <string name="lens_camera_mode_lens">Google Lens</string>
     <!-- Content description for the QR scanner half of the camera mode toggle -->

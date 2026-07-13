@@ -7,6 +7,7 @@ package org.mozilla.fenix.settings.ai
 import mozilla.components.concept.ai.controls.AIControllableFeature
 import mozilla.components.concept.ai.controls.AIFeatureMetadata.FeatureId
 import mozilla.components.feature.summarize.PageSummaryFeature
+import org.mozilla.fenix.components.lens.GoogleLensAIControlFeature
 import org.mozilla.fenix.search.VoiceSearchAIControlFeature
 import org.mozilla.fenix.translations.TranslationsAIControllableFeature
 
@@ -18,6 +19,7 @@ import org.mozilla.fenix.translations.TranslationsAIControllableFeature
 private val aiFeatureDisplayOrder: List<FeatureId> = listOf(
     TranslationsAIControllableFeature.id,
     PageSummaryFeature.id,
+    GoogleLensAIControlFeature.id,
     VoiceSearchAIControlFeature.id,
 )
 
