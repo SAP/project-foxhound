@@ -14,6 +14,4 @@ pub enum AnnotationsRetrievalError {
     InvalidData,
     #[error("Could not execute operation on the target process")]
     ProcessReaderError(#[from] process_reader::error::ProcessReaderError),
-    #[error("Could not read memory from the target process")]
-    ReadError(#[from] process_reader::error::ReadError),
 }

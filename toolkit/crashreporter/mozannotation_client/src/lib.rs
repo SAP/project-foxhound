@@ -13,41 +13,33 @@ use std::{
 #[cfg(any(target_os = "linux", target_os = "android"))]
 use std::arch::global_asm;
 
-pub const ANNOTATION_CONTENTS_EMPTY: u32 = 0;
-pub const ANNOTATION_CONTENTS_NSCSTRINGPOINTER: u32 = 1;
-pub const ANNOTATION_CONTENTS_CSTRINGPOINTER: u32 = 2;
-pub const ANNOTATION_CONTENTS_CSTRING: u32 = 3;
-pub const ANNOTATION_CONTENTS_BYTEBUFFER: u32 = 4;
-pub const ANNOTATION_CONTENTS_OWNEDBYTEBUFFER: u32 = 5;
-
-pub fn is_annotation_contents(value: u32) -> bool {
-    matches!(
-        value,
-        ANNOTATION_CONTENTS_EMPTY
-            | ANNOTATION_CONTENTS_NSCSTRINGPOINTER
-            | ANNOTATION_CONTENTS_CSTRINGPOINTER
-            | ANNOTATION_CONTENTS_CSTRING
-            | ANNOTATION_CONTENTS_BYTEBUFFER
-            | ANNOTATION_CONTENTS_OWNEDBYTEBUFFER
-    )
+#[repr(C)]
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum AnnotationContents {
+    Empty,
+    NSCStringPointer,
+    CStringPointer,
+    CString,
+    ByteBuffer(u32),
+    OwnedByteBuffer(u32),
 }
-
 #[repr(C)]
 pub struct Annotation {
     pub id: u32,
-    pub contents: u32,
-    pub len: usize,
+    pub contents: AnnotationContents,
     pub address: usize,
 }
 
 impl Drop for Annotation {
     fn drop(&mut self) {
         match self.contents {
-            ANNOTATION_CONTENTS_OWNEDBYTEBUFFER if (self.address != 0) && (self.len > 0) => {
-                let align = min(usize::next_power_of_two(self.len), 32);
-                unsafe {
-                    let layout = Layout::from_size_align_unchecked(self.len, align);
-                    alloc::dealloc(self.address as *mut u8, layout);
+            AnnotationContents::OwnedByteBuffer(len) => {
+                if (self.address != 0) && (len > 0) {
+                    let align = min(usize::next_power_of_two(len as usize), 32);
+                    unsafe {
+                        let layout = Layout::from_size_align_unchecked(len as usize, align);
+                        alloc::dealloc(self.address as *mut u8, layout);
+                    }
                 }
             }
             _ => {
@@ -259,13 +251,12 @@ pub struct MozAnnotationNote {
     pub ehdr: isize,
 }
 
-fn store_annotation<T>(id: u32, contents: u32, len: usize, address: *const T) -> *const T {
-    debug_assert!(is_annotation_contents(contents));
-
+fn store_annotation<T>(id: u32, contents: AnnotationContents, address: *const T) -> *const T {
     let address = match contents {
-        ANNOTATION_CONTENTS_OWNEDBYTEBUFFER => {
+        AnnotationContents::OwnedByteBuffer(len) => {
             if !address.is_null() && (len > 0) {
                 // Copy the contents of this annotation, we'll own the copy
+                let len = len as usize;
                 let align = min(usize::next_power_of_two(len), 32);
                 unsafe {
                     let layout = Layout::from_size_align_unchecked(len, align);
@@ -284,9 +275,10 @@ fn store_annotation<T>(id: u32, contents: u32, len: usize, address: *const T) ->
     let annotations = &mut MOZANNOTATIONS.lock().unwrap().data;
     let old = if let Some(existing) = annotations.iter_mut().find(|e| e.id == id) {
         let old = match existing.contents {
-            ANNOTATION_CONTENTS_OWNEDBYTEBUFFER => {
+            AnnotationContents::OwnedByteBuffer(len) => {
                 // If we owned the previous value of this annotation we must free it.
                 if (existing.address != 0) && (len > 0) {
+                    let len = len as usize;
                     let align = min(usize::next_power_of_two(len), 32);
                     unsafe {
                         let layout = Layout::from_size_align_unchecked(len, align);
@@ -299,14 +291,12 @@ fn store_annotation<T>(id: u32, contents: u32, len: usize, address: *const T) ->
         };
 
         existing.contents = contents;
-        existing.len = len;
         existing.address = address as usize;
         old
     } else {
         annotations.push(Annotation {
             id,
             contents,
-            len,
             address: address as usize,
         });
         null_mut::<T>()
@@ -329,12 +319,7 @@ pub extern "C" fn mozannotation_register_nscstring(
     id: u32,
     address: *const nsCString,
 ) -> *const nsCString {
-    store_annotation(
-        id,
-        ANNOTATION_CONTENTS_NSCSTRINGPOINTER,
-        /* len */ 0,
-        address,
-    )
+    store_annotation(id, AnnotationContents::NSCStringPointer, address)
 }
 
 /// Create a copy of the provided string with a specified size that will be
@@ -347,7 +332,11 @@ pub extern "C" fn mozannotation_record_nscstring_from_raw_parts(
     address: *const u8,
     size: usize,
 ) {
-    store_annotation(id, ANNOTATION_CONTENTS_OWNEDBYTEBUFFER, size, address);
+    store_annotation(
+        id,
+        AnnotationContents::OwnedByteBuffer(size as u32),
+        address,
+    );
 }
 
 /// Register a pointer to a pointer to a nul-terminated string.
@@ -360,12 +349,7 @@ pub extern "C" fn mozannotation_register_cstring_ptr(
     id: u32,
     address: *const *const c_char,
 ) -> *const *const c_char {
-    store_annotation(
-        id,
-        ANNOTATION_CONTENTS_CSTRINGPOINTER,
-        /* len */ 0,
-        address,
-    )
+    store_annotation(id, AnnotationContents::CStringPointer, address)
 }
 
 /// Register a pointer to a nul-terminated string.
@@ -375,7 +359,7 @@ pub extern "C" fn mozannotation_register_cstring_ptr(
 /// This function will be exposed to C++
 #[no_mangle]
 pub extern "C" fn mozannotation_register_cstring(id: u32, address: *const c_char) -> *const c_char {
-    store_annotation(id, ANNOTATION_CONTENTS_CSTRING, /* len */ 0, address)
+    store_annotation(id, AnnotationContents::CString, address)
 }
 
 /// Create a copy of the provided nul-terminated string which will be owned by
@@ -389,7 +373,7 @@ pub extern "C" fn mozannotation_register_cstring(id: u32, address: *const c_char
 #[no_mangle]
 pub unsafe extern "C" fn mozannotation_record_cstring(id: u32, address: *const c_char) {
     let len = unsafe { CStr::from_ptr(address).to_bytes().len() };
-    store_annotation(id, ANNOTATION_CONTENTS_OWNEDBYTEBUFFER, len, address);
+    store_annotation(id, AnnotationContents::OwnedByteBuffer(len as u32), address);
 }
 
 /// Register a pointer to a fixed size buffer.
@@ -401,9 +385,9 @@ pub unsafe extern "C" fn mozannotation_record_cstring(id: u32, address: *const c
 pub extern "C" fn mozannotation_register_bytebuffer(
     id: u32,
     address: *const c_void,
-    size: usize,
+    size: u32,
 ) -> *const c_void {
-    store_annotation(id, ANNOTATION_CONTENTS_BYTEBUFFER, size, address)
+    store_annotation(id, AnnotationContents::ByteBuffer(size), address)
 }
 
 /// Create a copy of the provided buffer which will be owned by the crate, and
@@ -411,8 +395,8 @@ pub extern "C" fn mozannotation_register_bytebuffer(
 ///
 /// This function will be exposed to C++
 #[no_mangle]
-pub extern "C" fn mozannotation_record_bytebuffer(id: u32, address: *const c_void, size: usize) {
-    store_annotation(id, ANNOTATION_CONTENTS_OWNEDBYTEBUFFER, size, address);
+pub extern "C" fn mozannotation_record_bytebuffer(id: u32, address: *const c_void, size: u32) {
+    store_annotation(id, AnnotationContents::OwnedByteBuffer(size), address);
 }
 
 /// Unregister a crash annotation. Returns the previously registered pointer or
@@ -422,7 +406,7 @@ pub extern "C" fn mozannotation_record_bytebuffer(id: u32, address: *const c_voi
 /// This function will be exposed to C++
 #[no_mangle]
 pub extern "C" fn mozannotation_unregister(id: u32) -> *const c_void {
-    store_annotation(id, ANNOTATION_CONTENTS_EMPTY, /* len */ 0, null_mut())
+    store_annotation(id, AnnotationContents::Empty, null_mut())
 }
 
 /// Returns the raw address of an annotation if it has been registered or NULL
@@ -432,25 +416,19 @@ pub extern "C" fn mozannotation_unregister(id: u32) -> *const c_void {
 ///
 /// # Safety
 ///
-/// `contents` must point to a u32-sized integer, and `len` to a usize-sized
-/// integer.
+/// `contents` must point to an object of type [`AnnotationContents`]
 #[no_mangle]
 pub unsafe extern "C" fn mozannotation_get_contents(
     id: u32,
-    contents: *mut u32,
-    len: *mut usize,
+    contents: *mut AnnotationContents,
 ) -> usize {
     let annotations = &MOZANNOTATIONS.lock().unwrap().data;
     if let Some(annotation) = annotations.iter().find(|e| e.id == id) {
-        if annotation.contents == ANNOTATION_CONTENTS_EMPTY {
+        if annotation.contents == AnnotationContents::Empty {
             return 0;
         }
 
-        unsafe {
-            *contents = annotation.contents;
-            *len = annotation.len;
-        }
-
+        unsafe { *contents = annotation.contents };
         return annotation.address;
     }
 

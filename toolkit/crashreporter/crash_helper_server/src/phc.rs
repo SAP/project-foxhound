@@ -11,21 +11,15 @@ use std::{
     slice,
 };
 
-pub(crate) const PHC_KIND_UNKNOWN: u32 = 0;
-pub(crate) const PHC_KIND_NEVER_ALLOCATED_PAGE: u32 = 1;
-pub(crate) const PHC_KIND_IN_USE_PAGE: u32 = 2;
-pub(crate) const PHC_KIND_FREED_PAGE: u32 = 3;
-pub(crate) const PHC_KIND_GUARD_PAGE: u32 = 4;
-
-pub fn is_phc_kind(value: u32) -> bool {
-    matches!(
-        value,
-        PHC_KIND_UNKNOWN
-            | PHC_KIND_NEVER_ALLOCATED_PAGE
-            | PHC_KIND_IN_USE_PAGE
-            | PHC_KIND_FREED_PAGE
-            | PHC_KIND_GUARD_PAGE
-    )
+#[repr(C)]
+#[derive(Clone, Copy, PartialEq)]
+#[allow(dead_code)]
+pub(crate) enum Kind {
+    Unknown = 0,
+    NeverAllocatedPage = 1,
+    InUsePage = 2,
+    FreedPage = 3,
+    GuardPage = 4,
 }
 
 const MAX_FRAMES: usize = 16;
@@ -39,7 +33,7 @@ pub(crate) struct StackTrace {
 
 #[repr(C)]
 pub(crate) struct AddrInfo {
-    pub(crate) kind: u32,
+    pub(crate) kind: Kind,
     pub(crate) base_addr: *const c_void,
     pub(crate) usable_size: usize,
     pub(crate) alloc_stack: StackTrace,
@@ -80,17 +74,18 @@ impl AddrInfo {
 
     pub(crate) fn kind_as_str(&self) -> &'static str {
         match self.kind {
-            PHC_KIND_UNKNOWN => "Unknown(?!)",
-            PHC_KIND_NEVER_ALLOCATED_PAGE => "NeverAllocatedPage",
-            PHC_KIND_IN_USE_PAGE => "InUsePage(?!)",
-            PHC_KIND_FREED_PAGE => "FreedPage",
-            PHC_KIND_GUARD_PAGE => "GuardPage",
-            _ => "Invalid(?!)",
+            Kind::Unknown => "Unknown(?!)",
+            Kind::NeverAllocatedPage => "NeverAllocatedPage",
+            Kind::InUsePage => "InUsePage(?!)",
+            Kind::FreedPage => "FreedPage",
+            Kind::GuardPage => "GuardPage",
         }
     }
 
     fn check_consistency(&self) -> bool {
-        if (!is_phc_kind(self.kind))
+        let kind_value = self.kind as u32;
+
+        if (kind_value > Kind::GuardPage as u32)
             || (self.alloc_stack.length > MAX_FRAMES)
             || (self.free_stack.length > MAX_FRAMES)
             || (self.alloc_stack.has_stack > 1)

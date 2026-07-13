@@ -169,7 +169,7 @@ macro_rules! read_numeric_annotation {
 
 fn write_phc_annotations(file: &mut File, buff: &[u8]) -> Result<()> {
     let addr_info = phc::AddrInfo::from_bytes(buff)?;
-    if addr_info.kind == phc::PHC_KIND_UNKNOWN {
+    if addr_info.kind == phc::Kind::Unknown {
         return Ok(());
     }
 

@@ -1315,35 +1315,36 @@ static void WriteAnnotationsForMainProcessCrash(PlatformWriter& pw,
   JSONAnnotationWriter writer(pw);
 
   for (auto key : MakeEnumeratedRange(Annotation::Count)) {
-    uint32_t contents = 0;
-    size_t len = 0;
+    AnnotationContents contents = {};
     size_t address =
-        mozannotation_get_contents(static_cast<uint32_t>(key), &contents, &len);
+        mozannotation_get_contents(static_cast<uint32_t>(key), &contents);
     if (address != 0) {
       switch (TypeOfAnnotation(key)) {
         case AnnotationType::String:
-          switch (contents) {
-            case ANNOTATION_CONTENTS_NSCSTRINGPOINTER: {
+          switch (contents.tag) {
+            case AnnotationContents::Tag::NSCStringPointer: {
               const nsCString* string =
                   reinterpret_cast<const nsCString*>(address);
               writer.Write(key, string->Data(), string->Length());
             } break;
-            case ANNOTATION_CONTENTS_CSTRINGPOINTER:
+            case AnnotationContents::Tag::CStringPointer:
               address = *(reinterpret_cast<size_t*>(address));
               if (address == 0) {
                 break;
               }
               // FALLTHROUGH
-            case ANNOTATION_CONTENTS_CSTRING: {
+            case AnnotationContents::Tag::CString: {
               writer.Write(key, reinterpret_cast<const char*>(address));
             } break;
-            case ANNOTATION_CONTENTS_BYTEBUFFER:
-              writer.Write(key, reinterpret_cast<const char*>(address), len);
+            case AnnotationContents::Tag::ByteBuffer:
+              writer.Write(key, reinterpret_cast<const char*>(address),
+                           static_cast<size_t>(contents.byte_buffer._0));
               break;
-            case ANNOTATION_CONTENTS_OWNEDBYTEBUFFER:
-              writer.Write(key, reinterpret_cast<const char*>(address), len);
+            case AnnotationContents::Tag::OwnedByteBuffer:
+              writer.Write(key, reinterpret_cast<const char*>(address),
+                           static_cast<size_t>(contents.owned_byte_buffer._0));
               break;
-            case ANNOTATION_CONTENTS_EMPTY:
+            case AnnotationContents::Tag::Empty:
               break;
           }
           break;
