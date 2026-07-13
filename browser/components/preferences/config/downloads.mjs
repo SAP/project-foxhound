@@ -1858,6 +1858,9 @@ SettingGroupManager.registerGroups({
       {
         id: "applicationsHandlersView",
         control: "moz-box-group",
+        controlAttrs: {
+          type: "list",
+        },
       },
       {
         id: "handleNewFileTypes",

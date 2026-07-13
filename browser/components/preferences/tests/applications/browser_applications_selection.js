@@ -267,3 +267,61 @@ add_task(async function checkDropdownBehavior() {
   Assert.ok(pdfItem, "pdfItem is present in handlersView.");
   await selectStandardOptions(pdfItem);
 });
+
+add_task(async function checkListKeyboardNavigation() {
+  await appHandlerInitialized;
+
+  let win = gBrowser.selectedBrowser.contentWindow;
+  let container = win.document.getElementById("applicationsHandlersView");
+  await container.updateComplete;
+
+  let items = Array.from(container.querySelectorAll("moz-box-item[position]"));
+  let [firstItem, secondItem] = items;
+  Assert.greater(items.length, 1, "There is more than one handler row.");
+
+  // Every row is focusable.
+  Assert.ok(
+    items.every(item => item.isFocusable),
+    "Every list item is focusable."
+  );
+
+  // Focusing a row and pressing ArrowDown/ArrowUp moves between rows.
+  firstItem.focus();
+  Assert.equal(
+    win.document.activeElement,
+    firstItem,
+    "The first row is focused."
+  );
+
+  EventUtils.synthesizeKey("KEY_ArrowDown", {}, win);
+  Assert.equal(
+    win.document.activeElement,
+    secondItem,
+    "ArrowDown moves focus to the next row."
+  );
+
+  EventUtils.synthesizeKey("KEY_ArrowUp", {}, win);
+  Assert.equal(
+    win.document.activeElement,
+    firstItem,
+    "ArrowUp moves focus back to the previous row."
+  );
+
+  // Tab moves focus from the focused row into its actions menu (moz-select).
+  let actionsMenu = firstItem.querySelector(".actionsMenu");
+  Assert.ok(actionsMenu, "The row has an actions menu.");
+
+  EventUtils.synthesizeKey("KEY_Tab", {}, win);
+  Assert.equal(
+    win.document.activeElement,
+    actionsMenu,
+    "Tab moves focus to the actions menu in the row."
+  );
+
+  // Tab again moves focus out of the group rather than to the next row.
+  EventUtils.synthesizeKey("KEY_Tab", {}, win);
+  Assert.ok(
+    !container.contains(win.document.activeElement),
+    "Tab from the actions menu moves focus out of the group."
+  );
+});
