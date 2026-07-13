@@ -308,19 +308,10 @@ void nsDragSessionGtk::DragDataReceived(GtkWidget* aWidget,
     const char* data = reinterpret_cast<const char*>(
         gtk_selection_data_get_data(aSelectionData));
     int len = gtk_selection_data_get_length(aSelectionData);
-    if (data && IsTextFlavor(target)) {
-      if (int(strnlen(data, len)) == len) {
-        LOGDRAGSERVICE(
-            " DragDataReceived() failed - text is supposed to be terminated "
-            "with zero char");
-        return;
-      }
-    }
     if (len < 0 || !data) {
       LOGDRAGSERVICE(" DragDataReceived() failed");
       return;
     }
-
     dragData = MakeRefPtr<DragData>(target, data, len);
     LOGDRAGSERVICE("  DragDataReceived(): plain data, MIME %s len = %d",
                    GUniquePtr<gchar>(gdk_atom_name(target)).get(), len);
