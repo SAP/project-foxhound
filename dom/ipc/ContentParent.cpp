@@ -61,6 +61,7 @@
 #include "mozilla/ScriptPreloader.h"
 #include "mozilla/Services.h"
 #include "mozilla/Sprintf.h"
+#include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_fission.h"
 #include "mozilla/StaticPrefs_media.h"
@@ -4668,11 +4669,11 @@ ContentParent::AllocPExternalHelperAppParent(
     const nsACString& aMimeContentType, const nsACString& aContentDisposition,
     const uint32_t& aContentDispositionHint,
     const nsAString& aContentDispositionFilename, const bool& aForceSave,
-    const int64_t& aContentLength, const bool& aWasFileChannel,
-    nsIURI* aReferrer, const MaybeDiscarded<BrowsingContext>& aContext) {
+    const int64_t& aContentLength, nsIURI* aReferrer,
+    const MaybeDiscarded<BrowsingContext>& aContext) {
   RefPtr<ExternalHelperAppParent> parent = new ExternalHelperAppParent(
-      uri, aContentLength, aWasFileChannel, aContentDisposition,
-      aContentDispositionHint, aContentDispositionFilename);
+      uri, aContentLength, aContentDisposition, aContentDispositionHint,
+      aContentDispositionFilename);
   return parent.forget();
 }
 
@@ -4682,8 +4683,20 @@ mozilla::ipc::IPCResult ContentParent::RecvPExternalHelperAppConstructor(
     const nsACString& aContentDisposition,
     const uint32_t& aContentDispositionHint,
     const nsAString& aContentDispositionFilename, const bool& aForceSave,
-    const int64_t& aContentLength, const bool& aWasFileChannel,
-    nsIURI* aReferrer, const MaybeDiscarded<BrowsingContext>& aContext) {
+    const int64_t& aContentLength, nsIURI* aReferrer,
+    const MaybeDiscarded<BrowsingContext>& aContext) {
+  // A content process must never be able to drive a native helper-app launch
+  // of a local file it chose: that decision has to be bound to a channel the
+  // process was actually allowed to open. A file:// URI can only be loaded in
+  // a file content process (mirrors ValidatePrincipalCouldPotentiallyBeLoadedBy
+  // and the sandboxing policy enforced in ProcessIsolation), so reject a
+  // file:// URI coming from any other process.
+  if (uri && uri->SchemeIs("file") &&
+      StaticPrefs::browser_tabs_remote_separateFileUriProcess() &&
+      GetRemoteType() != FILE_REMOTE_TYPE) {
+    return IPC_FAIL(this, "Non-file process sent a file:// URI.");
+  }
+
   BrowsingContext* context = aContext.IsDiscarded() ? nullptr : aContext.get();
   if (!static_cast<ExternalHelperAppParent*>(actor)->Init(
           loadInfoArgs, aMimeContentType, aForceSave, aReferrer, context)) {

@@ -71,7 +71,6 @@ class ExternalHelperAppParent
   bool WasFileChannel() override { return mWasFileChannel; }
 
   ExternalHelperAppParent(nsIURI* uri, const int64_t& contentLength,
-                          const bool& wasFileChannel,
                           const nsACString& aContentDispositionHeader,
                           const uint32_t& aContentDispositionHint,
                           const nsAString& aContentDispositionFilename);
