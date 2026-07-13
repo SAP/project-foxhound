@@ -447,6 +447,12 @@ class FirefoxDataProvider {
   async onNetworkResourceAvailable(resource) {
     const { actor, stacktraceResourceId, cause } = resource;
 
+    // We still don't show any request done by DevTools,
+    // but bug 2038986 intent to revise that.
+    if (cause.type == "devtools") {
+      return;
+    }
+
     if (!this.#requestDataEnabled) {
       this.#requestDataEnabled = true;
     }
@@ -456,8 +462,8 @@ class FirefoxDataProvider {
       const { stacktraceAvailable, lastFrame, targetFront } =
         this.stackTraces.get(stacktraceResourceId);
 
-      resource.cause.stacktraceAvailable = stacktraceAvailable;
-      resource.cause.lastFrame = lastFrame;
+      cause.stacktraceAvailable = stacktraceAvailable;
+      cause.lastFrame = lastFrame;
 
       this.stackTraces.delete(stacktraceResourceId);
       // We retrieve preliminary information about the stacktrace from the
@@ -469,7 +475,7 @@ class FirefoxDataProvider {
         targetFront,
         stacktraceResourceId,
       });
-    } else if (cause) {
+    } else {
       // If the stacktrace for this request is not available, and we
       // expect that this request should have a stacktrace, lets store
       // some useful info for when the NETWORK_EVENT_STACKTRACE resource

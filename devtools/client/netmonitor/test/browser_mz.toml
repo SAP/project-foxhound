@@ -132,6 +132,8 @@ fail-if = [
   "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
 ]
 
+["browser_net_overrides_with_styleeditor.js"]
+
 ["browser_net_pane-collapse.js"]
 
 ["browser_net_pane-network-details.js"]

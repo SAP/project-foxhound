@@ -145,6 +145,8 @@ fail-if = [
 
 ["browser_styleeditor_loading_with_containers.js"]
 
+["browser_styleeditor_local_mode.js"]
+
 ["browser_styleeditor_media_sidebar_links.js"]
 fail-if = [
   "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled

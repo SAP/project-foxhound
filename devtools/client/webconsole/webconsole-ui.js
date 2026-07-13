@@ -530,6 +530,11 @@ class WebConsoleUI extends EventEmitter {
       }
 
       if (resource.resourceType === TYPES.NETWORK_EVENT) {
+        // We still don't show any request done by DevTools,
+        // but bug 2038986 intent to revise that.
+        if (resource.cause.type == "devtools") {
+          return;
+        }
         this.networkDataProvider?.onNetworkResourceAvailable(resource);
       }
       messages.push(resource);
