@@ -8,6 +8,7 @@
 #include <fcntl.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <unistd.h>
 
 #include "mozilla/crash_helper_ffi_generated.h"
 
@@ -24,6 +25,8 @@ Java_org_mozilla_gecko_crashhelper_CrashHelper_crash_1generator(
   if (flags == -1) {
     __android_log_print(ANDROID_LOG_FATAL, CRASH_HELPER_LOGTAG,
                         "Unable to get the Breakpad pipe file options");
+    close(breakpad_fd);
+    close(server_fd);
     return;
   }
 
@@ -31,6 +34,8 @@ Java_org_mozilla_gecko_crashhelper_CrashHelper_crash_1generator(
   if (res == -1) {
     __android_log_print(ANDROID_LOG_FATAL, CRASH_HELPER_LOGTAG,
                         "Unable to set the Breakpad pipe in non-blocking mode");
+    close(breakpad_fd);
+    close(server_fd);
     return;
   }
 

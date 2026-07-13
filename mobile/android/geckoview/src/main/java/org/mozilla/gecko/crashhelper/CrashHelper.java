@@ -101,6 +101,17 @@ public final class CrashHelper extends Service {
           Log.e(LOGTAG, "The crash helper process died before we could start the service");
         } catch (final RemoteException e) {
           throw new RuntimeException(e);
+        } finally {
+          // Close the endpoints we passed to the crash helper regardless of
+          // whether it launched or not. If we don't do this then the main
+          // process will not realize when the crash helper has gone down, as
+          // both sides of these pipes will be kept alive.
+          try {
+            mBreakpadFd.close();
+            mServerFd.close();
+          } catch (final IOException e) {
+            Log.e(LOGTAG, "Could not close the crash helper IPC endpoints");
+          }
         }
       }
 
