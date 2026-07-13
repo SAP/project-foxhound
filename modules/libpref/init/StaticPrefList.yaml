@@ -15362,11 +15362,9 @@
   mirror: always
 
 # This preference controls if we need to fail transactions for Local Network Access (LNA) failures.
-# Currently it is enabled only for nightly builds.
-# For beta and release users we will be enabling it only for ETP strict users using network.lna.etp.enabled
 - name: network.lna.blocking
   type: RelaxedAtomicBool
-  value: @IS_NIGHTLY_BUILD@
+  value: true
   mirror: always
 
 # When this pref is true, loads triggered by scripts classified as trackers
