@@ -718,14 +718,19 @@ void Range::setDouble(double l, double h) {
   canHaveFractionalPart_ = ExcludesFractionalParts;
   canBeNegativeZero_ = ExcludesNegativeZero;
 
-  // If denormals are disabled, any value with exponent 0 will be immediately
-  // flushed to 0. This gives 2**53 bit patterns that compare equal to zero.
+  // If denormals are disabled, any denormal value will be immediately flushed
+  // to 0, so any bit pattern in the denormal range compares equal to zero.
   //
-  // Check whether the range [l .. h] can cross any of the 2^53 zeros. We have
-  // to be conservative as the main thread might not interpret doubles the same
-  // way as the compiler thread.
-  const double doubleMin = mozilla::BitwiseCast<double>(
-      mozilla::SpecificFloatingPointBits<double, 0, 1, 0>::value);
+  // Check whether the range [l .. h] can cross any of these zeros. We have to
+  // be conservative as the main thread might not interpret floating point
+  // values the same way as the compiler thread.
+  //
+  // This Range may describe a Float32 value, whose denormal range begins at
+  // the smallest normal binary32 (2**-126) rather than the smallest normal
+  // binary64 (2**-1022). Use the (wider) binary32 threshold so we stay
+  // conservative for both float32 and double values.
+  const double doubleMin = double(mozilla::BitwiseCast<float>(
+      mozilla::SpecificFloatingPointBits<float, 0, 1, 0>::value));
   bool includesNegative = std::isnan(l) || l < doubleMin;
   bool includesPositive = std::isnan(h) || h > -doubleMin;
   bool crossesZero = includesNegative && includesPositive;
