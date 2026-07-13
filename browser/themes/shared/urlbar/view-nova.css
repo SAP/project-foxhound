@@ -960,8 +960,10 @@
   --urlbarView-icon-border-radius: var(--urlbarView-icon-border-radius-rounded);
 }
 
-.urlbarView-row[type$="_adm_sponsored"][is-top-pick] {
-  --urlbarView-icon-size: var(--urlbarView-rich-search-suggestion-icon-size);
+@media not -moz-pref("browser.urlbar.quicksuggest.ampTopPickUseNovaIconSize") {
+  .urlbarView-row[type$="_adm_sponsored"][is-top-pick] {
+    --urlbarView-icon-size: var(--urlbarView-rich-search-suggestion-icon-size);
+  }
 }
 
 .urlbarView-row[type$="_amo"] {

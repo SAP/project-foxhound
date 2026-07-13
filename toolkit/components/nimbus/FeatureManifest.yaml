@@ -391,7 +391,9 @@ urlbar:
         pick. Set to zero to disable.
     quickSuggestAmpTopPickUseNovaIconSize:
       type: boolean
-      fallbackPref: browser.urlbar.quicksuggest.ampTopPickUseNovaIconSize
+      setPref:
+        branch: default
+        pref: browser.urlbar.quicksuggest.ampTopPickUseNovaIconSize
       description: >-
         Whether or not use the Nova icon size for AMP suggestion.
         Otherwise, use standard rich-suggestion size.

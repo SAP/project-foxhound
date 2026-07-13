@@ -132,7 +132,9 @@ export class AmpSuggestions extends SuggestProvider {
     let richSuggestionIconSize;
     if (!isTopPick) {
       richSuggestionIconSize = 16;
-    } else if (!lazy.UrlbarPrefs.get("quickSuggestAmpTopPickUseNovaIconSize")) {
+    } else if (
+      !lazy.UrlbarPrefs.get("quicksuggest.ampTopPickUseNovaIconSize")
+    ) {
       // Use the standard rich-suggestion size.
       richSuggestionIconSize = 28;
     }
