@@ -867,7 +867,7 @@ class MOZ_STACK_CLASS BacktrackingAllocator : protected RegisterAllocator {
 
   // Merging and queueing of LiveRange groups
   void tryMergeBundles(LiveBundle* bundle0, LiveBundle* bundle1);
-  void allocateStackDefinition(VirtualRegister& reg);
+  [[nodiscard]] bool allocateStackDefinition(VirtualRegister& reg);
   [[nodiscard]] bool tryMergeReusedRegister(VirtualRegister& def,
                                             VirtualRegister& input);
   [[nodiscard]] bool mergeAndQueueRegisters();
