@@ -155,6 +155,12 @@ nsDocShellLoadState::nsDocShellLoadState(
           "nsDocShellLoadState with invalid triggering remote type");
       return;
     }
+
+    if (mURI->SchemeIs("javascript") &&
+        mTriggeringRemoteType != NOT_REMOTE_TYPE) {
+      aActor->FatalError("Illegal cross-process javascript: load attempt");
+      return;
+    }
   }
 
   if (!mSrcdocData.IsVoid() && !mURI->SchemeIs("view-source") &&
