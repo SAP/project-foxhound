@@ -2324,19 +2324,23 @@ bool ItemVariationStore::Validate(const COLRv1Header* aHeader,
 
 bool ItemVariationData::Validate(const COLRv1Header* aHeader,
                                  uint64_t aLength) const {
-  if (reinterpret_cast<const char*>(regionIndexes() +
-                                    uint16_t(regionIndexCount)) >
-      reinterpret_cast<const char*>(aHeader) + aLength) {
+  const char* limit = reinterpret_cast<const char*>(aHeader) + aLength;
+  uint16_t riCount = this->regionIndexCount;
+  if (reinterpret_cast<const char*>(regionIndexes() + riCount) > limit) {
     return false;
   }
-  uint16_t wordDeltaCount = this->wordDeltaCount;
-  bool longWords = wordDeltaCount & LONG_WORDS;
-  wordDeltaCount &= WORD_DELTA_COUNT_MASK;
-  uint32_t deltaSetSize =
-      (uint16_t(regionIndexCount) + uint16_t(wordDeltaCount)) << longWords;
-  if (reinterpret_cast<const char*>(deltaSets()) +
-          uint64_t(uint16_t(itemCount)) * deltaSetSize >
-      reinterpret_cast<const char*>(aHeader) + aLength) {
+  uint16_t wdCount = this->wordDeltaCount;
+  bool longWords = wdCount & LONG_WORDS;
+  wdCount &= WORD_DELTA_COUNT_MASK;
+  size_t deltaSetSize = (size_t(riCount) + size_t(wdCount)) << longWords;
+  uint16_t itemCount = this->itemCount;
+  if (itemCount &&
+      deltaSetSize > std::numeric_limits<size_t>::max() / itemCount) {
+    return false;
+  }
+  const char* start = reinterpret_cast<const char*>(deltaSets());
+  const char* end = start + size_t(itemCount) * deltaSetSize;
+  if (end < start || end > limit) {
     return false;
   }
   return true;
