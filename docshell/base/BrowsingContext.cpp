@@ -4246,11 +4246,17 @@ bool BrowsingContext::CanSet(
   return XRE_IsParentProcess() && !aSource && IsTop();
 }
 
-bool BrowsingContext::CanSet(FieldIndex<IDX_BrowserId>, const uint32_t& aValue,
+bool BrowsingContext::CanSet(FieldIndex<IDX_BrowserId>, const uint64_t& aValue,
                              ContentParent* aSource) {
-  // We should only be able to set this for toplevel contexts which don't have
-  // an ID yet.
-  return GetBrowserId() == 0 && IsTop() && Children().IsEmpty();
+  if (XRE_IsParentProcess() && !aSource) {
+    return true;
+  }
+
+  if (aSource && !Canonical()->IsOwnedByProcess(aSource->ChildID())) {
+    return false;
+  }
+
+  return GetBrowserId() == 0 && Children().IsEmpty();
 }
 
 bool BrowsingContext::CanSet(FieldIndex<IDX_PendingInitialization>,
