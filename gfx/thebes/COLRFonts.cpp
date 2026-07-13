@@ -157,8 +157,8 @@ struct PaintState {
   uint16_t mCoordCount;
   nsTArray<uint32_t>* mVisited;
 
-  const char* COLRv1BaseAddr() const {
-    return reinterpret_cast<const char*>(mHeader.v1);
+  const uint8_t* COLRv1BaseAddr() const {
+    return reinterpret_cast<const uint8_t*>(mHeader.v1);
   }
 
   DeviceColor GetColor(uint16_t aPaletteIndex, float aAlpha) const;
@@ -404,6 +404,10 @@ static int32_t ApplyVariation(const PaintState& aState, int32_t aValue,
   uint32_t deltaSetSize = (regionIndexCount + wordDeltaCount) << longWords;
   const uint8_t* deltaData =
       reinterpret_cast<const uint8_t*>(deltaSets) + deltaSetSize * innerIndex;
+  if (deltaData < reinterpret_cast<const uint8_t*>(deltaSets) ||
+      deltaData > aState.COLRv1BaseAddr() + aState.mCOLRLength - deltaSetSize) {
+    return aValue;
+  }
   uint16_t deltaSize = longWords ? 4 : 2;
   int32_t result = aValue;
   for (uint16_t i = 0; i < regionIndexCount; ++i, deltaData += deltaSize) {
@@ -642,7 +646,7 @@ struct ColorLineT {
       return;
     }
     const auto* stop = colorStops();
-    if (reinterpret_cast<const char*>(stop) + count * sizeof(T) >
+    if (reinterpret_cast<const uint8_t*>(stop) + count * sizeof(T) >
         aState.COLRv1BaseAddr() + aState.mCOLRLength) {
       return;
     }
@@ -1959,9 +1963,9 @@ static bool DispatchPaint(const PaintState& aState, uint32_t aDepth,
     return false;
   }
 
-  const char* paint = aState.COLRv1BaseAddr() + aOffset;
+  const uint8_t* paint = aState.COLRv1BaseAddr() + aOffset;
   // All paint table formats start with an 8-bit 'format' field.
-  uint8_t format = uint8_t(*paint);
+  uint8_t format = *paint;
 
 #define DO_CASE(T)                                                            \
   case T::kFormat:                                                            \
@@ -2006,9 +2010,9 @@ static UniquePtr<Pattern> DispatchMakePattern(const PaintState& aState,
     return nullptr;
   }
 
-  const char* paint = aState.COLRv1BaseAddr() + aOffset;
+  const uint8_t* paint = aState.COLRv1BaseAddr() + aOffset;
   // All paint table formats start with an 8-bit 'format' field.
-  uint8_t format = uint8_t(*paint);
+  uint8_t format = *paint;
 
 #define DO_CASE(T)                                                       \
   case T::kFormat:                                                       \
@@ -2036,9 +2040,9 @@ static Matrix DispatchGetMatrix(const PaintState& aState, uint32_t aOffset) {
     return Matrix();
   }
 
-  const char* paint = aState.COLRv1BaseAddr() + aOffset;
+  const uint8_t* paint = aState.COLRv1BaseAddr() + aOffset;
   // All paint table formats start with an 8-bit 'format' field.
-  uint8_t format = uint8_t(*paint);
+  uint8_t format = *paint;
 
 #define DO_CASE(T)                                                             \
   case T::kFormat:                                                             \
@@ -2076,9 +2080,9 @@ static Rect DispatchGetBounds(const PaintState& aState, uint32_t aDepth,
     return Rect();
   }
 
-  const char* paint = aState.COLRv1BaseAddr() + aOffset;
+  const uint8_t* paint = aState.COLRv1BaseAddr() + aOffset;
   // All paint table formats start with an 8-bit 'format' field.
-  uint8_t format = uint8_t(*paint);
+  uint8_t format = *paint;
 
 #define DO_CASE(T)                                                   \
   case T::kFormat:                                                   \
