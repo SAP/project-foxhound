@@ -296,10 +296,8 @@ class ChildIndexCache {
     return entry->GetChildAt(aParent, aIndex);
   }
 
-  static uint32_t ComputeIndexOf(const nsINode* aParent,
-                                 const nsIContent* aChild) {
-    MOZ_ASSERT(aChild->GetParentNode() == aParent,
-               "Child is not actually a child of parent");
+  static Maybe<uint32_t> ComputeIndexOf(const nsINode* aParent,
+                                        const nsIContent* aChild) {
     Entry* entry = GetOrCreateEntry(aParent);
     return entry->ComputeIndexOf(aParent, aChild);
   }
@@ -375,7 +373,8 @@ class ChildIndexCache {
       return mChildren[aIndex];
     }
 
-    uint32_t ComputeIndexOf(const nsINode* aParent, const nsIContent* aChild) {
+    Maybe<uint32_t> ComputeIndexOf(const nsINode* aParent,
+                                   const nsIContent* aChild) {
       TruncateStaleElements();
 
       // Only grow the hash map if the parent has enough children to make it
@@ -384,7 +383,7 @@ class ChildIndexCache {
       const bool useHashMap = aParent->GetChildCount() >= kHashMapThreshold;
 
       if (auto result = mIndexMap.MaybeGet(aChild)) {
-        return *result;
+        return result;
       }
 
       // Scan the already-populated array portion past the map prefix, building
@@ -395,7 +394,7 @@ class ChildIndexCache {
           mIndexMap.InsertOrUpdate(mChildren[index], index);
         }
         if (mChildren[index] == aChild) {
-          return index;
+          return Some(index);
         }
       }
 
@@ -411,12 +410,11 @@ class ChildIndexCache {
           mIndexMap.InsertOrUpdate(current, index);
         }
         if (current == aChild) {
-          return index;
+          return Some(index);
         }
         current = current->GetNextSibling();
       }
-      MOZ_ASSERT_UNREACHABLE("Child is not actually a child of parent");
-      return 0;
+      return Nothing();
     }
 
    private:
@@ -2261,7 +2259,7 @@ Maybe<uint32_t> nsINode::ComputeIndexOf(const nsINode* aPossibleChild) const {
   const bool isMainThread = NS_IsMainThread();
   if (contentChild && GetChildCount() >= ChildIndexCache::kThreshold &&
       isMainThread) {
-    return Some(ChildIndexCache::ComputeIndexOf(this, contentChild));
+    return ChildIndexCache::ComputeIndexOf(this, contentChild);
   }
 
   if (isMainThread && MaybeCachesComputedIndex()) {
