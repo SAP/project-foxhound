@@ -165,6 +165,10 @@ class imgRequest final : public nsIThreadRetargetableStreamListener,
 
   nsITimedChannel* GetTimedChannel() const { return mTimedChannel; }
 
+  /// Returns true if any redirect in the chain that loaded this image was
+  /// cross-origin.
+  bool HadCrossOriginRedirects() const;
+
   imgCacheValidator* GetValidator() const { return mValidator; }
   void SetValidator(imgCacheValidator* aValidator) { mValidator = aValidator; }
 
@@ -285,6 +289,8 @@ class imgRequest final : public nsIThreadRetargetableStreamListener,
   bool mIsCrossSiteNoCORSRequest;
 
   bool mShouldReportRenderTimeForLCP;
+  // True if any redirect in the chain that loaded this image was cross-origin.
+  bool mHadCrossOriginRedirects = false;
   // SVGs can't be OffMainThread for example
   bool mOffMainThreadData = false;
 

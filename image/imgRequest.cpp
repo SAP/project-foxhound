@@ -622,6 +622,22 @@ bool imgRequest::HadInsecureRedirect() const {
   return mHadInsecureRedirect;
 }
 
+bool imgRequest::HadCrossOriginRedirects() const {
+  // While the channel is still around (during the load) read the authoritative
+  // value from it; afterwards fall back to the value latched in OnStopRequest.
+  // Ignore internal redirects (e.g. a service worker substituting a same-origin
+  // response for a cross-origin request): those are not cross-origin data flow
+  // and must not taint. Real cross-origin redirects (incl. bounce-backs) count.
+  if (mTimedChannel) {
+    bool allRedirectsSameOrigin = false;
+    return NS_SUCCEEDED(
+               mTimedChannel->GetAllRedirectsSameOriginIgnoringInternal(
+                   &allRedirectsSameOrigin)) &&
+           !allRedirectsSameOrigin;
+  }
+  return mHadCrossOriginRedirects;
+}
+
 /** nsIRequestObserver methods **/
 
 NS_IMETHODIMP
@@ -815,6 +831,18 @@ imgRequest::OnStopRequest(nsIRequest* aRequest, nsresult status) {
 
     RefPtr<ProgressTracker> progressTracker = GetProgressTracker();
     progressTracker->SyncNotifyProgress(progress);
+  }
+
+  // Store whether the load involved a cross-origin redirect before we drop the
+  // timed channel. Internal redirects (e.g. a service worker serving a
+  // same-origin response for a cross-origin request) are ignored so we don't
+  // over-taint; real cross-origin redirects (incl. bounce-backs) still count.
+  if (mTimedChannel) {
+    bool allRedirectsSameOrigin = false;
+    mHadCrossOriginRedirects =
+        NS_SUCCEEDED(mTimedChannel->GetAllRedirectsSameOriginIgnoringInternal(
+            &allRedirectsSameOrigin)) &&
+        !allRedirectsSameOrigin;
   }
 
   mTimedChannel = nullptr;

@@ -873,17 +873,8 @@ imgRequestProxy::GetImagePrincipal(nsIPrincipal** aPrincipal) {
 
 NS_IMETHODIMP
 imgRequestProxy::GetHadCrossOriginRedirects(bool* aHadCrossOriginRedirects) {
-  *aHadCrossOriginRedirects = false;
-
-  nsCOMPtr<nsITimedChannel> timedChannel = TimedChannel();
-  if (timedChannel) {
-    bool allRedirectsSameOrigin = false;
-    *aHadCrossOriginRedirects =
-        NS_SUCCEEDED(timedChannel->GetAllRedirectsSameOriginIgnoringInternal(
-            &allRedirectsSameOrigin)) &&
-        !allRedirectsSameOrigin;
-  }
-
+  *aHadCrossOriginRedirects =
+      GetOwner() ? GetOwner()->HadCrossOriginRedirects() : false;
   return NS_OK;
 }
 
