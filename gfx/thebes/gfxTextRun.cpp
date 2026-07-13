@@ -1398,8 +1398,8 @@ void gfxTextRun::SanitizeGlyphRuns() {
     // ligature glyphs from wrong font (seen with U+FEFF in reftest 474417-1, as
     // Core Text eliminates the glyph, which makes it appear as if a ligature
     // has been formed)
-    while (charGlyphs[aRun.mCharacterOffset].IsLigatureContinuation() &&
-           aRun.mCharacterOffset < GetLength()) {
+    while (aRun.mCharacterOffset < GetLength() &&
+           charGlyphs[aRun.mCharacterOffset].IsLigatureContinuation()) {
       aRun.mCharacterOffset++;
     }
 
