@@ -396,6 +396,15 @@ nsresult gfxGraphiteShaper::SetGlyphsFromSegment(
         return NS_ERROR_ILLEGAL_VALUE;
       }
 
+      // The glyphCount field in a CompressedGlyph record is 16 bits;
+      // check that we will not exceed this.
+      if (glyph_end - glyph_start > 0xFFFF) {
+        return NS_ERROR_ILLEGAL_VALUE;
+      }
+      if (!details.SetCapacity(glyph_end - glyph_start, fallible)) {
+        return NS_ERROR_OUT_OF_MEMORY;
+      }
+
       for (uint32_t j = glyph_start; j < glyph_end; ++j) {
         gfxShapedText::DetailedGlyph* d = details.AppendElement();
         d->mGlyphID = gids[j].unverified_safe_because(gid_simple_value);
