@@ -448,10 +448,10 @@ void Navigation::UpdateEntriesForSameDocumentNavigation(
 
   {
     // Steps 9-12.
-    nsAutoMicroTask mt;
-    AutoEntryScript aes(GetRelevantGlobal(),
-                        "UpdateEntriesForSameDocumentNavigation");
 
+    // This prevents performing a microtask checkpoint, see
+    // https://html.spec.whatwg.org/#note-suppress-microtasks-during-navigation-events.
+    nsAutoMicroTask mt;
     NavigationCurrentEntryChangeEventInit init;
     init.mFrom = oldCurrentEntry;
     init.mNavigationType.SetValue(aNavigationType);
@@ -646,7 +646,8 @@ struct NavigationWaitForAllScope final : public nsISupports,
         });
 
     // 7. Prepare to run script given navigation's relevant settings object.
-    // This runs step 12 when going out of scope.
+    // This runs step 12 when going out of scope. See
+    // https://html.spec.whatwg.org/#note-suppress-microtasks-during-navigation-events.
     nsAutoMicroTask mt;
 
     bool traverseWasIntercepted = false;
