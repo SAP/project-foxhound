@@ -16,10 +16,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
@@ -44,7 +44,6 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.launch
 import mozilla.components.compose.base.modifier.thenConditional
 import mozilla.components.compose.base.theme.AcornTheme
 
@@ -144,9 +143,15 @@ private fun Modifier.focusTextIndexRange(
         val density = LocalDensity.current
         val textMeasurer = rememberTextMeasurer()
         val scrollState = rememberScrollState()
-        val coroutineScope = rememberCoroutineScope()
         var textLayoutState: TextLayoutResult? by remember { mutableStateOf(null) }
         var fadeFraction = remember { 0f }
+
+        LaunchedEffect(textLayoutState, scrollState.maxValue) {
+            val layout = textLayoutState ?: return@LaunchedEffect
+            val endScrollValue = computeDomainEndScrollValue(text, highlightRange, scrollState, layout)
+
+            scrollState.scrollTo(endScrollValue)
+        }
 
         onSizeChanged {
             val currentWidth = with(density) { it.width.toDp() }
@@ -158,13 +163,7 @@ private fun Modifier.focusTextIndexRange(
                 style = textStyle,
                 softWrap = false,
                 constraints = Constraints(maxWidth = it.width),
-            ).also {
-                coroutineScope.launch {
-                    val endScrollValue = computeDomainEndScrollValue(text, highlightRange, scrollState, it)
-
-                    scrollState.scrollTo(endScrollValue)
-                }
-            }
+            )
         }
             .thenConditional(
                 Modifier
