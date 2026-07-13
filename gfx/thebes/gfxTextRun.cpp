@@ -243,11 +243,13 @@ gfxTextRun::LigatureData gfxTextRun::ComputeLigatureData(
   LigatureData result;
   const CompressedGlyph* charGlyphs = mCharacterGlyphs;
 
-  uint32_t i;
-  for (i = aPartRange.start; !charGlyphs[i].IsLigatureGroupStart(); --i) {
-    NS_ASSERTION(i > 0, "Ligature at the start of the run??");
+  uint32_t i = aPartRange.start;
+  while (i && !charGlyphs[i].IsLigatureGroupStart()) {
+    --i;
   }
+  NS_ASSERTION(charGlyphs[i].IsLigatureGroupStart(), "Ligature at run start?");
   result.mRange.start = i;
+
   for (i = aPartRange.start + 1;
        i < GetLength() && !charGlyphs[i].IsLigatureGroupStart(); ++i) {
   }
