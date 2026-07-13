@@ -879,8 +879,8 @@ imgRequestProxy::GetHadCrossOriginRedirects(bool* aHadCrossOriginRedirects) {
   if (timedChannel) {
     bool allRedirectsSameOrigin = false;
     *aHadCrossOriginRedirects =
-        NS_SUCCEEDED(
-            timedChannel->GetAllRedirectsSameOrigin(&allRedirectsSameOrigin)) &&
+        NS_SUCCEEDED(timedChannel->GetAllRedirectsSameOriginIgnoringInternal(
+            &allRedirectsSameOrigin)) &&
         !allRedirectsSameOrigin;
   }
 

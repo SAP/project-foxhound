@@ -680,7 +680,7 @@ void SheetLoadData::OnStartRequest(nsIRequest* aRequest) {
     if (nsCOMPtr<nsITimedChannel> timedChannel = do_QueryInterface(channel)) {
       bool allRedirectsSameOrigin = false;
       bool hadCrossOriginRedirects =
-          NS_SUCCEEDED(timedChannel->GetAllRedirectsSameOrigin(
+          NS_SUCCEEDED(timedChannel->GetAllRedirectsSameOriginIgnoringInternal(
               &allRedirectsSameOrigin)) &&
           !allRedirectsSameOrigin;
       if (hadCrossOriginRedirects) {

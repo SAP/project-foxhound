@@ -181,7 +181,7 @@ bool CloneableWithRangeMediaResource::HadCrossOriginRedirects() {
   }
 
   bool allRedirectsSameOrigin = false;
-  return NS_SUCCEEDED(timedChannel->GetAllRedirectsSameOrigin(
+  return NS_SUCCEEDED(timedChannel->GetAllRedirectsSameOriginIgnoringInternal(
              &allRedirectsSameOrigin)) &&
          !allRedirectsSameOrigin;
 }

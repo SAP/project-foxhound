@@ -950,7 +950,7 @@ void ChannelMediaResource::UpdatePrincipal() {
     if (timedChannel) {
       bool allRedirectsSameOrigin = false;
       mSharedInfo->mHadCrossOriginRedirects =
-          NS_SUCCEEDED(timedChannel->GetAllRedirectsSameOrigin(
+          NS_SUCCEEDED(timedChannel->GetAllRedirectsSameOriginIgnoringInternal(
               &allRedirectsSameOrigin)) &&
           !allRedirectsSameOrigin;
     }

@@ -75,6 +75,11 @@ interface nsITimedChannel : nsISupports {
 
   // This flag should be set to false only if a cross-domain redirect occurred
   [noscript] attribute boolean allRedirectsSameOrigin;
+  // Like allRedirectsSameOrigin, but internal redirects (e.g. a service worker
+  // serving a response from a different URL) do not count as cross-origin. Used
+  // by canvas/CSS/media tainting, which must only treat a real cross-origin
+  // network redirect as a trust-boundary crossing.
+  [noscript] attribute boolean allRedirectsSameOriginIgnoringInternal;
   // This flag is set to false if the timing allow check fails
   [noscript] attribute boolean allRedirectsPassTimingAllowCheck;
   // Implements the timing-allow-check to determine if we should report

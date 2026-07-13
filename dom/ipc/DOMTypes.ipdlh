@@ -233,6 +233,7 @@ struct TimedChannelInfo
   TimeStamp redirectEnd;
   nsString initiatorType;
   bool allRedirectsSameOrigin;
+  bool allRedirectsSameOriginIgnoringInternal;
   bool allRedirectsPassTimingAllowCheck;
   bool? timingAllowCheckForPrincipal;
   bool renderBlocking;

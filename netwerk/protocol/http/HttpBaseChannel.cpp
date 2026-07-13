@@ -227,6 +227,7 @@ HttpBaseChannel::HttpBaseChannel()
   StoreAllowAltSvc(true);
   StoreResponseTimeoutEnabled(true);
   StoreAllRedirectsSameOrigin(true);
+  StoreAllRedirectsSameOriginIgnoringInternal(true);
   StoreAllRedirectsPassTimingAllowCheck(true);
   StoreUpgradableToSecure(true);
   StoreIsUserAgentHeaderModified(false);
@@ -4952,6 +4953,8 @@ HttpBaseChannel::CloneReplacementChannelConfig(bool aPreserveMethod,
     config.timedChannelInfo->initiatorType() = mInitiatorType;
     config.timedChannelInfo->allRedirectsSameOrigin() =
         LoadAllRedirectsSameOrigin();
+    config.timedChannelInfo->allRedirectsSameOriginIgnoringInternal() =
+        LoadAllRedirectsSameOriginIgnoringInternal();
     config.timedChannelInfo->allRedirectsPassTimingAllowCheck() =
         LoadAllRedirectsPassTimingAllowCheck();
     // Execute the timing allow check to determine whether
@@ -5101,6 +5104,8 @@ HttpBaseChannel::CloneReplacementChannelConfig(bool aPreserveMethod,
 
     newTimedChannel->SetAllRedirectsSameOrigin(
         config.timedChannelInfo->allRedirectsSameOrigin());
+    newTimedChannel->SetAllRedirectsSameOriginIgnoringInternal(
+        config.timedChannelInfo->allRedirectsSameOriginIgnoringInternal());
 
     if (config.timedChannelInfo->timingAllowCheckForPrincipal()) {
       newTimedChannel->SetAllRedirectsPassTimingAllowCheck(
@@ -5259,6 +5264,13 @@ nsresult HttpBaseChannel::SetupReplacementChannel(nsIURI* newURI,
     newTimedChannel->SetAllRedirectsSameOrigin(
         config.timedChannelInfo->allRedirectsSameOrigin() &&
         sameOriginWithOriginalUri);
+    // Internal redirects (e.g. a service worker serving a response from a
+    // different URL) are not real cross-origin network hops, so they must not
+    // count as cross-origin for canvas/CSS/media tainting.
+    newTimedChannel->SetAllRedirectsSameOriginIgnoringInternal(
+        config.timedChannelInfo->allRedirectsSameOriginIgnoringInternal() &&
+        (redirectType == ReplacementReason::InternalRedirect ||
+         sameOriginWithOriginalUri));
   }
 
   newChannel->SetLoadGroup(mLoadGroup);
@@ -5697,6 +5709,22 @@ HttpBaseChannel::GetAllRedirectsSameOrigin(bool* aAllRedirectsSameOrigin) {
 NS_IMETHODIMP
 HttpBaseChannel::SetAllRedirectsSameOrigin(bool aAllRedirectsSameOrigin) {
   StoreAllRedirectsSameOrigin(aAllRedirectsSameOrigin);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+HttpBaseChannel::GetAllRedirectsSameOriginIgnoringInternal(
+    bool* aAllRedirectsSameOriginIgnoringInternal) {
+  *aAllRedirectsSameOriginIgnoringInternal =
+      LoadAllRedirectsSameOriginIgnoringInternal();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+HttpBaseChannel::SetAllRedirectsSameOriginIgnoringInternal(
+    bool aAllRedirectsSameOriginIgnoringInternal) {
+  StoreAllRedirectsSameOriginIgnoringInternal(
+      aAllRedirectsSameOriginIgnoringInternal);
   return NS_OK;
 }
 

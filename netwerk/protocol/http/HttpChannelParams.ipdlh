@@ -47,6 +47,7 @@ struct HttpChannelOnStartRequestArgs
   bool applyConversion;
   bool isResolvedByTRR;
   bool allRedirectsSameOrigin;
+  bool allRedirectsSameOriginIgnoringInternal;
   bool isFirstPartOfMultiPart;
   bool isLastPartOfMultiPart;
   CrossOriginOpenerPolicy openerPolicy;

@@ -467,6 +467,8 @@ void HttpChannelChild::OnStartRequest(
   }
 
   StoreAllRedirectsSameOrigin(aArgs.allRedirectsSameOrigin());
+  StoreAllRedirectsSameOriginIgnoringInternal(
+      aArgs.allRedirectsSameOriginIgnoringInternal());
 
   mMultiPartID = aArgs.multiPartID();
   mIsFirstPartOfMultiPart = aArgs.isFirstPartOfMultiPart();
