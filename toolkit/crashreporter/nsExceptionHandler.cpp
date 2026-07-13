@@ -1315,36 +1315,35 @@ static void WriteAnnotationsForMainProcessCrash(PlatformWriter& pw,
   JSONAnnotationWriter writer(pw);
 
   for (auto key : MakeEnumeratedRange(Annotation::Count)) {
-    AnnotationContents contents = {};
+    uint32_t contents = 0;
+    size_t len = 0;
     size_t address =
-        mozannotation_get_contents(static_cast<uint32_t>(key), &contents);
+        mozannotation_get_contents(static_cast<uint32_t>(key), &contents, &len);
     if (address != 0) {
       switch (TypeOfAnnotation(key)) {
         case AnnotationType::String:
-          switch (contents.tag) {
-            case AnnotationContents::Tag::NSCStringPointer: {
+          switch (contents) {
+            case ANNOTATION_CONTENTS_NSCSTRINGPOINTER: {
               const nsCString* string =
                   reinterpret_cast<const nsCString*>(address);
               writer.Write(key, string->Data(), string->Length());
             } break;
-            case AnnotationContents::Tag::CStringPointer:
+            case ANNOTATION_CONTENTS_CSTRINGPOINTER:
               address = *(reinterpret_cast<size_t*>(address));
               if (address == 0) {
                 break;
               }
               // FALLTHROUGH
-            case AnnotationContents::Tag::CString: {
+            case ANNOTATION_CONTENTS_CSTRING: {
               writer.Write(key, reinterpret_cast<const char*>(address));
             } break;
-            case AnnotationContents::Tag::ByteBuffer:
-              writer.Write(key, reinterpret_cast<const char*>(address),
-                           static_cast<size_t>(contents.byte_buffer._0));
+            case ANNOTATION_CONTENTS_BYTEBUFFER:
+              writer.Write(key, reinterpret_cast<const char*>(address), len);
               break;
-            case AnnotationContents::Tag::OwnedByteBuffer:
-              writer.Write(key, reinterpret_cast<const char*>(address),
-                           static_cast<size_t>(contents.owned_byte_buffer._0));
+            case ANNOTATION_CONTENTS_OWNEDBYTEBUFFER:
+              writer.Write(key, reinterpret_cast<const char*>(address), len);
               break;
-            case AnnotationContents::Tag::Empty:
+            case ANNOTATION_CONTENTS_EMPTY:
               break;
           }
           break;
