@@ -14,6 +14,8 @@ import io.mockk.mockk
 import io.mockk.spyk
 import io.mockk.verify
 import junit.framework.TestCase.assertEquals
+import junit.framework.TestCase.assertFalse
+import junit.framework.TestCase.assertTrue
 import mozilla.components.browser.state.search.SearchEngine
 import mozilla.components.browser.state.state.SearchState
 import mozilla.components.support.test.robolectric.testContext
@@ -23,6 +25,7 @@ import org.junit.runner.RunWith
 import org.mozilla.fenix.HomeActivity
 import org.mozilla.fenix.R
 import org.mozilla.fenix.ext.components
+import org.mozilla.fenix.settings.SwitchWithCaptionPreference
 import org.mozilla.fenix.utils.Settings
 import org.robolectric.RobolectricTestRunner
 
@@ -191,6 +194,86 @@ class SearchEngineFragmentTest {
 
         fragment.onPreferenceTreeClick(manageShortcutsPreference)
         verify { fragment.openSearchShortcutsSettings() }
+    }
+
+    @Test
+    fun `GIVEN Google Lens integration enabled WHEN the preference is initialised THEN it is visible`() {
+        every { settings.googleLensIntegrationEnabled } returns true
+
+        val preference = buildGoogleLensPreference()
+        fragment.initialiseGoogleLensPreference(preference)
+
+        assertTrue(preference.isVisible)
+    }
+
+    @Test
+    fun `GIVEN Google Lens integration disabled WHEN the preference is initialised THEN it is hidden`() {
+        every { settings.googleLensIntegrationEnabled } returns false
+
+        val preference = buildGoogleLensPreference()
+        fragment.initialiseGoogleLensPreference(preference)
+
+        assertFalse(preference.isVisible)
+    }
+
+    @Test
+    fun `GIVEN the user override is on WHEN the preference is initialised THEN it is checked`() {
+        every { settings.googleLensIntegrationUserEnabled } returns true
+
+        val preference = buildGoogleLensPreference()
+        fragment.initialiseGoogleLensPreference(preference)
+
+        assertTrue(preference.isChecked)
+    }
+
+    @Test
+    fun `GIVEN the user override is off WHEN the preference is initialised THEN it is unchecked`() {
+        every { settings.googleLensIntegrationUserEnabled } returns false
+
+        val preference = buildGoogleLensPreference()
+        fragment.initialiseGoogleLensPreference(preference)
+
+        assertFalse(preference.isChecked)
+    }
+
+    @Test
+    fun `WHEN the Google Lens preference is initialised THEN the availability caption is set`() {
+        val preference = buildGoogleLensPreference()
+        fragment.initialiseGoogleLensPreference(preference)
+
+        assertEquals(
+            testContext.getString(R.string.preferences_google_lens_availability_caption),
+            preference.caption,
+        )
+    }
+
+    @Test
+    fun `GIVEN an initialised Google Lens preference WHEN it is switched off THEN false is persisted`() {
+        val googleLensKey = testContext.getString(R.string.pref_key_google_lens_integration_user_enabled)
+        val preference = buildGoogleLensPreference()
+        fragment.initialiseGoogleLensPreference(preference)
+
+        preference.callChangeListener(false)
+
+        verify { preferencesEditor.putBoolean(googleLensKey, false) }
+    }
+
+    @Test
+    fun `GIVEN an initialised Google Lens preference WHEN it is switched on THEN true is persisted`() {
+        val googleLensKey = testContext.getString(R.string.pref_key_google_lens_integration_user_enabled)
+        val preference = buildGoogleLensPreference()
+        fragment.initialiseGoogleLensPreference(preference)
+
+        preference.callChangeListener(true)
+
+        verify { preferencesEditor.putBoolean(googleLensKey, true) }
+    }
+
+    private fun buildGoogleLensPreference(): SwitchWithCaptionPreference {
+        val googleLensKey = testContext.getString(R.string.pref_key_google_lens_integration_user_enabled)
+        return spyk(SwitchWithCaptionPreference(testContext)) {
+            every { key } returns googleLensKey
+        }
     }
 
     @Test

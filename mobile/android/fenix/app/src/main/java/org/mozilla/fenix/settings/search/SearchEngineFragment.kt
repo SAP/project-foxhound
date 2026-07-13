@@ -28,6 +28,7 @@ import org.mozilla.fenix.ext.requireComponents
 import org.mozilla.fenix.ext.showToolbar
 import org.mozilla.fenix.settings.SharedPreferenceUpdater
 import org.mozilla.fenix.settings.SupportUtils
+import org.mozilla.fenix.settings.SwitchWithCaptionPreference
 import org.mozilla.fenix.settings.requirePreference
 import org.mozilla.fenix.utils.canShowAddSearchWidgetPrompt
 import org.mozilla.fenix.utils.maybeShowAddSearchWidgetPrompt
@@ -104,6 +105,10 @@ class SearchEngineFragment : PreferenceFragmentCompat(), SystemInsetsPaddedFragm
             requirePreference<SwitchPreferenceCompat>(R.string.pref_key_enable_autocomplete_urls).apply {
                 isChecked = context.components.settings.shouldAutocompleteInAwesomebar
             }
+
+        initialiseGoogleLensPreference(
+            requirePreference(R.string.pref_key_google_lens_integration_user_enabled),
+        )
 
         val searchSuggestionsInPrivatePreference =
             requirePreference<CheckBoxPreference>(R.string.pref_key_show_search_suggestions_in_private).apply {
@@ -252,6 +257,24 @@ class SearchEngineFragment : PreferenceFragmentCompat(), SystemInsetsPaddedFragm
                     return true
                 }
             }
+    }
+
+    /**
+     * Initialises the Google Lens search preference.
+     *
+     * The preference is only visible when the Nimbus-backed
+     * [Settings.googleLensIntegrationEnabled] flag is on. Its checked state reflects the
+     * local-only [Settings.googleLensIntegrationUserEnabled] override and changes are persisted
+     * via [SharedPreferenceUpdater].
+     *
+     * @param preference The [SwitchWithCaptionPreference] for the Google Lens search setting.
+     */
+    @VisibleForTesting
+    internal fun initialiseGoogleLensPreference(preference: SwitchWithCaptionPreference) {
+        preference.isVisible = requireContext().components.settings.googleLensIntegrationEnabled
+        preference.caption = getString(R.string.preferences_google_lens_availability_caption)
+        preference.isChecked = requireContext().components.settings.googleLensIntegrationUserEnabled
+        preference.onPreferenceChangeListener = SharedPreferenceUpdater()
     }
 
     override fun onPreferenceTreeClick(preference: Preference): Boolean {
