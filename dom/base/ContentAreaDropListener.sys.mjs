@@ -69,8 +69,8 @@ ContentAreaDropListener.prototype = {
           let numNonLinks = 0;
           let hasURI = false;
           // We don't care whether we are in a private context, because we are
-          // only using fixedURI and thus there's no risk to use the wrong
-          // search engine.
+          // only using fixedURI and keywordProviderId and thus there's no risk
+          // to use the wrong search engine.
           let flags =
             Ci.nsIURIFixup.FIXUP_FLAG_FIX_SCHEME_TYPOS |
             Ci.nsIURIFixup.FIXUP_FLAG_ALLOW_KEYWORD_LOOKUP;
@@ -80,8 +80,11 @@ ContentAreaDropListener.prototype = {
               continue;
             }
 
+            // A line only counts as a URI if it fixes up to one without falling
+            // back to a keyword search. Otherwise a bare word would be taken
+            // for a URI, dropping the surrounding text instead of searching it.
             let info = Services.uriFixup.getFixupURIInfo(line, flags);
-            if (info.fixedURI) {
+            if (info.fixedURI && !info.keywordProviderId) {
               // Use the original line here, and let the caller decide
               // whether to perform fixup or not.
               hasURI = true;
@@ -95,7 +98,11 @@ ContentAreaDropListener.prototype = {
           }
 
           if (!hasURI && numNonLinks > 0) {
-            this._addLink(links, data, data, type);
+            // The whole text is used as a search query. Collapse embedded
+            // newlines (and surrounding whitespace) to single spaces, otherwise
+            // URI fixup would later strip the newlines and concatenate the
+            // words on separate lines.
+            this._addLink(links, data.replace(/\s+/g, " ").trim(), data, type);
           }
           return;
         }
