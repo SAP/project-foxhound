@@ -3316,6 +3316,11 @@ nsresult ContentParent::GetClipboardDataInternal(
     return NS_ERROR_INVALID_ARG;
   }
 
+  RefPtr<WindowGlobalParent> window = aRequestingWindowContext.get_canonical();
+  if (window && window->GetContentParent() != this) {
+    return NS_ERROR_ILLEGAL_VALUE;
+  }
+
   nsresult rv;
   nsCOMPtr<nsIClipboard> clipboard(do_GetService(kCClipboardCID, &rv));
   if (NS_FAILED(rv)) {
@@ -3330,7 +3335,6 @@ nsresult ContentParent::GetClipboardDataInternal(
   }
 
   nsCOMPtr<nsITransferable> transferable = result.unwrap();
-  RefPtr<WindowGlobalParent> window = aRequestingWindowContext.get_canonical();
 
   rv = aFunction(clipboard, transferable, aWhichClipboard, window);
   if (NS_FAILED(rv)) {
@@ -3363,6 +3367,11 @@ mozilla::ipc::IPCResult ContentParent::RecvGetClipboard(
     return IPC_FAIL(this, "passed null window to RecvGetClipboard()");
   }
 
+  if (rv == NS_ERROR_ILLEGAL_VALUE) {
+    return IPC_FAIL(
+        this, "attempt to paste into WindowContext loaded in another process");
+  }
+
   return IPC_OK();
 }
 
@@ -3384,6 +3393,11 @@ mozilla::ipc::IPCResult ContentParent::RecvGetClipboardDataIfSmallerThan(
   if (rv == NS_ERROR_INVALID_ARG) {
     return IPC_FAIL(
         this, "passed null window to RecvGetClipboardDataIfSmallerThan()");
+  }
+
+  if (rv == NS_ERROR_ILLEGAL_VALUE) {
+    return IPC_FAIL(
+        this, "attempt to paste into WindowContext loaded in another process");
   }
 
   aResolver(std::move(result));
