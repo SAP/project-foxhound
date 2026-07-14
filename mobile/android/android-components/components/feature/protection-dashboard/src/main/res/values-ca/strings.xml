@@ -8,47 +8,47 @@
 
 <resources>
   <!-- Title shown in the protection dashboard indicating the user is protected -->
-  <string name="mozac_protections_dashboard_youre_protected">Du er beskyttet</string>
+  <string name="mozac_protections_dashboard_youre_protected">Esteu protegit</string>
   <plurals name="mozac_protections_dashboard_trackers_blocked_this_week">
     <!--
       Label shown below the tracker count in the dashboard. The count is displayed separately
       above this string and is used to select the correct plural form. Do not include the number in
       the translation.
     -->
-    <item quantity="one">Forsøg på sporing blokeret denne uge</item>
-    <item quantity="other">Forsøg på sporing blokeret denne uge</item>
+    <item quantity="one">Element de seguiment blocat aquesta setmana</item>
+    <item quantity="other">Elements de seguiment blocats aquesta setmana</item>
   </plurals>
   <plurals name="mozac_protections_dashboard_data_saved">
     <!-- Label showing data saved in megabytes. %1$d is the number of MB saved -->
-    <item quantity="one">%1$d MB sparet</item>
-    <item quantity="other">%1$d MB sparet</item>
+    <item quantity="one">S’ha estalviat %1$d MB</item>
+    <item quantity="other">S’han estalviat %1$d MB</item>
   </plurals>
   <!-- Section header for tracker category breakdown -->
-  <string name="protections_dashboard_where_they_came_from">Hvor de kom fra</string>
+  <string name="protections_dashboard_where_they_came_from">D’on provenien?</string>
   <!-- Tracker category: Advertising trackers -->
-  <string name="protections_dashboard_category_ads">Reklamer</string>
+  <string name="protections_dashboard_category_ads">Anuncis</string>
   <!-- Tracker category: Analytics trackers -->
-  <string name="protections_dashboard_category_analytics">Analyse</string>
+  <string name="protections_dashboard_category_analytics">Anàlisi</string>
   <!-- Tracker category: Social media trackers -->
-  <string name="protections_dashboard_category_social">Social</string>
+  <string name="protections_dashboard_category_social">Xarxes socials</string>
   <!-- Tracker category: Other trackers -->
-  <string name="protections_dashboard_category_others">Andet</string>
+  <string name="protections_dashboard_category_others">Altres</string>
   <!-- Title shown in the protection dashboard header next to the shield icon -->
-  <string name="mozac_protections_dashboard_trackers_blocked_this_week_title">Forsøg på sporing blokeret i denne uge</string>
+  <string name="mozac_protections_dashboard_trackers_blocked_this_week_title">Elements de seguiment blocats aquesta setmana</string>
   <!--
     Title shown when no trackers have been blocked yet
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
-  <string name="mozac_protections_dashboard_empty_title">%1$s blokerer sporings-mekanismer, mens du browser.</string>
+  <string name="mozac_protections_dashboard_empty_title">El %1$s bloca els elements de seguiment mentre navegueu.</string>
   <!-- Subtitle shown when no trackers have been blocked yet -->
-  <string name="mozac_protections_dashboard_empty_subtitle">Du kan se dem her.</string>
+  <string name="mozac_protections_dashboard_empty_subtitle">Els veureu aquí.</string>
   <plurals name="mozac_protections_dashboard_total_blocked_since_2">
     <!--
       Footer line shown in the dashboard summarizing total trackers blocked
       since a specific date. %1$d is the trackers count number (e.g. 123).
       %2$s is the formatted date (e.g. "February 23, 2026").
     -->
-    <item quantity="one">%1$d forsøg på sporing blokeret siden %2$s</item>
-    <item quantity="other">%1$d forsøg på sporing blokeret siden %2$s</item>
+    <item quantity="one">%1$d element de seguiment blocat des del %2$s</item>
+    <item quantity="other">%1$d elements de seguiment blocats des del %2$s</item>
   </plurals>
 </resources>

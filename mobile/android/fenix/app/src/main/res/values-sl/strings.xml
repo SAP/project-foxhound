@@ -335,6 +335,8 @@
     Content description for the translate page toolbar button that opens the translations dialog when no translation has occurred.
   -->
   <string name="browser_toolbar_translate">Prevedi stran</string>
+  <!-- CFR description for the browser toolbar describing the "Shake to summarize feature" -->
+  <string name="browser_toolbar_summarize_cfr_description">Stresite napravo in povzemite stran v nekaj sekundah. ⚡️</string>
   <!--
     Translation Toolbar
 
@@ -343,6 +345,8 @@
     %2$s is the name of the language which the page was translated to. (For example: French)
   -->
   <string name="translation_toolbar_translated_from_and_to" tools:ignore="UnusedResources">Prevedeno iz jezika %1$s v jezik %2$s</string>
+  <!-- Content description for the translate toolbar action that opens the translations dialog. -->
+  <string name="translation_toolbar_expand_action">Odpri prevodni list</string>
   <!-- Content description for the translate toolbar action that closes the translations toolbar. -->
   <string name="translation_toolbar_close_action">Skrij sporočilo</string>
   <!--
@@ -371,6 +375,8 @@
   <string name="ai_controls_see_whats_included">Kaj je in kaj ni vključeno</string>
   <!-- Banner text shown when AI enhancements are blocked -->
   <string name="ai_controls_blocked_info_banner">Nove in trenutne izboljšave z uporabo UI so privzeto prepovedane. Določene možnosti lahko posebej omogočite spodaj.</string>
+  <!-- Section header for the AI-powered features list -->
+  <string name="ai_controls_ai_powered_features">Funkcije, ki jih poganja UI</string>
   <!-- Title for the translations AI feature toggle -->
   <string name="ai_controls_translations_title">Prevajanje</string>
   <!-- Description for the translations AI feature toggle -->
@@ -529,6 +535,8 @@
   <string name="onboarding_marketing_redesign_learn_more" tools:ignore="UnusedResources">Kako uporabljamo te podatke</string>
   <!-- Marketing onboarding page button label. Button to confirm choice and start browsing. -->
   <string name="onboarding_marketing_redesign_positive_button" tools:ignore="UnusedResources">Potrdi</string>
+  <!-- Set to default browser onboarding redesign title. -->
+  <string name="onboarding_redesign_set_default_browser_title" tools:ignore="UnusedResources">Privzeto pridobite samodejno zaščito pred sledenjem</string>
   <!-- Set to default browser onboarding redesign body. -->
   <string name="onboarding_redesign_set_default_browser_body" tools:ignore="UnusedResources">Z enim dotikom se uprite podjetjem, ki vohunijo za vašimi kliki.</string>
   <!-- Sync onboarding redesign title. 'Firefox' is intentionally hardcoded. -->
@@ -617,11 +625,37 @@
   <string name="nova_onboarding_marketing_body" tools:ignore="BrandUsage,UnusedResources">Sporočite Mozillinim tehnološkim partnerjem za trženje, kako ste odkrili Firefox in da ga uporabljate. Ti podatki se nikoli ne bodo prodali. %1$s</string>
   <!-- Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded. -->
   <string name="nova_onboarding_marketing_body_2" tools:ignore="BrandUsage">Sporočite Mozillinim tehnološkim partnerjem za trženje, kako ste odkrili Firefox in da ga uporabljate. Ti podatki se nikoli ne bodo prodali.</string>
+  <!-- Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded. -->
+  <string name="nova_onboarding_marketing_body_3" tools:ignore="BrandUsage,UnusedResources">Pomagate nam lahko doseči več ljudi, tako da Mozilli dovolite, da kanale, na katerih promoviramo Firefox, obvestimo, da ste vi njegov uporabnik.</string>
+  <!--
+    Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
+    “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
+  -->
+  <string name="nova_onboarding_marketing_body_4" tools:ignore="BrandUsage,UnusedResources">Pomagate nam, da dosežemo več ljudi, tako da Mozilli dovolite, da platformo, s katere ste, obvesti, da uporabljate Firefox.</string>
   <!--
     Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
     “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
   -->
   <string name="nova_onboarding_marketing_body_5" tools:ignore="BrandUsage,UnusedResources">Pomagajte nam doseči več ljudi in dovolite Mozilli, da platformo, s katere prihajate, obvesti, da uporabljate Firefox.</string>
+  <!--
+    Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
+    “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
+    %1$s is replaced by an active link, using nova_onboarding_marketing_body_link_text as text (“How we use the data”).
+  -->
+  <string name="nova_onboarding_marketing_body_6" tools:ignore="BrandUsage,UnusedResources">Pomagajte nam doseči več ljudi in dovolite Mozilli, da platformo, s katere prihajate, obvesti, da uporabljate Firefox. %1$s</string>
+  <!--
+    Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
+    “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
+    %1$s is replaced by an active link, using nova_onboarding_marketing_body_link_text_1 as text (“Learn More”).
+  -->
+  <string name="nova_onboarding_marketing_body_7" tools:ignore="BrandUsage">Pomagajte nam doseči več ljudi in dovolite Mozilli, da platformo, s katere prihajate, obvesti, da uporabljate Firefox. %1$s</string>
+  <!-- Marketing onboarding additional body text. 'Firefox' is intentionally hardcoded. -->
+  <string name="nova_onboarding_marketing_body_line_two" tools:ignore="BrandUsage">Firefox je ponosno neodvisen in predan obrambi odprtega spleta pred tehnološkimi monopoli.</string>
+  <!--
+    Marketing onboarding additional body text. 'Firefox' is intentionally hardcoded.
+    “Allowing” refers to the main button “Allow and Continue”; the ask for the user is to allow communicating back to the platform.
+  -->
+  <string name="nova_onboarding_marketing_body_line_three" tools:ignore="BrandUsage">Prosim, razmislite o tem, da dovolite in pomagajte Firefoxu, da zmaga.</string>
   <!-- Marketing onboarding body link text. -->
   <string name="nova_onboarding_marketing_body_link_text">Kako uporabljamo te podatke</string>
   <!-- Marketing onboarding body link text. -->
@@ -638,6 +672,8 @@
   <string name="nova_onboarding_marketing_secondary_button_text_2">Ne</string>
   <!-- Notifications onboarding title. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_notifications_title" tools:ignore="BrandUsage,UnusedResources">Obvestila vam pomagajo, da ostanete varni v Firefoxu</string>
+  <!-- Notifications onboarding subtitle. 'Firefox' is intentionally hardcoded. -->
+  <string name="nova_onboarding_notifications_subtitle" tools:ignore="BrandUsage,UnusedResources">Odkrijte najnovejše možnosti zasebnosti v Firefoxu, da boste vedno na tekočem, kako ostati zaščiteni.</string>
   <!-- Notifications onboarding button. -->
   <string name="nova_onboarding_notifications_button">Vklopi obvestila</string>
   <!-- "Add search widget" onboarding title. -->
@@ -1326,6 +1362,8 @@
   <string name="preference_gestures_swipe_toolbar_show_tabs_2">Prikaz odprtih zavihkov s potegom orodne vrstice navzgor/navzdol</string>
   <!-- Preference for switching tabs by swiping horizontally on the addressbar -->
   <string name="preference_gestures_swipe_toolbar_switch_tabs_2">Preklop med zavihki s potegom naslovne vrstice vstran</string>
+  <!-- Preference for switching for the shake to summarize toggle in page summaries and customize settings -->
+  <string name="preferences_shake_to_summarize">Stresite za povzetek</string>
   <!--
     Library
 
@@ -1581,6 +1619,8 @@
   <string name="tab_group_onboarding_list_item_description">Za ustvaritev skupine izberite več zavihkov.</string>
   <!-- Content description (accessibility label) for button to dismiss the tab group onboarding item. -->
   <string name="tab_group_onboarding_item_dismiss_content_description">Zapri informativno ploščo o skupinah zavihkov</string>
+  <!-- The header text displayed on the tab groups page when no tab groups are open -->
+  <string name="tab_manager_empty_tab_groups_page_header">Preizkusite skupine zavihkov za manj drsenja, več opravljenega</string>
   <!-- The description displayed on the tab groups page when no tab groups are open -->
   <string name="tab_manager_empty_tab_groups_page_description">Izberite zavihke, iz katerih želite ustvariti skupino. Vanjo bodo shranjeni in pripravljeni na trenutek, ko jih boste potrebovali.</string>
   <!--
@@ -1629,6 +1669,19 @@
     <item quantity="few">Dodaj skupini zavihkov %1$s, %2$d zavihki, barva %3$s</item>
     <item quantity="other">Dodaj skupini zavihkov %1$s, %2$d zavihkov, barva %3$s</item>
   </plurals>
+  <plurals name="share_tab_group_button_content_description">
+    <!--
+      Content Description for share tab group button.
+      %1$s is the name of the tab group.
+      %2$d is the number of tabs in a tab group.
+    -->
+    <item quantity="one">Deli skupino zavihkov %1$s z %2$d zavihkom.</item>
+    <item quantity="two">Deli skupino zavihkov %1$s z %2$d zavihkoma.</item>
+    <item quantity="few">Deli skupino zavihkov %1$s z %2$d zavihki.</item>
+    <item quantity="other">Deli skupino zavihkov %1$s z %2$d zavihki.</item>
+  </plurals>
+  <!-- Content description for the grabber/handle of the tab group bottom sheet. -->
+  <string name="tab_group_sheet_dismiss_description">Prikaži skupino zavihkov, strni ročico za vlečenje</string>
   <plurals name="expanded_tab_group_header_description">
     <!--
       Accessibility description for the header of an expanded tab group.
@@ -1930,6 +1983,10 @@
   <string name="webcompat_reporter_label_whats_broken_3">Kaj ne deluje?</string>
   <!-- Content description for the icon button that clears the selected broken site reason in the WebCompat Reporter. -->
   <string name="webcompat_reporter_clear_reason_content_description">Prekliči izbrani razlog</string>
+  <!-- The error message of the description when the user selects "Something else" as the reason, but left the description empty or too short. -->
+  <string name="webcompat_reporter_description_error">Vnesite vsaj 10 znakov</string>
+  <!-- The label/title of a mandatory field in the Web Compat Reporter feature for adding additional information. -->
+  <string name="webcompat_reporter_label_mandatory_description">Podrobneje opišite težavo, da nam jo pomagate raziskati</string>
   <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_label_whats_broken_2">Kaj je narobe?</string>
   <!-- The placeholder text for the dropdown where a user selects a high-level reason why the site is broken. -->
@@ -1944,6 +2001,8 @@
   <string name="webcompat_reporter_add_more_info">Dodaj več informacij</string>
   <!-- The button text for the cancel button to leave the Web Compat Reporter feature. -->
   <string name="webcompat_reporter_cancel">Prekliči</string>
+  <!-- The button text for the send button to submit the provided form data. -->
+  <string name="webcompat_reporter_send_report">Pošlji poročilo</string>
   <!-- The button text for the send button to submit the provided form data. -->
   <string name="webcompat_reporter_send">Pošlji</string>
   <!-- Text for a snackbar to confirm the successful submission of a WebCompat report. -->
@@ -1990,6 +2049,8 @@
   <string name="webcompat_reporter_reason_turn_off_adblocker">Stran je prosila, naj izklopim blokiranje oglasov</string>
   <!-- Broken site reason text for browser isn’t supported or blocked -->
   <string name="webcompat_reporter_reason_notsupported_2">Brskalnik ni podprt ali je blokiran</string>
+  <!-- Broken site reason text for the site being deceptive -->
+  <string name="webcompat_reporter_reason_site_is_deceptive">Stran je zavajajoča</string>
   <!-- Broken site reason text for browser isn’t supported or blocked -->
   <string name="webcompat_reporter_reason_notsupported">Brskalnik ni podprt ali je blokiran</string>
   <!-- Broken site reason text for something else -->
@@ -3741,6 +3802,16 @@
     %s is the name of the app (for example "Firefox").
   -->
   <string name="protection_panel_banner_protected_title">%s je na straži</string>
+  <plurals name="protection_panel_banner_protected_blocked_trackers_description">
+    <!--
+      Description text for the protection panel banner when privacy dashboard is enabled.
+      %1$d is the number of trackers blocked.
+    -->
+    <item quantity="one">Na tem spletnem mestu je bil blokiran %1$d sledilec.</item>
+    <item quantity="two">Na tem spletnem mestu sta bila blokirana %1$d sledilca.</item>
+    <item quantity="few">Na tem spletnem mestu so bili blokirani %1$d sledilci.</item>
+    <item quantity="other">Na tem spletnem mestu je bilo blokiranih %1$d sledilcev.</item>
+  </plurals>
   <!--
     Description text for the protection panel banner when privacy dashboard is enabled.
     and there are no trackers blocked.
@@ -3771,6 +3842,16 @@
   <string name="protection_panel_privacy_and_security_settings_2">Nastavitve zasebnosti</string>
   <!-- Title text for the protection panel permissions section. -->
   <string name="protection_panel_permissions_title">Dovoljenja</string>
+  <plurals name="trackers_blocked_panel_total_num_trackers_blocked_2">
+    <!--
+      Text for displaying the total number of trackers blocked in the trackers blocked panel.
+      %1$d is a placeholder for the number of trackers blocked.
+    -->
+    <item quantity="one">Na tem spletnem mestu je bil blokiran %1$d sledilec</item>
+    <item quantity="two">Na tem spletnem mestu sta bila blokirana %1$d sledilca</item>
+    <item quantity="few">Na tem spletnem mestu so bili blokirani %1$d sledilci</item>
+    <item quantity="other">Na tem spletnem mestu je bilo blokiranih %1$d sledilcev</item>
+  </plurals>
   <plurals name="trackers_blocked_panel_num_social_media_trackers">
     <!--
       Text for displaying in the trackers blocked panel the total number of blocked social media trackers.
@@ -3810,6 +3891,16 @@
     <item quantity="two">%1$d sledilca prstnih odtisov</item>
     <item quantity="few">%1$d sledilci prstnih odtisov</item>
     <item quantity="other">%1$d sledilcev prstnih odtisov</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_trackers_2">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked generic tracking scripts.
+      %1$d is a placeholder for the number of trackers blocked.
+    -->
+    <item quantity="one">%1$d element sledilne vsebine</item>
+    <item quantity="two">%1$d elementa sledilne vsebine</item>
+    <item quantity="few">%1$d elementi sledilne vsebine</item>
+    <item quantity="other">%1$d elementov sledilne vsebine</item>
   </plurals>
   <plurals name="trackers_blocked_panel_num_trackers_blocked_this_week_2">
     <!--
@@ -3852,6 +3943,8 @@
     %s is a placeholder for the name of the certificate authority that issued the certificate.
   -->
   <string name="connection_security_panel_verified_by">Overil %s</string>
+  <!-- Content description (not visible, for screen readers etc.) for the handle used to drag the protections dashboard to the bottom of the screen and close it. -->
+  <string name="tracker_protections_dashboard_close_handlebar_content_description">Zapri pregledno ploščo</string>
   <!--
     Text for the connection security panel when the site uses a QWAC.
     %s is a placeholder for the organization for which the certificate was issued.
@@ -3975,6 +4068,26 @@
   <string name="microsurvey_sync_title" tools:ignore="BrandUsage,UnusedResources">Kako zadovoljni ste s sinhronizacijo v Firefoxu?</string>
   <!-- Text shown in the survey title for 'describe your experience so far' microsurvey. Note: The word "Firefox" should NOT be translated. -->
   <string name="microsurvey_describe_your_experience_title" tools:ignore="BrandUsage,UnusedResources">Pomagajte nam izboljšati Firefox. Katero izmed naštetega najbolje opisuje vašo dosedanjo izkušnjo?</string>
+  <!--
+    Uninstall Survey
+
+    Title text for the uninstall survey dialog, asking the user for the reason they are removing the app
+  -->
+  <string name="microsurvey_uninstall_survey_title">Vaše povratne informacije nam pomenijo zelo veliko. Zakaj odstranjujete aplikacijo?</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_1_v2">Je počasna ali nezanesljiva</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_2_v2">Spletne strani niso delovale pravilno</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_3_v2">Ne ponuja funkcij, ki jih potrebujem</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_4_v2">Videi, prenosi ali predstavnost niso delovali</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_5_v2">Težko jo je uporabljati, slabo je zasnovana</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_6_v2">Imam pomisleke glede zasebnosti ali varnosti</string>
+  <!-- Button label shown at the bottom of the uninstall survey -->
+  <string name="uninstall_survey_button_label">Pošlji povratne informacije in odstrani</string>
   <!--
     Accessibility
 
@@ -4403,6 +4516,10 @@
   <string name="sports_widget_view_match_details" tools:ignore="UnusedResources">Ogled podrobnosti tekme</string>
   <!-- Sports widget section header for related soccer matches in the same group. -->
   <string name="sports_widget_related_matches" tools:ignore="UnusedResources">Povezane tekme</string>
+  <!-- Sports widget match status suffix appended to match scores (e.g., "3 - 2 (Full time)") to indicate the match has been completed. -->
+  <string name="sports_widget_match_full_time_suffix">(končni rezultat)</string>
+  <!-- Sports widget match status to indicate the match has been completed. -->
+  <string name="sports_widget_match_full_time_2">Končni rezultat</string>
   <!--
     Sports widget card title encouraging the user to follow the soccer tournament. “Keep tabs on” is an informal expression
     meaning to stay updated on or regularly follow something (in this case, World Cup matches and updates).
@@ -4451,6 +4568,18 @@
   <!-- Content description (for accessibility, not displayed)  for the action that navigates to the World Cup website. -->
   <string name="sports_widget_go_to_world_cup_site_content_description" tools:ignore="UnusedResources">Obišči spletno stran svetovnega prvenstva</string>
   <!--
+    Content description (for accessibility, not displayed)  announcing an upcoming soccer match.
+    %1$s is the home team name, %2$s is the away team name, %3$s is the match date, %4$s is the kickoff time.
+  -->
+  <string name="sports_widget_upcoming_match_content_description">Kmalu: %1$s proti %2$s, %3$s ob %4$s</string>
+  <!--
+    Content description (for accessibility, not displayed) announcing a soccer match.
+    %1$s is the home team name, %2$s is the away team name, %3$s is trailing context
+    (e.g. formatted score "1 - 2 (Full time)", upcoming match info "Jun 19 5:00 PM",
+    or a match status like "Full time").
+  -->
+  <string name="sports_widget_match_content_description">%1$s proti %2$s, %3$s</string>
+  <!--
     Content description (for accessibility, not displayed)  used for the sports widget card header announcing a live match for a group or stage.
     %s is the soccer tournament group name or stage (e.g. Group A represented by sports_widget_group_a, Round of 32 represented by sports_widget_round_of_32,
     or Final represented by sports_widget_final).
@@ -4462,6 +4591,11 @@
     and %5$s is the match elapsed time (e.g. 72 minutes).
   -->
   <string name="sports_widget_live_score_content_description">%1$s %2$d, %3$s %4$d, %5$s, v živo</string>
+  <!--
+    Content description (for accessibility, not displayed) announcing the elapsed minutes of a live match.
+    %1$s is the clock value, which may be a plain number (e.g. "72") or include extra time (e.g. "90+3").
+  -->
+  <string name="sports_widget_match_elapsed_minutes">Pretečen čas v minutah: %1$s</string>
   <!--
     Content description (for accessibility, not displayed) for a paginated item.
     %1$s is the soccer tournament group name or stage (e.g. Group A represented by sports_widget_group_a, Round of 32 represented by sports_widget_round_of_32),
@@ -4487,6 +4621,10 @@
   <string name="sports_widget_error_connection_offline_description">Preverite internetno povezavo in poskusite znova.</string>
   <!-- Sports widget general group stage label in the soccer tournament. -->
   <string name="sports_widget_group_stage">Skupinski del</string>
+  <!-- Sports widget error card title shown when match data fails to load. -->
+  <string name="sports_widget_error_load_failed_title">Podatki o tekmah trenutno niso na voljo.</string>
+  <!-- Sports widget error card description shown when match data fails to load. -->
+  <string name="sports_widget_error_load_failed_description">Poskusite znova čez nekaj minut.</string>
   <!-- Content description (for accessibility, not displayed) for teams which have not yet been determined in the match schedule. -->
   <string name="sports_widget_team_to_be_determined">Ekipa še ni določena</string>
   <!-- ==== End of Terms of use popup prompt. ==== -->
@@ -4503,6 +4641,8 @@
   <string name="privacy_notice_updated_homepage_message_privacy_notice" tools:ignore="UnusedResources">obvestilo o zasebnosti</string>
   <!-- The second active link used in privacy_notice_updated_homepage_message -->
   <string name="privacy_notice_updated_homepage_message_learn_more" tools:ignore="UnusedResources">Več o tem</string>
+  <!-- Lens image search button content description -->
+  <string name="lens_search_content_description">Išči s sliko</string>
   <!-- Toast shown when the user denies the camera permission requested by the Lens camera screen -->
   <string name="lens_camera_permission_denied">Dovoljenje zavrnjeno</string>
   <!--

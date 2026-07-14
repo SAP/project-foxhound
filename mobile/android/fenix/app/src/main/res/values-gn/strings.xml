@@ -1973,6 +1973,8 @@
   <string name="webcompat_reporter_clear_reason_content_description">Embogue mba’érepa eiporavo</string>
   <!-- The error message of the description when the user selects "Something else" as the reason, but left the description empty or too short. -->
   <string name="webcompat_reporter_description_error">Orekova’erã michĩveramo 10 tai</string>
+  <!-- The label/title of a mandatory field in the Web Compat Reporter feature for adding additional information. -->
+  <string name="webcompat_reporter_label_mandatory_description">Ehaipaite apañuái rehegua ore pytyvõkuaa hag̃ua rohapykuehóvo</string>
   <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_label_whats_broken_2">¿Mba’épa apañuái?</string>
   <!-- The placeholder text for the dropdown where a user selects a high-level reason why the site is broken. -->
@@ -4092,6 +4094,16 @@
   <string name="microsurvey_uninstall_survey_title">Ne remiandu iporã oréve. ¿Mba’ére reipe’ahína?</string>
   <!-- Uninstall survey answer option -->
   <string name="uninstall_survey_option_1_v2">Imbegue térã naiporãi</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_2_v2">Ñanduti rogueita ndoikoporãmbái</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_3_v2">Noĩmbái tembiapoite aikotevẽva</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_4_v2">Ta’ãngamýi, ñemboguejy ha mba’éichapa ndoikói</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_5_v2">Hasyeterei ijeporu térã ojejapovai</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_6_v2">Apañuái tekoñemi térã tekorosãgua</string>
   <!-- Button label shown at the bottom of the uninstall survey -->
   <string name="uninstall_survey_button_label">Emondo temiandu ha eipe’aite</string>
   <!--
@@ -4695,6 +4707,12 @@
     user that the camera is being used to scan a QR code.
   -->
   <string name="lens_camera_title_qr">QR ayvu</string>
+  <!-- Title for the Google Lens Search Settings page feature toggle -->
+  <string name="search_settings_google_lens_title">Embojuruja Google Lens rekaha</string>
+  <!-- Description for the Google Lens Search Settings page feature toggle -->
+  <string name="search_settings_google_lens_description">Emondo ta’ãngaita Google-pe hekapy ojehecha hag̃ua.</string>
+  <!-- Caption shown under the Google Lens toggle clarifying when the feature is available -->
+  <string name="preferences_google_lens_availability_caption">Eiporukuaa Google ijuruja aja yvate gotyo oĩvape añoite ha upe jehekaha ijurujáva eikundaha aja.</string>
   <!-- Title for the Google Lens AI feature toggle -->
   <string name="ai_controls_google_lens_title">Google Lens</string>
   <!-- Description for the Google Lens AI feature toggle -->

@@ -149,6 +149,8 @@
   <string name="home_screen_shortcut_open_new_private_tab_2">Nowa karta prywatna</string>
   <!-- Shortcut action to open Passwords screen -->
   <string name="home_screen_shortcut_passwords">Hasła</string>
+  <!-- Shortcut action to open uninstall survey -->
+  <string name="home_screen_shortcut_uninstall_survey">Odinstaluj, ale dlaczego?</string>
   <!--
     Recent Tabs
 
@@ -643,14 +645,33 @@
     %1$s is replaced by an active link, using nova_onboarding_marketing_body_link_text as text (“How we use the data”).
   -->
   <string name="nova_onboarding_marketing_body_6" tools:ignore="BrandUsage,UnusedResources">Pomóż nam dotrzeć do większej liczby osób, pozwalając Mozilli poinformować platformę, z\u00a0której pobrano Firefoksa, że go używasz. %1$s</string>
+  <!--
+    Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
+    “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
+    %1$s is replaced by an active link, using nova_onboarding_marketing_body_link_text_1 as text (“Learn More”).
+  -->
+  <string name="nova_onboarding_marketing_body_7" tools:ignore="BrandUsage">Możesz pomóc nam dotrzeć do większej liczby osób, pozwalając Mozilli poinformować platformę, z której pobrano Firefoksa, że go używasz. %1$s</string>
+  <!-- Marketing onboarding additional body text. 'Firefox' is intentionally hardcoded. -->
+  <string name="nova_onboarding_marketing_body_line_two" tools:ignore="BrandUsage">Firefox szczyci się swoją niezależnością i jest oddany sprawie obrony otwartej sieci przed monopolami technologicznymi.</string>
+  <!--
+    Marketing onboarding additional body text. 'Firefox' is intentionally hardcoded.
+    “Allowing” refers to the main button “Allow and Continue”; the ask for the user is to allow communicating back to the platform.
+  -->
+  <string name="nova_onboarding_marketing_body_line_three" tools:ignore="BrandUsage">Rozważ zezwolenie, aby pomóc Firefoksowi wygrać.</string>
   <!-- Marketing onboarding body link text. -->
   <string name="nova_onboarding_marketing_body_link_text">Jak wykorzystujemy te dane</string>
+  <!-- Marketing onboarding body link text. -->
+  <string name="nova_onboarding_marketing_body_link_text_1">Więcej informacji</string>
   <!-- Marketing onboarding primary button text. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage,UnusedResources">Pomóż Firefoksowi</string>
+  <!-- Marketing onboarding primary button text. -->
+  <string name="nova_onboarding_marketing_primary_button_text_3">Tak</string>
   <!-- Marketing onboarding primary button text. -->
   <string name="nova_onboarding_marketing_primary_button_text_2">Zezwól i\u00a0kontynuuj</string>
   <!-- Marketing onboarding secondary button text. -->
   <string name="nova_onboarding_marketing_secondary_button_text" tools:ignore="UnusedResources">Nie, dziękuję</string>
+  <!-- Marketing onboarding secondary button text. -->
+  <string name="nova_onboarding_marketing_secondary_button_text_2">Nie</string>
   <!-- Notifications onboarding title. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_notifications_title" tools:ignore="BrandUsage,UnusedResources">Powiadomienia pomogą Ci zachować bezpieczeństwo z\u00a0Firefoksem</string>
   <!-- Notifications onboarding subtitle. 'Firefox' is intentionally hardcoded. -->
@@ -1017,6 +1038,8 @@
   <string name="customize_toggle_pocket_sponsored">Sponsorowane artykuły</string>
   <!-- Title for the opening wallpaper settings screen -->
   <string name="customize_wallpapers">Tapety</string>
+  <!-- Label for the menu item that opens the wallpaper settings screen. -->
+  <string name="browser_menu_change_wallpaper">Zmień tapetę</string>
   <!-- Title for the customize home screen section with sponsored shortcuts. -->
   <string name="customize_toggle_contile">Sponsorowane skróty</string>
   <!-- Title for the customize home screen section that toggles the Homepage sports widget. -->
@@ -1952,6 +1975,14 @@
   <!-- The error message of the URL text field when an invalid URL has been entered. -->
   <string name="webcompat_reporter_url_error_invalid">Proszę wprowadzić prawidłowy adres</string>
   <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
+  <string name="webcompat_reporter_label_whats_broken_3">Co nie działa?</string>
+  <!-- Content description for the icon button that clears the selected broken site reason in the WebCompat Reporter. -->
+  <string name="webcompat_reporter_clear_reason_content_description">Wyczyść wybrany powód</string>
+  <!-- The error message of the description when the user selects "Something else" as the reason, but left the description empty or too short. -->
+  <string name="webcompat_reporter_description_error">Wpisz co najmniej 10 znaków</string>
+  <!-- The label/title of a mandatory field in the Web Compat Reporter feature for adding additional information. -->
+  <string name="webcompat_reporter_label_mandatory_description">Szczegółowo opisz problem, aby pomóc nam go zbadać</string>
+  <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_label_whats_broken_2">Co działa niepoprawnie?</string>
   <!-- The placeholder text for the dropdown where a user selects a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_choose_reason_2">Wybierz powód</string>
@@ -1965,6 +1996,8 @@
   <string name="webcompat_reporter_add_more_info">Dodaj więcej informacji</string>
   <!-- The button text for the cancel button to leave the Web Compat Reporter feature. -->
   <string name="webcompat_reporter_cancel">Anuluj</string>
+  <!-- The button text for the send button to submit the provided form data. -->
+  <string name="webcompat_reporter_send_report">Wyślij zgłoszenie</string>
   <!-- The button text for the send button to submit the provided form data. -->
   <string name="webcompat_reporter_send">Wyślij</string>
   <!-- Text for a snackbar to confirm the successful submission of a WebCompat report. -->
@@ -1985,6 +2018,12 @@
   <string name="webcompat_reporter_preview_bottom_sheet_header">Podgląd zgłoszenia</string>
   <!-- Label for the “Send” button shown in the WebCompat Report preview panel, which the user taps to submit the report. -->
   <string name="webcompat_reporter_preview_bottom_sheet_send">Wyślij</string>
+  <!-- Title for the Edit URL confirmation dialog in the WebCompatReporter -->
+  <string name="webcompat_reporter_edit_url_dialog_title">Edytuj adres witryny</string>
+  <!-- Text shown on the save button for the Edit URL confirmation dialog in the WebCompatReporter. -->
+  <string name="webcompat_reporter_edit_url_dialog_save">Zachowaj</string>
+  <!-- Text shown on the dismiss button for the Edit URL confirmation dialog in the WebCompatReporter. -->
+  <string name="webcompat_reporter_edit_url_dialog_dismiss">Zamknij</string>
   <!--
     These reason strings are dropdown options on a WebCompat reporter form, indicating what is broken on the site.
 
@@ -2003,6 +2042,10 @@
   <string name="webcompat_reporter_reason_account2">Nie można się zalogować ani zarejestrować</string>
   <!-- Broken site reason text for site asked to turn off ad blocker -->
   <string name="webcompat_reporter_reason_turn_off_adblocker">Strona poprosiła o\u00a0wyłączenie blokowania reklam</string>
+  <!-- Broken site reason text for browser isn’t supported or blocked -->
+  <string name="webcompat_reporter_reason_notsupported_2">Przeglądarka nie jest obsługiwana lub została zablokowana</string>
+  <!-- Broken site reason text for the site being deceptive -->
+  <string name="webcompat_reporter_reason_site_is_deceptive">Ta strona jest próbą oszustwa</string>
   <!-- Broken site reason text for browser isn’t supported or blocked -->
   <string name="webcompat_reporter_reason_notsupported">Przeglądarka nie jest obsługiwana lub została zablokowana</string>
   <!-- Broken site reason text for something else -->
@@ -2423,6 +2466,8 @@
   <string name="preferences_take_survey">Wypełnij ankietę</string>
   <!-- Preference for not taking the short survey. -->
   <string name="preferences_not_take_survey">Nie, dziękuję</string>
+  <!-- Error message shown in a Toast when the system fails to trigger the device uninstallation prompt. -->
+  <string name="uninstall_survey_error_failed">Otwarcie systemowego komunikatu odinstalowania się nie powiodło. Należy bezpośrednio użyć systemowej funkcji odinstalowania.</string>
   <!--
     Snackbar
 
@@ -3086,6 +3131,14 @@
   <string name="ip_protection_onboarding_body">%1$s, ukrywając swoje położenie, nawet w\u00a0publicznej sieci Wi-Fi. Bezpłatne %2$d\u00a0GB co miesiąc.</string>
   <!-- Used as text for a link in ip_protection_onboarding_body. Make sure to adapt capitalization if the link is in the middle of the sentence. -->
   <string name="ip_protection_onboarding_body_link">Przeglądaj Internet z\u00a0dodatkową ochroną</string>
+  <!--
+    The body of the VPN onboarding card for a promotion that provides unlimited data bandwidth for a certain time.
+    %1$s is a localized date (for example "Jun 9") indicating the end of the promotional period.
+    %2$s is a link using ip_protection_onboarding_body_link_promo (“Learn more”) as text. It links to a support article about VPN on Firefox.
+  -->
+  <string name="ip_protection_onboarding_body_promo">Włącz sieć VPN, aby zwiększyć prywatność przeglądania i utrudnić śledzenie. Wypróbuj ją teraz, aby uzyskać nieograniczoną przepustowość do %1$s. %2$s</string>
+  <!-- Used as text for a link in ip_protection_onboarding_body. Make sure to adapt capitalization if the link is in the middle of the sentence. -->
+  <string name="ip_protection_onboarding_body_link_promo">Więcej informacji</string>
   <!-- Label for the dismiss button on the onboarding bottom sheet. -->
   <string name="ip_protection_onboarding_not_now_button">Nie teraz</string>
   <!-- Snackbar (in-app pop-up notification) text to signal the browser VPN connection error -->
@@ -3095,6 +3148,8 @@
     %1$d is the total monthly allowance in GB (for example "50").
   -->
   <string name="ip_protection_data_limit_reached_snackbar">Wykorzystano %1$d\u00a0GB danych VPN. Dostęp zostanie przywrócony w\u00a0przyszłym miesiącu.</string>
+  <!-- Snackbar (in-app pop-up notification) action button text that takes the user to the VPN settings screen. -->
+  <string name="ip_protection_data_limit_reached_snackbar_action">Ustawienia</string>
   <!--
     Autofill
 
@@ -3401,6 +3456,8 @@
   <string name="homepage_shortcuts_add_website">Dodaj witrynę</string>
   <!-- Title text for the "Enter a Website URL" dialog for adding a shortcut. -->
   <string name="homepage_shortcuts_add_website_title">Wpisz adres witryny</string>
+  <!-- Title for the "Popular sites" section in the "Add to homepage" bottom sheet. -->
+  <string name="homepage_shortcuts_popular_sites">Popularne witryny</string>
   <!-- Title text displayed in the dialog when shortcuts limit is reached. -->
   <string name="shortcut_max_limit_title">Osiągnięto limit skrótów</string>
   <!-- Content description text displayed in the dialog when shortcut limit is reached. -->
@@ -3827,6 +3884,69 @@
   <string name="protection_panel_privacy_and_security_settings_2">Ustawienia prywatności</string>
   <!-- Title text for the protection panel permissions section. -->
   <string name="protection_panel_permissions_title">Uprawnienia</string>
+  <plurals name="trackers_blocked_panel_total_num_trackers_blocked_2">
+    <!--
+      Text for displaying the total number of trackers blocked in the trackers blocked panel.
+      %1$d is a placeholder for the number of trackers blocked.
+    -->
+    <item quantity="one">Na tej witrynie zablokowano %1$d element śledzący</item>
+    <item quantity="few">Na tej witrynie zablokowano %1$d elementy śledzące</item>
+    <item quantity="other">Na tej witrynie zablokowano %1$d elementów śledzących</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_social_media_trackers">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked social media trackers.
+      %1$d is a placeholder for the number of social media trackers blocked.
+    -->
+    <item quantity="one">%1$d element śledzący serwisu społecznościowego</item>
+    <item quantity="few">%1$d elementy śledzące serwisów społecznościowych</item>
+    <item quantity="other">%1$d elementów śledzących serwisów społecznościowych</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_cross_site_cookies">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked cross-site tracking cookies.
+      %1$d is a placeholder for the number of cross-site tracking cookies blocked.
+    -->
+    <item quantity="one">%1$d ciasteczko śledzące między witrynami</item>
+    <item quantity="few">%1$d ciasteczka śledzące między witrynami</item>
+    <item quantity="other">%1$d ciasteczek śledzących między witrynami</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_cryptominers">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked cryptomining scripts.
+      %1$d is a placeholder for the number of cryptominers blocked.
+    -->
+    <item quantity="one">%1$d element używający urządzenia użytkownika do generowania kryptowalut</item>
+    <item quantity="few">%1$d elementy używające urządzenia użytkownika do generowania kryptowalut</item>
+    <item quantity="other">%1$d elementów używających urządzenia użytkownika do generowania kryptowalut</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_fingerprinters">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked fingerprinter scripts.
+      %1$d is a placeholder for the number of fingerprinters blocked.
+    -->
+    <item quantity="one">%1$d element śledzący przez zbieranie informacji o konfiguracji</item>
+    <item quantity="few">%1$d elementy śledzące przez zbieranie informacji o konfiguracji</item>
+    <item quantity="other">%1$d elementów śledzących przez zbieranie informacji o konfiguracji</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_trackers_2">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked generic tracking scripts.
+      %1$d is a placeholder for the number of trackers blocked.
+    -->
+    <item quantity="one">%1$d treść z elementami śledzącymi</item>
+    <item quantity="few">%1$d treści z elementami śledzącymi</item>
+    <item quantity="other">%1$d treści z elementami śledzącymi</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_trackers_blocked_this_week_2">
+    <!--
+      Text for displaying the number of trackers blocked this week in the trackers blocked panel.
+      %1$d is a placeholder for the number of trackers blocked this week.
+    -->
+    <item quantity="one">W tym tygodniu zablokowano %1$d element śledzący</item>
+    <item quantity="few">W tym tygodniu zablokowano %1$d elementy śledzące</item>
+    <item quantity="other">W tym tygodniu zablokowano %1$d elementów śledzących</item>
+  </plurals>
   <!--
     Text for displaying the total number of trackers blocked in the trackers blocked panel.
     %d is a placeholder for the number of trackers blocked.
@@ -3858,6 +3978,8 @@
     %s is a placeholder for the name of the certificate authority that issued the certificate.
   -->
   <string name="connection_security_panel_verified_by">Zweryfikowane przez: %s</string>
+  <!-- Content description (not visible, for screen readers etc.) for the handle used to drag the protections dashboard to the bottom of the screen and close it. -->
+  <string name="tracker_protections_dashboard_close_handlebar_content_description">Zamknij panel</string>
   <!--
     Text for the connection security panel when the site uses a QWAC.
     %s is a placeholder for the organization for which the certificate was issued.
@@ -3981,6 +4103,26 @@
   <string name="microsurvey_sync_title" tools:ignore="BrandUsage,UnusedResources">Jak określisz swoje zadowolenie z\u00a0synchronizacji w\u00a0Firefoksie?</string>
   <!-- Text shown in the survey title for 'describe your experience so far' microsurvey. Note: The word "Firefox" should NOT be translated. -->
   <string name="microsurvey_describe_your_experience_title" tools:ignore="BrandUsage,UnusedResources">Pomóż nam ulepszyć Firefoksa. Które z\u00a0poniższych najlepiej opisuje Twoje dotychczasowe wrażenia?</string>
+  <!--
+    Uninstall Survey
+
+    Title text for the uninstall survey dialog, asking the user for the reason they are removing the app
+  -->
+  <string name="microsurvey_uninstall_survey_title">Twoja opinia jest dla nas ważna. Dlaczego odinstalowujesz tę aplikację?</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_1_v2">Jest powolna lub zawodna</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_2_v2">Strony nie działają poprawnie</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_3_v2">Nie ma potrzebnych mi funkcji</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_4_v2">Filmy, pobieranie lub multimedia nie działają</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_5_v2">Jest trudna w użytku lub słabo zaprojektowana</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_6_v2">Mam obawy związane z prywatnością lub bezpieczeństwem</string>
+  <!-- Button label shown at the bottom of the uninstall survey -->
+  <string name="uninstall_survey_button_label">Prześlij opinię i odinstaluj</string>
   <!--
     Accessibility
 
@@ -4560,6 +4702,44 @@
   <string name="privacy_notice_updated_homepage_message_privacy_notice" tools:ignore="UnusedResources">zasady ochrony prywatności</string>
   <!-- The second active link used in privacy_notice_updated_homepage_message -->
   <string name="privacy_notice_updated_homepage_message_learn_more" tools:ignore="UnusedResources">Więcej informacji</string>
+  <!-- Google Lens prototype related strings -->
+  <string name="preferences_debug_settings_google_lens_integration">Włącz integrację z Google Lens</string>
+  <!-- Lens image search button content description -->
+  <string name="lens_search_content_description">Wyszukaj za pomocą obrazu</string>
+  <!-- Content description for the gallery picker button in the Lens camera screen -->
+  <string name="content_description_gallery">Wybierz z galerii, aby wysłać do Google Lens</string>
+  <!-- Content description for the shutter button in the Lens camera screen -->
+  <string name="content_description_take_photo">Zrób zdjęcie i wyślij do Google Lens</string>
+  <!-- Image context menu entry that sends the long-pressed image to Google Lens -->
+  <string name="context_menu_open_image_with_google_lens">Szukaj w Google Lens</string>
+  <!-- Toast shown when the user denies the camera permission requested by the Lens camera screen -->
+  <string name="lens_camera_permission_denied">Brak uprawnienia</string>
+  <!--
+    Title shown at the top of the camera screen, next to the close button, telling the
+    user that the photo they capture will be sent to Google Lens for a visual search.
+  -->
+  <string name="lens_camera_title_lens">Google Lens</string>
+  <!--
+    Title shown at the top of the camera screen, next to the close button, telling the
+    user that the camera is being used to scan a QR code.
+  -->
+  <string name="lens_camera_title_qr">Kod QR</string>
+  <!-- Title for the Google Lens Search Settings page feature toggle -->
+  <string name="search_settings_google_lens_title">Wyszukiwanie w Google Lens</string>
+  <!-- Description for the Google Lens Search Settings page feature toggle -->
+  <string name="search_settings_google_lens_description">Wysyła obrazy i zdjęcia do Google, aby wyszukać obrazem.</string>
+  <!-- Caption shown under the Google Lens toggle clarifying when the feature is available -->
+  <string name="preferences_google_lens_availability_caption">Dostępne tylko wtedy, gdy wyszukiwarka Google jest włączona i w danej chwili aktywna.</string>
+  <!-- Title for the Google Lens AI feature toggle -->
+  <string name="ai_controls_google_lens_title">Google Lens</string>
+  <!-- Description for the Google Lens AI feature toggle -->
+  <string name="ai_controls_google_lens_description">Wysyła obrazy i zdjęcia do Google, aby wyszukać obrazem.</string>
+  <!-- Content description for the Google Lens half of the camera mode toggle -->
+  <string name="lens_camera_mode_lens">Google Lens</string>
+  <!-- Content description for the QR scanner half of the camera mode toggle -->
+  <string name="lens_camera_mode_qr">Skaner kodów QR</string>
+  <!-- Toast shown when the user picks an image from the gallery in QR mode but no QR code is found in it -->
+  <string name="lens_camera_qr_no_code_found">Na obrazie nie odnaleziono kodu QR</string>
   <!--
     Firefox Labs
 
@@ -4596,6 +4776,8 @@
   <string name="firefox_labs_feature_enable_dialog_message">Aby włączyć tę funkcję, ponownie uruchom przeglądarkę %s.</string>
   <!-- The description text that is displayed in the confirmation dialog on the Firefox Labs screen for toggling "off" experimental features. %s is the name of the app (for example "Firefox Nightly") -->
   <string name="firefox_labs_feature_disable_dialog_message">Aby wyłączyć tę funkcję, ponownie uruchom przeglądarkę %s.</string>
+  <!-- Helper text shown beneath a Firefox Labs item when it is blocked from being turned on. -->
+  <string name="firefox_labs_feature_conflict">Funkcja nie jest dostępna do wypróbowania.</string>
   <!-- Text displayed on the Firefox Labs screen when there are no Labs experimental features present. -->
   <string name="firefox_labs_no_labs_available_description">W\u00a0tej chwili nie ma żadnych funkcji eksperymentalnych do wypróbowania</string>
 </resources>

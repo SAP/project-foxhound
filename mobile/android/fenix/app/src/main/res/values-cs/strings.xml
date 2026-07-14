@@ -1987,6 +1987,8 @@
   <!-- The button text for the cancel button to leave the Web Compat Reporter feature. -->
   <string name="webcompat_reporter_cancel">Zrušit</string>
   <!-- The button text for the send button to submit the provided form data. -->
+  <string name="webcompat_reporter_send_report">Odeslat hlášení</string>
+  <!-- The button text for the send button to submit the provided form data. -->
   <string name="webcompat_reporter_send">Odeslat</string>
   <!-- Text for a snackbar to confirm the successful submission of a WebCompat report. -->
   <string name="webcompat_reporter_success_snackbar_text_2">Hlášení odesláno</string>

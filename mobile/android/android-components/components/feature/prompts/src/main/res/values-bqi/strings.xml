@@ -62,7 +62,7 @@
   <!-- Text of the title of a dialog when a third-party redirect is blocked. -->
   <string name="mozac_feature_prompts_redirect_dialog_title">هیلین ای سایت ری دایرکت داشته بۊ؟</string>
   <!-- Title of the dialog shown when a user is leaving a website and there is still data not saved yet. -->
-  <string name="mozac_feature_prompt_before_unload_dialog_title">الن هیمونه اخۊی؟</string>
+  <string name="mozac_feature_prompt_before_unload_dialog_title">الن هیمونه اخۊین؟</string>
   <!-- Body text of the dialog shown when a user is leaving a website and there is still data not saved yet. -->
   <string name="mozac_feature_prompt_before_unload_dialog_body">اخۊین ای وبگه ن هیلین وو ریوین؟ دووسمندیایی ک و من ٱوۊردین گاشڌ زفت نبۊن</string>
   <!-- Stay button of the dialog shown when a user is leaving a website and there is still data not saved yet, this indicates that the user wants to stay in the website. -->

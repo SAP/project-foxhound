@@ -19,8 +19,12 @@
   <string name="content_description_menu">Més opcions</string>
   <!-- Content description (not visible, for screen readers etc.): "Private Browsing" menu button. -->
   <string name="content_description_private_browsing">Navegació privada</string>
+  <!-- Content description (not visible, for screen readers etc.): "Normal Browsing" menu button. -->
+  <string name="content_description_normal_browsing">Navegació normal</string>
   <!-- Placeholder text shown in the search bar before a user enters text for the default engine -->
   <string name="search_hint">Escriviu una cerca o adreça</string>
+  <!-- Shorter placeholder text shown in the search bar when an additional action (voice search) is rendered alongside the hint. -->
+  <string name="search_hint_short">Cerca</string>
   <!-- Placeholder text shown in the search bar before a user enters text for a general engine -->
   <string name="search_hint_general_engine">Cerca al web</string>
   <!-- Placeholder text shown in search bar when using history search -->
@@ -55,6 +59,8 @@
   <string name="tab_manager_empty_synced_tabs_page_description">Inicieu la sessió per gestionar les pestanyes sincronitzades de tots els vostres dispositius.</string>
   <!-- The action text displayed on the synced tabs page when the user is not logged into an account, prompting the user to sign into their account. When clicked, it takes the user to the account sign-in flow. -->
   <string name="tab_manager_empty_synced_tabs_page_sign_in_cta">Inicia la sessió</string>
+  <!-- Text for the button used to show all stories -->
+  <string name="homepage_all_stories">Tots els articles</string>
   <!--
     Home - Bookmarks
 
@@ -143,6 +149,8 @@
   <string name="home_screen_shortcut_open_new_private_tab_2">Pestanya privada nova</string>
   <!-- Shortcut action to open Passwords screen -->
   <string name="home_screen_shortcut_passwords">Contrasenyes</string>
+  <!-- Shortcut action to open uninstall survey -->
+  <string name="home_screen_shortcut_uninstall_survey">Desinstal·lar, per què?</string>
   <!--
     Recent Tabs
 
@@ -279,8 +287,14 @@
   <string name="browser_menu_edit_bookmark">Edita l’adreça d’interès</string>
   <!-- Browser menu label that the saves the currently visited page as a PDF -->
   <string name="browser_menu_save_as_pdf_2">Desa com a PDF</string>
+  <!-- Browser menu label for moving the current private tab to a non-private tab -->
+  <string name="browser_menu_move_to_non_private_tab">Mou a una pestanya no privada</string>
   <!-- Browser menu label for navigating to the translation feature, which provides language translation options the current visited page -->
   <string name="browser_menu_translate_page_2">Tradueix la pàgina</string>
+  <!-- Browser menu label for navigating to the summarization feature, which provides site summarization for the current visited page -->
+  <string name="browser_menu_summarize_page">Resumeix la pàgina</string>
+  <!-- Browser menu badge text for summarization feature -->
+  <string name="browser_menu_summarize_page_badge">Nou</string>
   <!-- Browser menu label for navigating to the Web Compat Reporter feature, which provides users the ability to send bug reports for broken sites. -->
   <string name="browser_menu_webcompat_reporter_2">Informeu sobre un lloc que no funciona</string>
   <!-- Browser menu label that is displayed when the current page has been translated by the translation feature. -->
@@ -323,6 +337,8 @@
     Content description for the translate page toolbar button that opens the translations dialog when no translation has occurred.
   -->
   <string name="browser_toolbar_translate">Tradueix la pàgina</string>
+  <!-- CFR description for the browser toolbar describing the "Shake to summarize feature" -->
+  <string name="browser_toolbar_summarize_cfr_description">Sacsegeu el dispositiu per a resumir aquesta pàgina en segons. ⚡️</string>
   <!--
     Translation Toolbar
 
@@ -336,6 +352,12 @@
   <!-- Content description for the translate toolbar action that closes the translations toolbar. -->
   <string name="translation_toolbar_close_action">Descarta el missatge</string>
   <!--
+    Page summaries
+
+    Toolbar title for the Page summaries settings fragment
+  -->
+  <string name="preferences_page_summaries">Resums de pàgines</string>
+  <!--
     AI Controls settings
 
     Title for the AI controls settings screen
@@ -343,6 +365,8 @@
   <string name="preferences_ai_controls">Controls d’IA</string>
   <!-- Headline text for the AI controls banner. %s is the name of the app (for example "Firefox"). -->
   <string name="ai_controls_banner_headline">Amb el %s, sempre teniu la llibertat de decidir</string>
+  <!-- Supporting text for the AI controls banner. %s is a learn more link using ai_controls_learn_more as text. -->
+  <string name="ai_controls_banner_supporting_text_2">Això inclou si s’han d\'utilitzar o no les funcions millorades amb IA. %s</string>
   <!-- Link text for learning more about AI controls -->
   <string name="ai_controls_learn_more">Més informació</string>
   <!-- Title for the block AI enhancements toggle -->
@@ -359,8 +383,20 @@
   <string name="ai_controls_translations_title">Traduccions</string>
   <!-- Description for the translations AI feature toggle -->
   <string name="ai_controls_translations_description">Totes les traduccions són privades i no surten del vostre dispositiu.</string>
+  <!-- Link text to navigate to more translations settings -->
+  <string name="ai_controls_more_translations_settings">Més paràmetres de traducció</string>
+  <!-- Link text to navigate to more page summary settings -->
+  <string name="ai_controls_more_page_summary_settings">Més paràmetres de resum de pàgines</string>
+  <!-- Title for the voice search AI feature toggle -->
+  <string name="ai_controls_voice_search_title">Cerca per veu</string>
+  <!-- Description for the voice search AI feature toggle -->
+  <string name="ai_controls_voice_search_description">L’àudio es converteix en text mitjançant Google Speech Services.</string>
   <!-- Title for the block AI enhancements confirmation dialog -->
   <string name="ai_controls_block_dialog_title">Voleu blocar les millores basades en IA?</string>
+  <!-- Body text for the block AI enhancements confirmation dialog. %1$s is the name of the app (for example "Firefox"). -->
+  <string name="ai_controls_block_dialog_body">No veureu les millores basades en IA actuals ni futures al %1$s, ni les finestres emergents relacionades. Després, podeu desblocar tot allò que vulgueu seguir utilitzant. El bloqueig també afecta les extensions que utilitzen la IA proporcionada pel %1$s.</string>
+  <!-- Label shown above the list of features that will be blocked in the block AI dialog -->
+  <string name="ai_controls_block_dialog_what_will_be_blocked">Què es blocarà:</string>
   <!-- Cancel button text in the block AI enhancements confirmation dialog -->
   <string name="ai_controls_block_dialog_cancel">Cancel·la</string>
   <!-- Block button text in the block AI enhancements confirmation dialog -->
@@ -408,6 +444,10 @@
     The colon character (in "%s:") is intended to have the screen reader make a small pause between the search engine name and the description of the button.
   -->
   <string name="search_engine_selector_content_description">%s: selector del motor de cerca</string>
+  <!-- Text for the snackbar shown to confirm the deletion of a single browsing history item. %1$s is the shortened URL of the deleted history entry or the the actual deleted search term. Only one such item is deleted at a time. -->
+  <string name="search_suggestions_delete_history_item_snackbar">S’ha suprimit %1$s de l’historial</string>
+  <!-- Content description (not visible, for screen readers etc.): Button shown near a history search result allowing to delete it from browsing history. -->
+  <string name="mozac_browser_awesomebar_remove_suggestion" tools:ignore="UnusedResources">Suprimeix aquesta entrada de l’historial</string>
   <!-- Button in the app links prompt that keeps the user in the browser instead of opening the external app. %1$s is the name of the app (for example "Firefox"). -->
   <string name="applinks_prompt_negative_button">Segueix en el %1$s</string>
   <!--
@@ -587,18 +627,82 @@
   <string name="nova_onboarding_marketing_body" tools:ignore="BrandUsage,UnusedResources">Compartiu amb els socis de màrqueting de Mozilla com vàreu descobrir el Firefox i que l’utilitzeu. Aquestes dades mai no es vendran. %1$s</string>
   <!-- Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded. -->
   <string name="nova_onboarding_marketing_body_2" tools:ignore="BrandUsage">Compartiu amb els socis de màrqueting de Mozilla com vàreu descobrir el Firefox i que l’utilitzeu. Aquestes dades mai no es vendran.</string>
+  <!-- Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded. -->
+  <string name="nova_onboarding_marketing_body_3" tools:ignore="BrandUsage,UnusedResources">Ens podeu ajudar a arribar a més gent permetent que Mozilla informi als canals on promocionem el Firefox que sou usuari del Firefox.</string>
+  <!--
+    Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
+    “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
+  -->
+  <string name="nova_onboarding_marketing_body_4" tools:ignore="BrandUsage,UnusedResources">Ens podeu ajudar a arribar a més gent permetent que Mozilla informi a la plataforma de la qual proveniu que feu servir el Firefox.</string>
+  <!--
+    Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
+    “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
+  -->
+  <string name="nova_onboarding_marketing_body_5" tools:ignore="BrandUsage,UnusedResources">Ajudeu-nos a arribar a més gent permetent que Mozilla informi a la plataforma de la qual proveniu que feu servir el Firefox.</string>
+  <!--
+    Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
+    “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
+    %1$s is replaced by an active link, using nova_onboarding_marketing_body_link_text as text (“How we use the data”).
+  -->
+  <string name="nova_onboarding_marketing_body_6" tools:ignore="BrandUsage,UnusedResources">Ajudeu-nos a arribar a més gent permetent que Mozilla informi a la plataforma de la qual proveniu que feu servir el Firefox. %1$s</string>
+  <!--
+    Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
+    “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
+    %1$s is replaced by an active link, using nova_onboarding_marketing_body_link_text_1 as text (“Learn More”).
+  -->
+  <string name="nova_onboarding_marketing_body_7" tools:ignore="BrandUsage">Ens podeu ajudar a arribar a més gent permetent que Mozilla informi a la plataforma de la qual proveniu que feu servir el Firefox. %1$s</string>
+  <!-- Marketing onboarding additional body text. 'Firefox' is intentionally hardcoded. -->
+  <string name="nova_onboarding_marketing_body_line_two" tools:ignore="BrandUsage">Mozilla s’enorgulleix de ser independent i d’estar dedicada a defensar el web obert davant els monopolis tecnològics.</string>
+  <!--
+    Marketing onboarding additional body text. 'Firefox' is intentionally hardcoded.
+    “Allowing” refers to the main button “Allow and Continue”; the ask for the user is to allow communicating back to the platform.
+  -->
+  <string name="nova_onboarding_marketing_body_line_three" tools:ignore="BrandUsage">Considereu permetre-ho per a ajudar a que guanyi el Firefox.</string>
   <!-- Marketing onboarding body link text. -->
   <string name="nova_onboarding_marketing_body_link_text">Com utilitzem les dades</string>
   <!-- Marketing onboarding body link text. -->
   <string name="nova_onboarding_marketing_body_link_text_1">Més informació</string>
+  <!-- Marketing onboarding primary button text. 'Firefox' is intentionally hardcoded. -->
+  <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage,UnusedResources">Ajudeu el Firefox</string>
+  <!-- Marketing onboarding primary button text. -->
+  <string name="nova_onboarding_marketing_primary_button_text_3">Sí</string>
+  <!-- Marketing onboarding primary button text. -->
+  <string name="nova_onboarding_marketing_primary_button_text_2">Permet i continua</string>
   <!-- Marketing onboarding secondary button text. -->
   <string name="nova_onboarding_marketing_secondary_button_text" tools:ignore="UnusedResources">No, gràcies</string>
+  <!-- Marketing onboarding secondary button text. -->
+  <string name="nova_onboarding_marketing_secondary_button_text_2">No</string>
   <!-- Notifications onboarding title. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_notifications_title" tools:ignore="BrandUsage,UnusedResources">Les notificacions us ajuden a estar més segur amb el Firefox</string>
+  <!-- Notifications onboarding subtitle. 'Firefox' is intentionally hardcoded. -->
+  <string name="nova_onboarding_notifications_subtitle" tools:ignore="BrandUsage,UnusedResources">Descobriu les funcions de privadesa més recents del Firefox per a estar sempre al dia de com mantenir-vos protegit.</string>
   <!-- Notifications onboarding button. -->
   <string name="nova_onboarding_notifications_button">Activa les notificacions</string>
+  <!-- "Add search widget" onboarding title. -->
+  <string name="nova_onboarding_add_search_widget_title">Feu que les cerques siguin més privades</string>
+  <!-- "Add search widget" onboarding subtitle. 'Firefox' is intentionally hardcoded. -->
+  <string name="nova_onboarding_add_search_widget_subtitle" tools:ignore="BrandUsage">Comenceu totes les cerques des de la pantalla d’inici del telèfon i amb la seguretat que us donen les proteccions automàtiques del Firefox.</string>
   <!-- "Add search widget" onboarding button. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_add_search_widget_button" tools:ignore="BrandUsage">Afegeix el giny del Firefox</string>
+  <!-- Customize prompt onboarding title. -->
+  <string name="nova_onboarding_customize_prompt_title" tools:ignore="UnusedResources">Fàcil de personalitzar i més privat amb cada toc</string>
+  <plurals name="nova_onboarding_customize_prompt_body" tools:ignore="UnusedResources">
+    <!--
+      Customize prompt onboarding body.
+      %1$s is replaced by the product name (for example "Firefox"),
+      %2$,d is replaced by the number of trackers blocked. The comma represents the thousand
+      separator (e.g. 1,000 in English), and it will automatically use the correct character
+      for your locale (don't change or remove it).
+    -->
+    <item quantity="one">El %1$s ha blocat %2$,d element de seguiment mentre navegàveu per Internet.</item>
+    <item quantity="other">El %1$s ha blocat %2$,d elements de seguiment mentre navegàveu per Internet.</item>
+  </plurals>
+  <!-- Customize prompt onboarding positive button. -->
+  <string name="nova_onboarding_customize_prompt_positive_button" tools:ignore="UnusedResources">Comença a personalitzar</string>
+  <!-- App icon onboarding title. -->
+  <string name="nova_onboarding_app_icon_prompt_title" tools:ignore="UnusedResources">Trieu una icona d’aplicació personalitzada</string>
+  <!-- App icon onboarding body. -->
+  <string name="nova_onboarding_app_icon_prompt_body" tools:ignore="UnusedResources">Doneu un toc personal a la vostra pantalla d’inici.</string>
   <!-- ==== End of Project "Nova" onboarding strings ==== -->
 
   <!--
@@ -629,6 +733,12 @@
   <string name="preferences_category_general">General</string>
   <!-- Preference category for all links about Fenix -->
   <string name="preferences_category_about">Quant a</string>
+  <!-- Preference category for settings related to changing the default search engine -->
+  <string name="preferences_category_select_default_search_engine_2">Motor de cerca per defecte per a la navegació normal</string>
+  <!-- Preference category for settings related to changing the private browsing search engine -->
+  <string name="preferences_category_select_private_search_engine">Motor de cerca per defecte per a la navegació privada</string>
+  <!-- Option to set the private browsing mode to use the normal default search engine -->
+  <string name="search_engine_use_default">Utilitza el mateix motor de cerca que la navegació normal</string>
   <!-- Preference for settings related to managing search shortcuts for the quick search menu -->
   <string name="preferences_manage_search_shortcuts_2">Gestiona els motors de cerca alternatius</string>
   <!-- Summary for preference for settings related to managing search shortcuts for the quick search menu -->
@@ -641,6 +751,8 @@
   <string name="preferences_search">Cerca</string>
   <!-- Preference for settings related to Search engines -->
   <string name="preferences_search_engines">Motors de cerca</string>
+  <!-- Settings item to add a search widget on the device's homescreen. -->
+  <string name="preferences_add_search_widget_from_settings">Giny de la pantalla d’inici</string>
   <!-- Preference for settings related to Search engines suggestions -->
   <string name="preferences_search_engines_suggestions">Suggeriments dels motors de cerca</string>
   <!-- Preference Category for settings related to Search address bar -->
@@ -832,8 +944,26 @@
   <string name="preferences_open_links_in_apps_ask">Demana-ho abans d’obrir-lo</string>
   <!-- Preference for open links in third party apps never open in apps option -->
   <string name="preferences_open_links_in_apps_never">Mai</string>
+  <!-- Preference category for file storage. -->
+  <string name="preferences_category_file_storage">Emmagatzematge de fitxers</string>
+  <!-- Preference title for downloads default location. -->
+  <string name="preferences_downloads_default_location_title">Ubicació de baixada per defecte</string>
+  <!--
+    Message shown as the summary of the download location preference when the
+    app has lost the permission to access a previously selected custom folder.
+  -->
+  <string name="preference_downloads_folder_permission_lost" tools:ignore="UnusedResources">No teniu permís per a utilitzar aquesta carpeta. Trieu-ne una altra.</string>
   <!-- Preference title for choosing an app to handle downloads -->
   <string name="preferences_choose_app_for_downloads">Gestiona les baixades amb una altra aplicació</string>
+  <!-- Preference category for deleting or removing downloads -->
+  <string name="preferences_category_delete_or_remove_downloads">Suprimiu o elimineu les baixades</string>
+  <string name="preferences_downloads_delete_from_device">Suprimeix del dispositiu</string>
+  <string name="preferences_downloads_delete_from_device_description">El fitxer se suprimeix del dispositiu i s’elimina de l’historial de baixades</string>
+  <string name="preferences_downloads_remove_from_download_history">Elimina de l’historial de baixades</string>
+  <string name="preferences_downloads_remove_from_download_history_description">El fitxer s’elimina de l’historial de baixades, però segueix desat al dispositiu</string>
+  <string name="preferences_downloads_ask_when_to_delete_files">Demana-m’ho en suprimir fitxers</string>
+  <!-- Preference for downloads -->
+  <string name="preferences_downloads_2">Paràmetres de baixades</string>
   <!-- Preference for enabling gecko engine logs -->
   <string name="preferences_enable_gecko_logs">Activa els registres de Gecko</string>
   <!-- Message to indicate users that we are quitting the application to apply the changes -->
@@ -907,8 +1037,12 @@
   <string name="customize_toggle_pocket_sponsored">Articles patrocinats</string>
   <!-- Title for the opening wallpaper settings screen -->
   <string name="customize_wallpapers">Fons de pantalla</string>
+  <!-- Label for the menu item that opens the wallpaper settings screen. -->
+  <string name="browser_menu_change_wallpaper">Canvia el fons de pantalla</string>
   <!-- Title for the customize home screen section with sponsored shortcuts. -->
   <string name="customize_toggle_contile">Dreceres patrocinades</string>
+  <!-- Title for the customize home screen section that toggles the Homepage sports widget. -->
+  <string name="customize_toggle_world_cup">Copa del Món</string>
   <!--
     Wallpapers
 
@@ -999,10 +1133,14 @@
   <string name="restart_warning_dialog_title">Voleu canviar la icona de l’aplicació?</string>
   <!-- Message to warn users that applying an alternative app icon may require an app restart. Whether or not the app closes depends on what version of Android it is, so we use the word "may" instead of "will". %1$s is replaced by the brand name (e.g. Firefox). -->
   <string name="restart_warning_dialog_body_2">És possible que l’aplicació es tanqui. Només cal que toqueu la icona nova per tornar a obrir el %1$s.</string>
+  <!-- Message to warn users that applying an alternative app icon may require an app restart and will remove existing shortcuts because of the OS limitations. Whether or not the app closes depends on what version of Android it is, so we use the word "may" instead of "will". %1$s is replaced by the brand name (e.g. Firefox). -->
+  <string name="restart_and_shortcuts_removal_warning_dialog_body">Si canvieu la icona, s’eliminaran tots els llocs web i les dreceres que hàgiu desat a la pantalla d’inici. És possible que el %1$s es tanqui. Toqueu la icona nova per tornar-lo a obrir.</string>
   <!-- Dialog button text for confirming the possible app restart and new icon selection -->
   <string name="restart_warning_dialog_button_positive_2">Canvia la icona</string>
   <!-- Dialog button text for cancelling app icon change -->
   <string name="restart_warning_dialog_button_negative">Cancel·la</string>
+  <!-- Error message snackbar shown after the user tried to apply the new icon but the Android OS threw an error while updating existing app shortcuts (e.g. private mode shortcut) -->
+  <string name="shortcuts_update_error">No s’ha pogut actualitzar la icona de l’aplicació. Elimineu les dreceres existents i torneu-ho a provar.</string>
   <!--
     Add-ons general availability nimbus message
 
@@ -1186,6 +1324,8 @@
   <string name="toolbar_customize_shortcut_homepage">Pàgina d’inici</string>
   <!-- Back shortcut in toolbar customization -->
   <string name="toolbar_customize_shortcut_back">Enrere</string>
+  <!-- Label for choosing in toolbar customization settings to not use any custom shortcut button. -->
+  <string name="toolbar_customize_shortcut_none">Cap</string>
   <!--
     App icon Preferences
 
@@ -1218,8 +1358,12 @@
   <string name="preference_gestures_website_pull_to_refresh">Estira per actualitzar</string>
   <!-- Preference for using the dynamic toolbar -->
   <string name="preference_gestures_dynamic_toolbar">Amaga la barra d’eines en desplaçar-me</string>
+  <!-- Preference for showing the opened tabs by swiping up on the toolbar -->
+  <string name="preference_gestures_swipe_toolbar_show_tabs_2">Mostra les pestanyes obertes en fer lliscar la barra d’eines verticalment</string>
   <!-- Preference for switching tabs by swiping horizontally on the addressbar -->
   <string name="preference_gestures_swipe_toolbar_switch_tabs_2">Canvia de pestanya en fer lliscar la barra d’adreces cap als costats</string>
+  <!-- Preference for switching for the shake to summarize toggle in page summaries and customize settings -->
+  <string name="preferences_shake_to_summarize">Sacseja per a resumir</string>
   <!--
     Library
 
@@ -1350,6 +1494,10 @@
   <string name="studies_remove">Elimina</string>
   <!-- Title of the active section on the studies list -->
   <string name="studies_active">Actius</string>
+  <!-- Description for studies. Note: The word "Firefox" should NOT be translated -->
+  <string name="studies_description_4" tools:ignore="BrandUsage">El Firefox selecciona usuaris aleatòriament per a provar funcions i poder millorar-ne la qualitat per a tothom.</string>
+  <!-- Title of the Studies data preference -->
+  <string name="studies_title_2">Permet estudis de funcionalitat</string>
   <!-- Learn more link for studies, links to an article for more information about studies. -->
   <string name="studies_learn_more">Més informació</string>
   <!--
@@ -1376,6 +1524,14 @@
     The %1$s will be replaced by the number of opened private tabs
   -->
   <string name="tabs_header_private_tabs_counter_title">Pestanyes privades obertes: %1$s. Toqueu per canviar de pestanya.</string>
+  <plurals name="tabs_header_tab_group_counter_title">
+    <!--
+      Title for the list of tab groups used by a11y services
+      The %1$d will be replaced by the number of opened tab groups
+    -->
+    <item quantity="one">%1$d grup de pestanyes obert. Toqueu per canviar de pestanya.</item>
+    <item quantity="other">%1$d grups de pestanyes oberts. Toqueu per canviar de pestanya.</item>
+  </plurals>
   <!--
     Title for the list of tabs in the synced tabs used by a11y services
     The %1$s will be replaced by the number of opened synced tabs
@@ -1385,6 +1541,8 @@
   <string name="add_tab">Afegeix una pestanya</string>
   <!-- Content description (not visible, for screen readers etc.): Add tab button. Adds a news tab when pressed -->
   <string name="add_private_tab">Afegeix una pestanya privada</string>
+  <!-- Text for the tab search bar placeholder -->
+  <string name="tab_manager_search_bar_placeholder">Cerca en les vostres pestanyes</string>
   <!-- Text shown in the menu to view recently closed tabs -->
   <string name="tab_tray_menu_recently_closed">Pestanyes tancades recentment</string>
   <!-- Text shown in the menu to select all tabs. -->
@@ -1453,6 +1611,16 @@
   <string name="tab_manager_open_tab_search">Obre la cerca de pestanyes</string>
   <!-- Title for introducing tab groups via an onboarding card shown in the tab manager. -->
   <string name="tab_group_onboarding_item_title">Crea un grup de pestanyes</string>
+  <!-- Description for tab groups onboarding shown in the tab manager when in grid view. -->
+  <string name="tab_group_onboarding_grid_item_description">Arrossegueu una pestanya a sobre d’una altra per a agrupar-les.</string>
+  <!-- Description for tab groups onboarding shown in the tab manager when in list view. -->
+  <string name="tab_group_onboarding_list_item_description">Seleccioneu diverses pestanyes per a crear un grup.</string>
+  <!-- Content description (accessibility label) for button to dismiss the tab group onboarding item. -->
+  <string name="tab_group_onboarding_item_dismiss_content_description">Descarta la introducció als grups de pestanyes</string>
+  <!-- The header text displayed on the tab groups page when no tab groups are open -->
+  <string name="tab_manager_empty_tab_groups_page_header">Proveu els grups de pestanyes per a reduir el desplaçament i anar per feina</string>
+  <!-- The description displayed on the tab groups page when no tab groups are open -->
+  <string name="tab_manager_empty_tab_groups_page_description">Seleccioneu pestanyes per a crear un grup. Es desen aquí, a punt per quan les necessiteu.</string>
   <!--
     Tab Group
 
@@ -1462,6 +1630,8 @@
   <!-- Title for the edit tab group bottom sheet -->
   <string name="edit_tab_group_title">Edita el grup</string>
   <string name="create_tab_group_save_button">Desa</string>
+  <!-- Description for the handle at the top of a bottom sheet, used to drag the sheet up or down. -->
+  <string name="edit_tab_group_bottom_sheet_grabber_content_description">Grup nou, contrau el control d’arrossegament</string>
   <!--
     Default tab group name when creating a tab group
     %d is the number of existing tab groups + 1.
@@ -1471,6 +1641,10 @@
   <string name="create_tab_group_name_label">Nom</string>
   <!-- Title for adding more tabs to a tab group. -->
   <string name="add_to_tab_group_title">Afegeix a</string>
+  <!-- Content Description for closing the "Add to Tab Group" panel. -->
+  <string name="add_to_tab_group_bottom_sheet_grabber_content_description">Afegeix a un grup de pestanyes, contrau el control d’arrossegament</string>
+  <!-- Content Description for "New tab group" panel. -->
+  <string name="add_to_new_tab_group_content_description">Afegeix a un grup de pestanyes nou</string>
   <!-- Label for adding to a new tab group. -->
   <string name="add_to_new_tab_group_title">Grup de pestanyes nou</string>
   <plurals name="tab_group_tabs_count_subtitle">
@@ -1481,6 +1655,33 @@
     <item quantity="one">%1$d pestanya</item>
     <item quantity="other">%1$d pestanyes</item>
   </plurals>
+  <plurals name="add_to_exiting_tab_group_content_description">
+    <!--
+      Accessibility description for add to existing tab group.
+      %1$s is the group name, %2$d is the number of tabs, %3$s is the color name.
+    -->
+    <item quantity="one">Afegeix al grup de pestanyes %1$s, %2$d pestanya, color %3$s</item>
+    <item quantity="other">Afegeix al grup de pestanyes %1$s, %2$d pestanyes, color %3$s</item>
+  </plurals>
+  <plurals name="share_tab_group_button_content_description">
+    <!--
+      Content Description for share tab group button.
+      %1$s is the name of the tab group.
+      %2$d is the number of tabs in a tab group.
+    -->
+    <item quantity="one">Comparteix el grup de pestanyes %1$s amb %2$d pestanya.</item>
+    <item quantity="other">Comparteix el grup de pestanyes %1$s amb %2$d pestanyes.</item>
+  </plurals>
+  <!-- Content description for the grabber/handle of the tab group bottom sheet. -->
+  <string name="tab_group_sheet_dismiss_description">Mostra el grup de pestanyes, contrau el control d’arrossegament</string>
+  <plurals name="expanded_tab_group_header_description">
+    <!--
+      Accessibility description for the header of an expanded tab group.
+      %1$s is the group name, %2$d is the number of tabs, %3$s is the color name.
+    -->
+    <item quantity="one">Grup de pestanyes %1$s amb %2$d pestanya, color %3$s</item>
+    <item quantity="other">Grup de pestanyes %1$s amb %2$d pestanyes, color %3$s</item>
+  </plurals>
   <!-- Title for the Delete tab group confirmation dialog. -->
   <string name="delete_tab_group_confirmation_dialog_title">Voleu suprimir el grup de pestanyes?</string>
   <!-- Text shown in the body of the Delete tab group confirmation dialog. -->
@@ -1489,6 +1690,8 @@
   <string name="delete_tab_group_confirmation_dialog_confirm">Suprimeix el grup</string>
   <!-- Text shown on the cancel button in the Delete tab group confirmation dialog. -->
   <string name="delete_tab_group_confirmation_dialog_cancel">Cancel·la</string>
+  <!-- Title for the Close last tab and delete tab group confirmation dialog. -->
+  <string name="close_tab_and_delete_group_confirmation_dialog_title">Voleu tancar la pestanya i suprimir el grup?</string>
   <!-- Text shown in the body of the Close last tab and delete tab group confirmation dialog. -->
   <string name="close_tab_and_delete_group_confirmation_dialog_body">Això elimina el grup permanentment.</string>
   <!-- Text shown on the confirm button in the Close last tab and delete tab group confirmation dialog. -->
@@ -1597,10 +1800,17 @@
     This button will dismiss the dialog.
   -->
   <string name="download_file_has_not_enough_storage_dialog_cancel_button_text">Cancel·la</string>
+  <plurals name="downloads_delete_dialog_title">
+    <!-- Title for the download deletion confirmation dialog. The message changes depending on how many files are selected. %d is the number of files to be deleted. -->
+    <item quantity="one">Voleu suprimir el fitxer?</item>
+    <item quantity="other">Voleu suprimir %d fitxers?</item>
+  </plurals>
   <!-- Text for the button to delete a single downloaded file item -->
   <string name="download_delete_item">Suprimeix</string>
   <!-- Content description for the toolbar "Navigate back" button -->
   <string name="download_navigate_back_description">Navega cap enrere</string>
+  <!-- Content description for the toolbar "Navigate to Downloads Settings" button -->
+  <string name="download_navigate_settings_description">Navega a Paràmetres de les baixades</string>
   <!-- Content description for the toolbar back button while searching the downloads -->
   <string name="download_close_search_description">Enrere i tanca la cerca</string>
   <!--
@@ -1618,21 +1828,48 @@
   <string name="download_share_url">Comparteix l’URL</string>
   <!-- Text for the button to share the download file -->
   <string name="download_share_file">Comparteix el fitxer</string>
+  <!-- Text for the button to rename the download file -->
+  <string name="download_rename_file">Canvia el nom del fitxer</string>
   <!-- Alert dialog confirmation before deleting multiple download items, this is the title. -->
   <string name="download_delete_multi_select_dialog_confirmation">Segur que voleu suprimir els elements seleccionats?</string>
   <!-- Alert dialog confirmation before deleting multiple download items, this is the positive action. -->
   <string name="download_delete_multi_select_dialog_confirm">Suprimeix</string>
   <!-- Alert dialog confirmation before deleting multiple download items, this is the negative action. -->
   <string name="download_delete_multi_select_dialog_cancel">Cancel·la</string>
+  <!-- Alert dialog confirmation before deleting a single download item or many download items, this is one of the radio buttons within the dialog box for the user to select. -->
+  <string name="download_delete_dialog_from_device">Suprimeix del dispositiu</string>
+  <!-- Alert dialog confirmation before deleting a single download item or many download items, this is one of the radio buttons within the dialog box for the user to select. -->
+  <string name="download_delete_dialog_from_history">Només elimina-ho de l’historial de baixades</string>
   <!-- Alert dialog confirmation before deleting a single download item or many download items, this is the negative action. -->
   <string name="download_delete_dialog_cancel">Cancel·la</string>
   <!-- Alert dialog confirmation before deleting a single download item or many download items, this is the positive action. -->
   <string name="download_delete_dialog_confirm">Confirma</string>
+  <!-- Title for the alert dialog confirmation before renaming a download item. -->
+  <string name="download_rename_dialog_title">Canvia el nom del fitxer</string>
   <!-- Label for the name field in the alert dialog confirmation before renaming a download item. -->
   <string name="download_rename_dialog_label">Nom</string>
   <string name="download_rename_dialog_confirm_button">Desa</string>
   <string name="download_rename_dialog_cancel_button">Cancel·la</string>
+  <!--
+    Error message when renaming with a name that already exists.
+    %s is the proposed file name.
+  -->
+  <string name="download_rename_error_exists_error">Ja hi ha un fitxer amb el nom «%s» en aquesta ubicació</string>
+  <!-- Error message when renaming with an invalid file name. -->
+  <string name="download_rename_error_invalid_name_error">Els noms de fitxer no poden tenir «/»</string>
+  <!-- Error message shown when a user tries to rename a downloaded file but only changes the casing (e.g., "file.txt" to "File.txt"). -->
+  <string name="download_rename_error_case_only_error">El nom que heu introduït només canvia les lletres majúscules o minúscules. Escriviu un altre nom de fitxer.</string>
+  <!-- Title for the alert dialog when the file cannot be renamed. -->
+  <string name="download_rename_error_cannot_rename_title">No es pot canviar el nom del fitxer</string>
+  <!-- Description message for the alert dialog when the file cannot be renamed. -->
+  <string name="download_rename_error_cannot_rename_description">No es pot canviar el nom d’aquest fitxer a causa de restriccions del sistema o d’emmagatzematge.</string>
   <string name="download_rename_error_dismiss_button">D’acord</string>
+  <!--
+    Title for the alert dialog to change file extension.
+    %s is the file type to change to.
+  -->
+  <string name="change_file_extension_title">Voleu canviar el tipus de fitxer a %s?</string>
+  <string name="change_file_extension_description">Això podria obrir el fitxer en una altra aplicació i ser arriscat per al dispositiu.</string>
   <string name="change_file_extension_cancel_button">Cancel·la</string>
   <string name="change_file_extension_confirm_button">Sí, canvia-ho.</string>
   <!-- Text for the header of in progress downloads -->
@@ -1707,6 +1944,16 @@
   <!-- Text for the filter button to show all other file types in the downloads list -->
   <string name="download_content_type_filter_other_1">Altres</string>
   <!--
+    Title for the alert dialog to rename a file and/or change its download location before downloading it.
+    %s is the formatted size of the file (e.g., "12.5 MB").
+  -->
+  <string name="download_rename_and_change_location_dialog_title">Voleu baixar el fitxer? (%s)</string>
+  <!--
+    Title for the alert dialog to rename a file and/or change its download location
+    when the file size is not available before downloading it.
+  -->
+  <string name="download_rename_and_change_location_dialog_title_with_unknown_size">Voleu baixar el fitxer?</string>
+  <!--
     WebCompat Reporter
 
     The title of the Web Compat Reporter feature. This is displayed in the top app bar.
@@ -1721,11 +1968,21 @@
   <!-- The error message of the URL text field when an invalid URL has been entered. -->
   <string name="webcompat_reporter_url_error_invalid">Introduïu un URL vàlid</string>
   <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
+  <string name="webcompat_reporter_label_whats_broken_3">Què no funciona?</string>
+  <!-- Content description for the icon button that clears the selected broken site reason in the WebCompat Reporter. -->
+  <string name="webcompat_reporter_clear_reason_content_description">Esborra el motiu seleccionat</string>
+  <!-- The error message of the description when the user selects "Something else" as the reason, but left the description empty or too short. -->
+  <string name="webcompat_reporter_description_error">Escriviu un mínim de 10 caràcters</string>
+  <!-- The label/title of a mandatory field in the Web Compat Reporter feature for adding additional information. -->
+  <string name="webcompat_reporter_label_mandatory_description">Descriviu el problema detalladament per a ajudar-nos a investigar-lo</string>
+  <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_label_whats_broken_2">Què no funciona?</string>
   <!-- The placeholder text for the dropdown where a user selects a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_choose_reason_2">Trieu un motiu</string>
   <!-- The error message of the dropdown, prompting the user to select a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_choose_reason_error">Trieu un motiu</string>
+  <!-- The label/title of an optional field in the Web Compat Reporter feature for adding additional information. -->
+  <string name="webcompat_reporter_label_description_2">Descriviu el problema detalladament per a ajudar-nos a investigar-lo (opcional)</string>
   <!-- The label/title of an optional field in the Web Compat Reporter feature for adding additional information. -->
   <string name="webcompat_reporter_label_description">Descriviu el problema (opcional)</string>
   <!-- The button text for navigating away from the feature to provide more information on the broken site's bug report. -->
@@ -1733,9 +1990,13 @@
   <!-- The button text for the cancel button to leave the Web Compat Reporter feature. -->
   <string name="webcompat_reporter_cancel">Cancel·la</string>
   <!-- The button text for the send button to submit the provided form data. -->
+  <string name="webcompat_reporter_send_report">Envia l’informe</string>
+  <!-- The button text for the send button to submit the provided form data. -->
   <string name="webcompat_reporter_send">Envia</string>
   <!-- Text for a snackbar to confirm the successful submission of a WebCompat report. -->
   <string name="webcompat_reporter_success_snackbar_text_2">S’ha enviat l’informe</string>
+  <!-- Placeholder text for the description field to prompt the user on what they should type. -->
+  <string name="webcompat_reporter_problem_description_placeholder_text_2">Què ha passat? Què esperàveu que passés? Indiqueu els passos per a reproduir el problema.</string>
   <!-- Placeholder text for the description field to prompt the user on what they should type. -->
   <string name="webcompat_reporter_problem_description_placeholder_text">Què ha passat? Què hauria d’haver passat?</string>
   <!-- Label of the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. -->
@@ -1774,6 +2035,8 @@
   <string name="webcompat_reporter_reason_account2">No es pot iniciar la sessió o registrar-se</string>
   <!-- Broken site reason text for site asked to turn off ad blocker -->
   <string name="webcompat_reporter_reason_turn_off_adblocker">El lloc demana que desactivi el blocador d’anuncis</string>
+  <!-- Broken site reason text for browser isn’t supported or blocked -->
+  <string name="webcompat_reporter_reason_notsupported_2">El navegador està blocat o no és compatible</string>
   <!-- Broken site reason text for the site being deceptive -->
   <string name="webcompat_reporter_reason_site_is_deceptive">Aquest lloc és enganyós</string>
   <!-- Broken site reason text for browser isn’t supported or blocked -->
@@ -1837,6 +2100,8 @@
   <string name="bookmark_error_edit_bookmark">No s’ha pogut editar l’adreça d’interès</string>
   <!-- Snackbar edit button shown after a bookmark has been created. -->
   <string name="edit_bookmark_snackbar_action">EDITA</string>
+  <!-- Bookmark menu select button -->
+  <string name="bookmark_menu_select_button">Selecciona</string>
   <!-- Bookmark menu move button -->
   <string name="bookmark_menu_move_button">Mou</string>
   <!-- Bookmark overflow menu edit button -->
@@ -1869,6 +2134,8 @@
   <string name="bookmark_sort_menu_z_to_a">Ordena de Z a A</string>
   <!-- Label for button to import bookmarks from file. -->
   <string name="bookmark_import_menu_button">Importa d’un fitxer</string>
+  <!-- Snackbar message shown when a bookmark import attempt fails. -->
+  <string name="bookmark_import_failure_snackbar">No s’han pogut importar les adreces d’interès. Torneu-ho a provar.</string>
   <!-- Default name for the folder created when importing bookmarks from a file. -->
   <string name="bookmark_import_destination_default_name">Adreces d’interès importades</string>
   <!--
@@ -1909,14 +2176,22 @@
   <string name="bookmark_delete_folder_content_description">Suprimeix la carpeta</string>
   <!-- Content description for bookmark search floating action button -->
   <string name="bookmark_search_button_content_description">Cerca en les adreces d’interès</string>
+  <!-- Content description for select folder screen search action button ("search" is a verb) -->
+  <string name="select_bookmark_search_button_content_description">Cerca en carpetes</string>
   <!-- Content description for the overflow menu for a bookmark item. %s is a folder name or bookmark title. -->
   <string name="bookmark_item_menu_button_content_description">Menú d’elements per a %s</string>
+  <!-- Content description for the chevron that will open a folder on the select folder screen and display its children. %s is the title of the folder that will be opened -->
+  <string name="bookmark_select_folder_expand_folder_content_description">Amplia la carpeta: %s</string>
+  <!-- Content description for the chevron that will close a folder on the select folder screen so that its children are no longer visible. %s is the title of the folder that will be closed -->
+  <string name="bookmark_select_folder_close_folder_content_description">Tanca la carpeta: %s</string>
   <!-- Content description for the "close" button in bookmarks screen. -->
   <string name="bookmark_close_button_content_description">Tanca les adreces d’interès</string>
   <!-- Content description for the Import bookmarks button in bookmarks screen. -->
   <string name="bookmark_import_bookmarks_button_content_description">Importa d’un fitxer</string>
   <!-- Title for the bookmark list empty state -->
   <string name="bookmark_empty_list_title">Encara no hi ha cap adreça d’interès</string>
+  <!-- Title for the bookmark list empty state at the root level. -->
+  <string name="bookmark_empty_list_root_title">Manteniu totes les vostres adreces d’interès preferides en un sol lloc</string>
   <!-- Bookmark screen folder description. %s is the count of bookmark folder children -->
   <string name="bookmarks_folder_description">Adreces d’interès de la carpeta: %s</string>
   <!-- Text for the button to navigate to sync authentication -->
@@ -1925,6 +2200,8 @@
   <string name="bookmark_empty_list_folder_description">Afegiu adreces d’interès mentre navegueu per a trobar fàcilment els vostres llocs preferits més tard.</string>
   <!-- Description for the add new folder button when selecting a folder. -->
   <string name="bookmark_select_folder_new_folder_button_title">Carpeta nova</string>
+  <!-- Bookmark snackbar message for moving a single item. %1$s is the title of the item being moved and %2$s is the new parent folder of the bookmark -->
+  <string name="bookmark_moved_single_item">%1$s s’ha mogut a %2$s</string>
   <!--
     Site Permissions
 
@@ -2096,14 +2373,24 @@
   <string name="menu_print">Imprimeix</string>
   <!-- Sub-header in the dialog to share a link to another sync device -->
   <string name="share_device_subheader">Envia a un dispositiu</string>
+  <!-- Content description for the drag handle that dismisses the Send to Device bottom sheet -->
+  <string name="send_to_devices_bottom_sheet_close_content_description">Tanca Envia al dispositiu</string>
   <!-- Text for the QR code action in the native share sheet -->
   <string name="share_qr_code">Codi QR</string>
   <!-- Title shown in the QR code display screen -->
   <string name="qr_code_display_title">Codi QR</string>
   <!-- Content description for the close button in the QR code display screen -->
   <string name="qr_code_display_close">Tanca</string>
+  <!-- Heading on the QR code display screen -->
+  <string name="qr_code_display_share_nearby">Comparteix l’enllaç amb dispositius propers</string>
+  <!-- Body text on the QR code display screen instructing the user to have others scan the code -->
+  <string name="qr_code_display_instructions">Per a compartir aquest enllaç amb les persones que hi hagi a prop, demaneu-los que escanegin el codi QR següent.</string>
   <!-- Label for the download button on the QR code display screen -->
   <string name="qr_code_display_download">Baixa</string>
+  <!-- Toast shown when the QR code is successfully saved to Downloads -->
+  <string name="qr_code_download_success">El codi QR s’ha desat a les Baixades</string>
+  <!-- Toast shown when saving the QR code to Downloads fails -->
+  <string name="qr_code_download_failure">No s’ha pogut desar el codi QR</string>
   <!-- Sub-header in the dialog to share a link to an app from the full list -->
   <string name="share_link_all_apps_subheader">Totes les accions</string>
   <!-- Sub-header in the dialog to share a link to an app from the most-recent sorted list -->
@@ -2172,6 +2459,8 @@
   <string name="preferences_take_survey">Fes l’enquesta</string>
   <!-- Preference for not taking the short survey. -->
   <string name="preferences_not_take_survey">No, gràcies</string>
+  <!-- Error message shown in a Toast when the system fails to trigger the device uninstallation prompt. -->
+  <string name="uninstall_survey_error_failed">No s’ha pogut iniciar la sol·licitud de desinstal·lació. Utilitzeu directament l’acció de desinstal·lació del sistema.</string>
   <!--
     Snackbar
 
@@ -2332,8 +2621,28 @@
   <string name="preference_enhanced_tracking_protection_explanation_2">El %s us protegeix de molts dels elements de seguiment més habituals que recopilen dades sobre allò que feu a Internet.</string>
   <!-- Text displayed that links to website about enhanced tracking protection -->
   <string name="preference_enhanced_tracking_protection_explanation_learn_more">Més informació</string>
+  <plurals name="trackers_blocked_count_2">
+    <!--
+      Trackers blocked card on homepage
+
+      Text shown on the trackers blocked card. %d is the number of trackers blocked.
+    -->
+    <item quantity="one">%d element de seguiment blocat</item>
+    <item quantity="other">%d elements de seguiment blocats</item>
+  </plurals>
+  <plurals name="trackers_blocked_count">
+    <!--
+      Trackers blocked card on homepage
+
+      Text shown on the trackers blocked card. %d is the number of trackers blocked.
+    -->
+    <item quantity="one">%d element de seguiment blocat</item>
+    <item quantity="other">%d elements de seguiment blocats</item>
+  </plurals>
   <!-- Text shown on the trackers blocked card when no trackers have been blocked yet -->
   <string name="trackers_blocked_empty">Esteu protegit</string>
+  <!-- Text shown below the trackers blocked card with typing animation -->
+  <string name="help_catch_trackers">Ajudeu-nos a atrapar els elements de seguiment</string>
   <!-- Preference for enhanced tracking protection for the standard protection settings -->
   <string name="preference_enhanced_tracking_protection_standard_default_1">Estàndard (per defecte)</string>
   <!-- Preference description for enhanced tracking protection for the standard protection settings -->
@@ -2348,6 +2657,10 @@
   <string name="preference_enhanced_tracking_protection_allow_list_baseline_2">Corregeix els problemes més greus dels llocs (recomanat)</string>
   <!-- Preference label for the enhanced tracking protection option to fix minor site issues caused by tracker blocking -->
   <string name="preference_enhanced_tracking_protection_allow_list_convenience_label">Corregeix els problemes menors dels llocs</string>
+  <!-- Preference description for the enhanced tracking protection option to fix minor site issues caused by tracker blocking -->
+  <string name="preference_enhanced_tracking_protection_allow_list_convenience_description">S’ha d’utilitzar amb les correccions per als problemes més greus.</string>
+  <!-- Preference sub header for the enhanced tracking protection options to fix issues caused by tracker blocking -->
+  <string name="preference_enhanced_tracking_protection_allow_list_subheader">Corregeix els problemes dels llocs</string>
   <!-- Learn more text for the enhanced tracking protection options to fix issues caused by tracker blocking -->
   <string name="preference_enhanced_tracking_protection_allow_list_learn_more">Més informació</string>
   <!--
@@ -2672,6 +2985,10 @@
   <string name="edit_login_navigate_back_button_content_description">Navega cap enrere</string>
   <!-- Content description, used by tools like screenreaders, to press on the edit login button. -->
   <string name="edit_login_button_content_description">Edita l’inici de sessió</string>
+  <!-- Content description, used by tools like screenreaders, to press on the add new login button. -->
+  <string name="saved_logins_add_new_login_button_content_description">Afegeix un inici de sessió nou</string>
+  <!-- Content description, used by tools like screenreaders, to press on the clear search text button. -->
+  <string name="saved_logins_clear_search_text_button_content_description">Esborra el text de la cerca</string>
   <!-- Content Description (for screenreaders etc) read for the button to open a site in logins -->
   <string name="saved_login_open_site">Obre el lloc en el navegador</string>
   <!-- Content Description (for screenreaders etc) read for the button to reveal a password in logins -->
@@ -2742,6 +3059,29 @@
   <string name="ip_protection_promo_headline">La VPN integrada del %s</string>
   <!-- Body text for the browser VPN promo card . %s is a learn more link using ip_protection_learn_more as text. -->
   <string name="ip_protection_promo_body_2">Navegueu amb protecció addicional amagant la ubicació, fins i tot en xarxes Wi-Fi públiques. %s</string>
+  <!-- Link text that opens additional information about the browser VPN -->
+  <string name="ip_protection_learn_more">Més informació</string>
+  <!-- Label for the monthly data allowance section on the browser VPN settings screen -->
+  <string name="ip_protection_data_limit_label">Límit de dades mensual</string>
+  <!--
+    Data usage shown on the browser VPN settings screen.
+    %1$.1f is the data remaining in GB (for example "8.3").
+    %2$.1f is the total monthly allowance in GB (for example "50.0").
+  -->
+  <string name="ip_protection_data_limit_value">Queden %1$.1f GB de %2$.1f GB</string>
+  <!--
+    Text shown below the data usage bar describing when the monthly allowance resets.
+    %1$.0f is the total monthly data allowance in GB (for example "50").
+  -->
+  <string name="ip_protection_data_reset_info">Es restableix a %1$.0f GB el primer dia de cada mes.</string>
+  <!-- Header for the browser VPN `location` section -->
+  <string name="ip_protection_location_section">Ubicació</string>
+  <!-- Label for the recommended automatic location option on the browser VPN settings screen -->
+  <string name="ip_protection_location_recommended_label">Recomanat</string>
+  <!-- Description for the recommended automatic location option on the browser VPN settings screen -->
+  <string name="ip_protection_location_recommended_description">Selecciona automàticament la ubicació de la VPN més ràpida.</string>
+  <!-- Badge label shown in the menu item when the browser VPN is active -->
+  <string name="preferences_ip_protection_on">Activat</string>
   <!-- Badge label shown in the menu item when the browser VPN is off -->
   <string name="preferences_ip_protection_off">Desactivada</string>
   <!-- Badge label shown in the menu item while the browser VPN is connecting -->
@@ -2754,6 +3094,16 @@
   <string name="ip_protection_menu_auth_required">Proveu-ho</string>
   <!-- Content description for the chevron button that opens the browser VPN settings screen -->
   <string name="ip_protection_navigate_settings">Obre els paràmetres de la VPN</string>
+  <!--
+    Subtitle shown below the VPN label in menus when the monthly data allowance is exhausted.
+    %1$d is the total monthly allowance in GB (for example "50").
+  -->
+  <string name="ip_protection_menu_limit_reached">S’ha arribat al límit de %1$d GB</string>
+  <!--
+    Error message shown on the browser VPN settings screen when the monthly data allowance is exhausted.
+    %1$d is the total monthly allowance in GB (for example "50").
+  -->
+  <string name="ip_protection_data_limit_reached_description">Heu utilitzat tots els %1$d GB de dades de la vostra VPN. L’accés es restablirà el mes que ve.</string>
   <!-- Label shown next to the browser protection icon in the address bar when the browser VPN is active -->
   <string name="ip_protection_toolbar_pill_label">VPN activada</string>
   <!-- Accessibility description for the browser VPN pill in the address bar when the VPN has been activated -->
@@ -2764,12 +3114,31 @@
   <string name="ip_protection_connecting">S’està connectant…</string>
   <!-- Headline for the browser VPN onboarding card. %s is the name of the app (for example "Firefox"). -->
   <string name="ip_protection_onboarding_card_headline">Proveu la VPN integrada del %s</string>
+  <!--
+    The body of the VPN onboarding card.
+    %1$s is a link using ip_protection_onboarding_body_link (“Browse with extra protection”) as text. It links to a support article about VPN on Firefox.
+    %2$d is the total monthly allowance in GB (for example "50").
+  -->
+  <string name="ip_protection_onboarding_body">%1$s amagant la ubicació, fins i tot en xarxes Wi-Fi públiques. Obteniu %2$d GB gratuïts al mes.</string>
   <!-- Used as text for a link in ip_protection_onboarding_body. Make sure to adapt capitalization if the link is in the middle of the sentence. -->
   <string name="ip_protection_onboarding_body_link">Navegueu amb protecció addicional</string>
+  <!--
+    The body of the VPN onboarding card for a promotion that provides unlimited data bandwidth for a certain time.
+    %1$s is a localized date (for example "Jun 9") indicating the end of the promotional period.
+    %2$s is a link using ip_protection_onboarding_body_link_promo (“Learn more”) as text. It links to a support article about VPN on Firefox.
+  -->
+  <string name="ip_protection_onboarding_body_promo">Activeu-ho per tal que la vostra navegació sigui més privada i més difícil de rastrejar. Proveu-ho ara i gaudiu d’una amplada de banda il·limitada fins al %1$s. %2$s</string>
   <!-- Used as text for a link in ip_protection_onboarding_body. Make sure to adapt capitalization if the link is in the middle of the sentence. -->
   <string name="ip_protection_onboarding_body_link_promo">Més informació</string>
   <!-- Label for the dismiss button on the onboarding bottom sheet. -->
   <string name="ip_protection_onboarding_not_now_button">Ara no</string>
+  <!-- Snackbar (in-app pop-up notification) text to signal the browser VPN connection error -->
+  <string name="ip_protection_connection_error_snackbar">No s’ha pogut connectar a la VPN. Torneu-ho a provar d’aquí a uns minuts.</string>
+  <!--
+    Snackbar (in-app pop-up notification) text to signal the browser VPN has reached the monthly data limit.
+    %1$d is the total monthly allowance in GB (for example "50").
+  -->
+  <string name="ip_protection_data_limit_reached_snackbar">S’han utilitzat %1$d GB de dades de la VPN. L’accés es restablirà el mes que ve.</string>
   <!-- Snackbar (in-app pop-up notification) action button text that takes the user to the VPN settings screen. -->
   <string name="ip_protection_data_limit_reached_snackbar_action">Paràmetres</string>
   <!--
@@ -3249,6 +3618,8 @@
   <string name="translation_error_could_not_translate_warning_text">Hi ha hagut un problema en traduir. Torneu-ho a provar.</string>
   <!-- The title of the warning card informs the user that the list of languages cannot be loaded. -->
   <string name="translation_error_could_not_load_languages_warning_text">No s’han pogut carregar les llengües. Comproveu la connexió a Internet i torneu-ho a provar.</string>
+  <!-- The title of the warning card informs the user that translations from a language are not supported yet. %1$s is the name of the source language. -->
+  <string name="translation_error_language_not_supported_warning_text_2">La llengua %1$s encara no és compatible.</string>
   <!-- Snackbar title shown if the user closes the Translation Request dialogue and a translation is in progress. -->
   <string name="translation_in_progress_snackbar">S’està traduint…</string>
   <!--
@@ -3465,6 +3836,14 @@
     %s is the name of the app (for example "Firefox").
   -->
   <string name="protection_panel_banner_protected_title">El %s us protegeix</string>
+  <plurals name="protection_panel_banner_protected_blocked_trackers_description">
+    <!--
+      Description text for the protection panel banner when privacy dashboard is enabled.
+      %1$d is the number of trackers blocked.
+    -->
+    <item quantity="one">%1$d element de seguiment blocat en aquest lloc.</item>
+    <item quantity="other">%1$d elements de seguiment blocats en aquest lloc.</item>
+  </plurals>
   <!--
     Description text for the protection panel banner when privacy dashboard is enabled.
     and there are no trackers blocked.
@@ -3495,6 +3874,62 @@
   <string name="protection_panel_privacy_and_security_settings_2">Paràmetres de privadesa</string>
   <!-- Title text for the protection panel permissions section. -->
   <string name="protection_panel_permissions_title">Permisos</string>
+  <plurals name="trackers_blocked_panel_total_num_trackers_blocked_2">
+    <!--
+      Text for displaying the total number of trackers blocked in the trackers blocked panel.
+      %1$d is a placeholder for the number of trackers blocked.
+    -->
+    <item quantity="one">%1$d element de seguiment blocat en aquest lloc</item>
+    <item quantity="other">%1$d elements de seguiment blocats en aquest lloc</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_social_media_trackers">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked social media trackers.
+      %1$d is a placeholder for the number of social media trackers blocked.
+    -->
+    <item quantity="one">%1$d element de seguiment de xarxes socials</item>
+    <item quantity="other">%1$d elements de seguiment de xarxes socials</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_cross_site_cookies">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked cross-site tracking cookies.
+      %1$d is a placeholder for the number of cross-site tracking cookies blocked.
+    -->
+    <item quantity="one">%1$d galeta de seguiment entre llocs</item>
+    <item quantity="other">%1$d galetes de seguiment entre llocs</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_cryptominers">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked cryptomining scripts.
+      %1$d is a placeholder for the number of cryptominers blocked.
+    -->
+    <item quantity="one">%1$d miner de criptomonedes</item>
+    <item quantity="other">%1$d miners de criptomonedes</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_fingerprinters">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked fingerprinter scripts.
+      %1$d is a placeholder for the number of fingerprinters blocked.
+    -->
+    <item quantity="one">%1$d generador d’empremtes digitals</item>
+    <item quantity="other">%1$d generadors d’empremtes digitals</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_trackers_2">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked generic tracking scripts.
+      %1$d is a placeholder for the number of trackers blocked.
+    -->
+    <item quantity="one">%1$d contingut que fa seguiment</item>
+    <item quantity="other">%1$d continguts que fan seguiment</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_trackers_blocked_this_week_2">
+    <!--
+      Text for displaying the number of trackers blocked this week in the trackers blocked panel.
+      %1$d is a placeholder for the number of trackers blocked this week.
+    -->
+    <item quantity="one">%1$d element de seguiment blocat aquesta setmana</item>
+    <item quantity="other">%1$d elements de seguiment blocats aquesta setmana</item>
+  </plurals>
   <!--
     Text for displaying the total number of trackers blocked in the trackers blocked panel.
     %d is a placeholder for the number of trackers blocked.
@@ -3526,6 +3961,8 @@
     %s is a placeholder for the name of the certificate authority that issued the certificate.
   -->
   <string name="connection_security_panel_verified_by">Verificat per %s</string>
+  <!-- Content description (not visible, for screen readers etc.) for the handle used to drag the protections dashboard to the bottom of the screen and close it. -->
+  <string name="tracker_protections_dashboard_close_handlebar_content_description">Tanca el tauler de control</string>
   <!--
     Text for the connection security panel when the site uses a QWAC.
     %s is a placeholder for the organization for which the certificate was issued.
@@ -3623,6 +4060,16 @@
   <string name="likert_scale_option_7" tools:ignore="BrandUsage,UnusedResources">No faig servir la cerca en el Firefox</string>
   <!-- Option for likert scale -->
   <string name="likert_scale_option_8" tools:ignore="UnusedResources">No faig servir la sincronització</string>
+  <!-- Option for likert scale -->
+  <string name="likert_scale_option_slow_or_buggy" tools:ignore="UnusedResources">És lent o conté errors</string>
+  <!-- Option for likert scale -->
+  <string name="likert_scale_option_features_hard_to_find_or_missing" tools:ignore="UnusedResources">Falten funcions o són difícils de trobar</string>
+  <!-- Option for likert scale -->
+  <string name="likert_scale_option_confusing_or_hard_to_use" tools:ignore="UnusedResources">És confús o difícil d’utilitzar</string>
+  <!-- Option for likert scale -->
+  <string name="likert_scale_option_its_okay" tools:ignore="UnusedResources">Està bé, però no és millor que els altres navegadors</string>
+  <!-- Option for likert scale. Note: The word "Firefox" should NOT be translated. -->
+  <string name="likert_scale_option_i_plan_to_keep_using" tools:ignore="BrandUsage,UnusedResources">Tinc previst seguir utilitzant el Firefox</string>
   <!-- Text shown in prompt for printing microsurvey. "sec" It's an abbreviation for "second". Note: The word "Firefox" should NOT be translated. -->
   <string name="microsurvey_prompt_printing_title" tools:ignore="BrandUsage,UnusedResources">Ajudeu-nos a millorar la impressió en el Firefox. Només és un minut.</string>
   <!-- Text shown in prompt for search microsurvey. Note: The word "Firefox" should NOT be translated. -->
@@ -3637,6 +4084,28 @@
   <string name="microsurvey_search_title" tools:ignore="BrandUsage,UnusedResources">Esteu satisfet/a amb l’experiència de cerca en el Firefox?</string>
   <!-- Text shown in the survey title for sync experience microsurvey. Note: The word "Firefox" should NOT be translated. -->
   <string name="microsurvey_sync_title" tools:ignore="BrandUsage,UnusedResources">Esteu satisfet/a amb l’experiència de sincronització en el Firefox?</string>
+  <!-- Text shown in the survey title for 'describe your experience so far' microsurvey. Note: The word "Firefox" should NOT be translated. -->
+  <string name="microsurvey_describe_your_experience_title" tools:ignore="BrandUsage,UnusedResources">Ajudeu-nos a millorar el Firefox. Quina opció descriu millor la vostra experiència fins ara?</string>
+  <!--
+    Uninstall Survey
+
+    Title text for the uninstall survey dialog, asking the user for the reason they are removing the app
+  -->
+  <string name="microsurvey_uninstall_survey_title">La vostra opinió és important. Per què voleu desinstal·lar-lo?</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_1_v2">És lent o poc fiable</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_2_v2">Els llocs web no funcionaven correctament</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_3_v2">Hi falten funcions que necessito</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_4_v2">Els vídeos, les baixades o el contingut multimèdia no funcionen</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_5_v2">És difícil d’utilitzar o està mal dissenyat</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_6_v2">Dubtes sobre la privadesa o seguretat</string>
+  <!-- Button label shown at the bottom of the uninstall survey -->
+  <string name="uninstall_survey_button_label">Envia els comentaris i desinstal·la</string>
   <!--
     Accessibility
 
@@ -3939,6 +4408,10 @@
   <string name="settings_search_clear_recent_searches_message">Esborra-ho tot</string>
   <!-- Section header for recent search results -->
   <string name="settings_search_recent_searches_section_header">Resultats de cerca recents</string>
+  <!-- Message displayed when the search field is not empty but search results is empty. -->
+  <string name="settings_search_no_results_title">Cap resultat</string>
+  <!-- Sub-message displayed when the search field is not empty but search results is empty. -->
+  <string name="settings_search_no_results_message">Podeu provar una altra cerca?</string>
   <!-- Content Description for the button to open Settings Search (to search through settings). -->
   <string name="settings_search_button_content_description">Botó de cercar paràmetres</string>
   <!-- ==== Terms of use pop up prompt ==== -->
@@ -4011,12 +4484,38 @@
   <string name="sports_widget_match_live">EN DIRECTE</string>
   <!-- Title shown on the sports widget champion scoreboard row celebrating the soccer tournament winner. -->
   <string name="sports_widget_champions_title">Campions de la Copa del Món 2026</string>
+  <!-- Title shown on the sports widget champion scoreboard celebrating the soccer tournament runners-up. Runners-up means second place. -->
+  <string name="sports_widget_runner_up_title" tools:ignore="UnusedResources">Subcampions</string>
+  <!-- Title shown on the sports widget champion scoreboard celebrating the soccer tournament third place winners. -->
+  <string name="sports_widget_third_place_title">Tercer lloc</string>
   <!-- Round name shown on the sports widget for the Round of 32 stage in the soccer tournament. -->
   <string name="sports_widget_round_of_32">Setzens de final</string>
   <!-- Round name shown on the sports widget for the Round of 16 stage in the soccer tournament. -->
   <string name="sports_widget_round_of_16">Vuitens de final</string>
   <!-- Round name shown on the sports widget for the quarter-finals stage in the soccer tournament. -->
   <string name="sports_widget_quarter_final">Quarts de final</string>
+  <!-- Round name shown on the sports widget for the semi-finals stage in the soccer tournament. -->
+  <string name="sports_widget_semi_final">Semifinals</string>
+  <!-- Round name shown on the sports widget for the final stage in the soccer tournament. -->
+  <string name="sports_widget_final">Final</string>
+  <!-- Round name shown on the sports widget for the bronze final stage in the soccer tournament. -->
+  <string name="sports_widget_bronze_final">Tercer lloc</string>
+  <!-- Sports widget error card message shown when match data fails to load. -->
+  <string name="sports_widget_error_load_failed" tools:ignore="UnusedResources">La informació del partit no està disponible ara mateix. Torneu-ho a provar d’aquí a uns minuts.</string>
+  <!-- Sports widget error card message shown when the network connection is interrupted and live updates pause. -->
+  <string name="sports_widget_error_connection_interrupted" tools:ignore="UnusedResources">S’ha interromput la connexió: les actualitzacions en directe estan en pausa.</string>
+  <!-- Sports widget action label to refresh match data after an error. -->
+  <string name="sports_widget_error_refresh">Actualitza</string>
+  <!-- Sports widget group stage label for group A in the soccer tournament. -->
+  <string name="sports_widget_group_a">Grup A</string>
+  <!-- Sports widget group stage label for group B in the soccer tournament. -->
+  <string name="sports_widget_group_b">Grup B</string>
+  <!-- Sports widget group stage label for group C in the soccer tournament. -->
+  <string name="sports_widget_group_c">Grup C</string>
+  <!-- Sports widget group stage label for group D in the soccer tournament. -->
+  <string name="sports_widget_group_d">Grup D</string>
+  <!-- Sports widget group stage label for group E in the soccer tournament. -->
+  <string name="sports_widget_group_e">Grup E</string>
   <!-- Sports widget group stage label for group F in the soccer tournament. -->
   <string name="sports_widget_group_f">Grup F</string>
   <!-- Sports widget group stage label for group G in the soccer tournament. -->
@@ -4154,6 +4653,8 @@
   <string name="sports_widget_remove_content_description" tools:ignore="UnusedResources">Elimina la Copa del Món de la pàgina d’inici</string>
   <!-- Title shown on the sports widget immediately after the user has followed a team. %s is the selected team (e.g., "USA"). -->
   <string name="sports_widget_team_followed_title">Seguint: %s</string>
+  <!-- Description shown on the sports widget immediately after the user has followed a team -->
+  <string name="sports_widget_team_followed_description">Torneu a consultar la informació dels partits a mesura que s’acosti el torneig.</string>
   <!-- Sports widget match status label shown during first half of a match. -->
   <string name="sports_widget_first_half" tools:ignore="UnusedResources">Primera part</string>
   <!-- Sports widget match status label shown during second half of a match. -->
@@ -4188,10 +4689,30 @@
   <string name="preferences_debug_settings_google_lens_integration">Activa la integració amb el Google Lens</string>
   <!-- Lens image search button content description -->
   <string name="lens_search_content_description">Cerca amb imatge</string>
+  <!-- Content description for the gallery picker button in the Lens camera screen -->
+  <string name="content_description_gallery">Tria de la galeria per a enviar al Google Lens</string>
+  <!-- Content description for the shutter button in the Lens camera screen -->
+  <string name="content_description_take_photo">Fes una foto i envia-la al Google Lens</string>
   <!-- Image context menu entry that sends the long-pressed image to Google Lens -->
   <string name="context_menu_open_image_with_google_lens">Cerca amb el Google Lens</string>
   <!-- Toast shown when the user denies the camera permission requested by the Lens camera screen -->
   <string name="lens_camera_permission_denied">Permís denegat</string>
+  <!--
+    Title shown at the top of the camera screen, next to the close button, telling the
+    user that the photo they capture will be sent to Google Lens for a visual search.
+  -->
+  <string name="lens_camera_title_lens">Google Lens</string>
+  <!--
+    Title shown at the top of the camera screen, next to the close button, telling the
+    user that the camera is being used to scan a QR code.
+  -->
+  <string name="lens_camera_title_qr">Codi QR</string>
+  <!-- Title for the Google Lens Search Settings page feature toggle -->
+  <string name="search_settings_google_lens_title">Activa la cerca amb el Google Lens</string>
+  <!-- Description for the Google Lens Search Settings page feature toggle -->
+  <string name="search_settings_google_lens_description">Envia imatges i fotos a Google per a fer cerques visuals.</string>
+  <!-- Caption shown under the Google Lens toggle clarifying when the feature is available -->
+  <string name="preferences_google_lens_availability_caption">Només està disponible si heu activat el Google més amunt i és el motor de cerca actiu mentre navegueu.</string>
   <!-- Title for the Google Lens AI feature toggle -->
   <string name="ai_controls_google_lens_title">Google Lens</string>
   <!-- Description for the Google Lens AI feature toggle -->
@@ -4213,8 +4734,15 @@
   <string name="firefox_labs_title" tools:ignore="BrandUsage">Firefox Labs</string>
   <!-- Banner title text on the Firefox Labs screen. -->
   <string name="firefox_labs_banner_title_2">Proveu les nostres funcions experimentals!</string>
+  <!--
+    Banner description text on the Firefox Labs screen. Provides information on what Firefox Labs does. %s is the name of the app (for example "Firefox Nightly").
+    Text will appear under the Firefox Labs banner title.
+  -->
+  <string name="firefox_labs_experimental_description">Estan en desenvolupament i en evolució, cosa que podria afectar el funcionament del %s.</string>
   <!-- The link text shown when a feedback URL for a Firefox Labs feature is available. The feedback URL page will allow users to provide opinions and suggestions. -->
   <string name="firefox_labs_share_feedback">Comparteix els comentaris</string>
+  <!-- Content description for the share feedback link on a Firefox Labs feature. This text will be used by screen readers to provide more context on the feedback link. %s is the name of the Firefox Labs feature. -->
+  <string name="firefox_labs_share_feedback_content_description">Comparteix comentaris sobre %s.</string>
   <!-- Button text on the Firefox Labs screen for restoring all toggles back to the default settings. The button will turn off any experimental features. -->
   <string name="firefox_labs_restore_default_button_text">Restaura els valors per defecte</string>
   <!-- The title used in a confirmation dialog on the Firefox Labs screen when toggling "on" or "off" an experimental feature that requires a restart. -->
@@ -4225,4 +4753,14 @@
   <string name="firefox_labs_dialog_cancel_button">Cancel·la</string>
   <!-- The title used in a confirmation dialog on the Firefox Labs screen when restoring the application to its defaults by turning "off" any experimental features. -->
   <string name="firefox_labs_restore_defaults_dialog_title">Cal que reinicieu</string>
+  <!-- The description used in a confirmation dialog on the Firefox Labs screen when restoring the application to its defaults by turning "off" any experimental features. %s is the name of the app (for example "Firefox Nightly") -->
+  <string name="firefox_labs_restore_defaults_dialog_message">Per a restaurar els valors per defecte, reinicieu el %s.</string>
+  <!-- The description text that is displayed in the confirmation dialog on the Firefox Labs screen for toggling "on" experimental features. %s is the name of the app (for example "Firefox Nightly") -->
+  <string name="firefox_labs_feature_enable_dialog_message">Per a activar aquesta funció, reinicieu el %s.</string>
+  <!-- The description text that is displayed in the confirmation dialog on the Firefox Labs screen for toggling "off" experimental features. %s is the name of the app (for example "Firefox Nightly") -->
+  <string name="firefox_labs_feature_disable_dialog_message">Per a desactivar aquesta funció, reinicieu el %s.</string>
+  <!-- Helper text shown beneath a Firefox Labs item when it is blocked from being turned on. -->
+  <string name="firefox_labs_feature_conflict">Aquesta funció no està disponible per a provar-la.</string>
+  <!-- Text displayed on the Firefox Labs screen when there are no Labs experimental features present. -->
+  <string name="firefox_labs_no_labs_available_description">No hi ha cap funció experimental per a provar ara mateix</string>
 </resources>

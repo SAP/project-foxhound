@@ -44,4 +44,14 @@
   <string name="mozac_protections_dashboard_empty_title">%1$s blokuje elementy śledzące podczas przeglądania.</string>
   <!-- Subtitle shown when no trackers have been blocked yet -->
   <string name="mozac_protections_dashboard_empty_subtitle">Zobaczysz je tutaj.</string>
+  <plurals name="mozac_protections_dashboard_total_blocked_since_2">
+    <!--
+      Footer line shown in the dashboard summarizing total trackers blocked
+      since a specific date. %1$d is the trackers count number (e.g. 123).
+      %2$s is the formatted date (e.g. "February 23, 2026").
+    -->
+    <item quantity="one">Od %2$s zablokowano %1$d element śledzący</item>
+    <item quantity="few">Od %2$s zablokowano %1$d elementy śledzące</item>
+    <item quantity="other">Od %2$s zablokowano %1$d elementów śledzących</item>
+  </plurals>
 </resources>

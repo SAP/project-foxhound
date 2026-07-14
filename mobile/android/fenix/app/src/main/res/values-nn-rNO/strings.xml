@@ -1973,6 +1973,8 @@
   <string name="webcompat_reporter_clear_reason_content_description">Fjern vald årsak</string>
   <!-- The error message of the description when the user selects "Something else" as the reason, but left the description empty or too short. -->
   <string name="webcompat_reporter_description_error">Skriv inn minst 10 teikn</string>
+  <!-- The label/title of a mandatory field in the Web Compat Reporter feature for adding additional information. -->
+  <string name="webcompat_reporter_label_mandatory_description">Beskriv problemet i detalj for å hjelpe oss med å undersøkje saka</string>
   <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_label_whats_broken_2">Kva er øydelagt?</string>
   <!-- The placeholder text for the dropdown where a user selects a high-level reason why the site is broken. -->
@@ -4090,6 +4092,18 @@
     Title text for the uninstall survey dialog, asking the user for the reason they are removing the app
   -->
   <string name="microsurvey_uninstall_survey_title">Tilbakemeldinga di er viktig. Kvifor avinstallerer du?</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_1_v2">Han er treg eller upåliteleg</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_2_v2">Nettstadar fungerer ikkje skikkeleg</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_3_v2">Manglande funksjonar eg treng</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_4_v2">Videoar, nedlastingar eller media fungerte ikkje</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_5_v2">Han er vanskeleg å bruke eller dårleg laga</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_6_v2">Bekymringar om personvern eller sikkerheit</string>
   <!-- Button label shown at the bottom of the uninstall survey -->
   <string name="uninstall_survey_button_label">Send inn tilbakemelding og avinstaller</string>
   <!--
@@ -4695,6 +4709,8 @@
   <string name="lens_camera_title_qr">QR-kode</string>
   <!-- Title for the Google Lens Search Settings page feature toggle -->
   <string name="search_settings_google_lens_title">Slå på Google Lens-søk</string>
+  <!-- Description for the Google Lens Search Settings page feature toggle -->
+  <string name="search_settings_google_lens_description">Sender bilde og foto til Google for visuelt søk.</string>
   <!-- Caption shown under the Google Lens toggle clarifying when the feature is available -->
   <string name="preferences_google_lens_availability_caption">Berre tilgjengeleg når Google er aktivert ovanfor og er den aktive søkjemotoren din medan du surfar.</string>
   <!-- Title for the Google Lens AI feature toggle -->

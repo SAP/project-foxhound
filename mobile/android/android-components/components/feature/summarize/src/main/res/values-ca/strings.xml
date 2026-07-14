@@ -9,16 +9,34 @@
 <resources>
   <!-- Link text to learn more about downloading Gemini Nano -->
   <string name="mozac_summarize_learn_more_link">Més informació</string>
+  <!-- Title for the off-device shake summarization consent screen. Localization note: Asking if the user wants to use the shake gesture to summarize the page they are viewing. -->
+  <string name="mozac_summarize_shake_consent_off_device_title">Voleu resumir amb una sacsejada?</string>
+  <!-- Message for the off-device shake summarization consent screen. %1$s is 'Firefox' -->
+  <string name="mozac_summarize_shake_consent_off_device_message">Sacsegeu el dispositiu per obtenir un resum de la pàgina en pocs segons al %1$s.</string>
   <!-- Button text for the off-device shake summarization consent screen approving shake consent. Localization note: "Continue" turns on the shake to summarize feature. -->
   <string name="mozac_summarize_shake_consent_off_device_button_positive">Continua</string>
   <!-- Button text for the off-device shake summarization consent screen denying shake consent. Localization note: "Not now" dismisses the request to turn on the shake to summarize feature. -->
   <string name="mozac_summarize_shake_consent_off_device_negative_button">Ara no</string>
   <!-- Title for the on-device shake summarization and download consent screen -->
   <string name="mozac_summarize_shake_consent_on_device_title">Resumeix aquesta pàgina</string>
+  <!-- Message for the on-device shake summarization and download consent screen. %s will be replaced by app name. -->
+  <string name="mozac_summarize_shake_consent_on_device_message">Es farà una baixada ràpida una sola vegada i després el %s podrà resumir les pàgines en sacsejar el dispositiu.</string>
+  <!-- Button text for the on-device shake summarization and download consent screen approving shake and download consent -->
+  <string name="mozac_summarize_shake_consent_on_device_button_positive">Baixa per a resumir</string>
   <!-- Button text for the on-device shake summarization and download consent screen denying shake and download consent -->
   <string name="mozac_summarize_shake_consent_on_device_negative_button">Ara no</string>
+  <!-- Title for the download consent screen -->
+  <string name="mozac_summarize_download_consent_title">Configureu els resums privats</string>
+  <!-- Message for the consent to download when using an on-device model. %s will be replaced by app name. -->
+  <string name="mozac_summarize_download_nano_consent_message">Es farà una baixada una sola vegada per a permetre al %s crear resums de pàgina que estan sota el vostre control.</string>
+  <!-- Button text for the consent to download an on-device model approving download consent -->
+  <string name="mozac_summarize_download_consent_button_positive">Baixa per a resumir</string>
   <!-- Button text for the consent to download an on-device model denying download consent -->
   <string name="mozac_summarize_download_consent_button_negative">Cancel·la</string>
+  <!-- Title for the download in progress screen -->
+  <string name="mozac_summarize_download_progress_title">S’estan configurant els resums</string>
+  <!-- Message to describe that a download is in progress using an on-device, private model -->
+  <string name="mozac_summarize_download_progress_message">Baixada única per a resums privats.</string>
   <!-- Caption to describe the progress of the download. %1$.2f is bytes downloaded, %2$.2f is total bytes required for download to complete. -->
   <string name="mozac_summarize_download_progress_caption">%1$.2f MB / %2$.2f MB</string>
   <!-- Button text shown while a download is in progress to cancel the download -->
@@ -31,22 +49,50 @@
   <string name="mozac_summarize_download_error_positive_button">Torna-ho a provar</string>
   <!-- Button for the download error screen to cancel -->
   <string name="mozac_summarize_download_error_negative_button">Cancel·la</string>
+  <!-- Title for the error screen when page is too long to summarize -->
+  <string name="mozac_summarize_content_too_long_error_title">La pàgina és massa llarga per a resumir-la</string>
+  <!-- Title for the info error screen -->
+  <string name="mozac_summarize_info_error_title">No s’ha pogut crear el resum ara mateix</string>
   <!-- Generic fallback message for the info error screen -->
   <string name="mozac_summarize_info_error_message">Torneu a provar-ho més tard.</string>
   <!-- Error code shown on long press of the error icon. %1$d is an error code. -->
   <string name="mozac_summarize_info_error_code">Codi d’error: %1$d</string>
   <!-- Loading text displayed while a page summary is being generated -->
   <string name="mozac_feature_summarize_loading_title">S’està resumint…</string>
+  <!-- Content description for the settings icon button in the summarized view -->
+  <string name="mozac_summarize_settings_button_content_description">Paràmetres de resum de pàgines</string>
   <!-- Title for the settings screen shown in the summarization bottom sheet -->
   <string name="mozac_summarize_settings_title">Resums de pàgines</string>
   <!-- Label for the summarize pages toggle in settings -->
   <string name="mozac_summarize_settings_summarize_pages">Resumeix pàgines</string>
+  <!-- Description for the summarize pages toggle -->
+  <string name="mozac_summarize_settings_summarize_pages_cloud">Creeu resums de pàgines amb IA. Les pàgines i els resums són privats i no s’emmagatzemen mai.</string>
   <!-- Link text to learn more about page summaries in settings -->
   <string name="mozac_summarize_settings_learn_more">Més informació</string>
   <!-- Section header for gesture settings -->
   <string name="mozac_summarize_settings_gestures">Gestos</string>
+  <!-- Label for the shake to summarize toggle in settings -->
+  <string name="mozac_summarize_settings_shake_to_summarize">Sacseja per a resumir</string>
+  <!-- Description for the shake to summarize toggle in settings -->
+  <string name="mozac_summarize_settings_shake_to_summarize_description">Sacsegeu el dispositiu d’un costat a l’altre per resumir una pàgina.</string>
+  <!-- Label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity">Sensibilitat a les sacsejades</string>
+  <!-- Description for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_description">Ajusteu la força amb què heu de sacsejar per a activar el resum.</string>
+  <!-- Low option label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_low">Baixa</string>
+  <!-- Medium option label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_medium">Mitjana</string>
+  <!-- High option label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_high">Alta</string>
+  <!-- Message for summary by model, %1$s is the name of the model that is being displayed -->
+  <string name="mozac_feature_summarize_summary_model">Resum creat per %1$s</string>
+  <!-- Disclaimer message -->
+  <string name="mozac_feature_summarize_disclaimer_message">La IA pot cometre errors</string>
   <!-- Title for the page summary AI controllable feature -->
   <string name="mozac_ai_controls_page_summary_title">Resums de pàgines</string>
+  <!-- Description for the page summary AI controllable feature -->
+  <string name="mozac_ai_controls_page_summary_description">Les pàgines i els resums no s’emmagatzemen mai.</string>
   <!-- Button text for the Error dismiss button on Shake to Summarize -->
   <string name="mozac_summarize_error_dissmiss">Descarta</string>
 </resources>

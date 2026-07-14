@@ -31,6 +31,10 @@
     then we will show another collapsed entry saying "Access your data on other domains".
   -->
   <string name="mozac_feature_addons_permissions_extra_domains_description_plural_2">Accedir a les vostres dades d’altres dominis</string>
+  <plurals name="mozac_feature_addons_permissions_all_domain_count_description_2">
+    <!-- When an add-on requires access to domains, this entry is used to describe the total number of domains. Underneath it will be the list of all the domains. %1$d is the number of all the domains that will be shown to the user as required. -->
+    <item quantity="other">Accedir a les dades dels llocs web de %1$d dominis</item>
+  </plurals>
   <!-- Content description for a permission item, for an installed add-on details page. %1$s will be replaced with the permission text name, %2$d will be replaced with the permission position in the list and %3$d will be replaced with the total number of permissions in the list.Taking as an example "Read and modify privacy settings" the whole text will read Read and modify privacy settings, 2 of 6. -->
   <string name="mozac_feature_addons_permissions_content_description_item">%1$s, %2$d de %3$d</string>
   <!-- Description for the "privacy" WebExtensions API permission. -->
@@ -347,6 +351,8 @@
   <string name="mozac_feature_addons_not_yet_supported_caption2">Actualment treballem per oferir una selecció inicial d’extensions recomanades.</string>
   <!-- This is the caption for the extension installation progress overlay -->
   <string name="mozac_extension_install_progress_caption">S’està baixant i verificant l’extensió…</string>
+  <!-- Error shown when extensions could not be loaded -->
+  <string name="mozac_feature_addons_failed_to_load_extensions">No s’han pogut carregar les extensions. Torneu-ho a provar més tard.</string>
   <!-- Error shown when unable to find a translation for an add-on field. %1$s is the locale of the user and %2$s is the default language of the add-on -->
   <string name="mozac_feature_addons_failed_to_translate">No s’ha trobat la traducció, ni per a la llengua %1$s ni per a la llengua per defecte %2$s</string>
   <!-- Text shown after successfully installed an add-on. %1$s is the add-on name. -->
@@ -369,6 +375,8 @@
   <string name="mozac_feature_addons_blocklisted_2" tools:ignore="BrandUsage">%1$s infringeix les polítiques de Mozilla i no es pot instal·lar al %2$s.</string>
   <!-- Text shown when attempting to install an add-on that can only be install via Enterprise Policies, which is not supported on Android.  %1$s is the add-on name. -->
   <string name="mozac_feature_addons_admin_install_only">No s’ha pogut instal·lar %1$s perquè només pot instal·lar-lo una organització que utilitzi polítiques empresarials, però en aquesta plataforma no s’admeten.</string>
+  <!-- Text shown when attempting to install an add-on that is soft-blocked. %1$s is the add-on name. %2$s is the app name. -->
+  <string name="mozac_feature_addons_soft_blocked_2">%1$s està restringit i no es pot instal·lar al %2$s.</string>
   <!-- Text shown after failed to enable an add-on. %1$s is the add-on name. -->
   <string name="mozac_feature_addons_failed_to_enable">No s’ha pogut activar %1$s</string>
   <!-- Text shown after failed to disable an add-on. %1$s is the add-on name. -->
@@ -413,6 +421,10 @@
   <string name="mozac_feature_addons_status_see_details">Mostra detalls</string>
   <!-- Status message below an add-on in the add-ons manager when this add-on has been blocklisted. %1$s is the add-on name. -->
   <string name="mozac_feature_addons_status_blocklisted_1" tools:ignore="BrandUsage">Aquesta extensió s’ha blocat perquè infringeix les polítiques de Mozilla i s’ha desactivat.</string>
+  <!-- Status message below an add-on in the add-ons manager when this add-on has been soft-blocked. -->
+  <string name="mozac_feature_addons_status_softblocked_2">Aquesta extensió està restringida i s’ha desactivat. Podeu activar-la, però pot ser perillós.</string>
+  <!-- Status message below an add-on in the add-ons manager when this add-on has been soft-blocked but the user re-enabled it. -->
+  <string name="mozac_feature_addons_status_softblocked_re_enabled_2">Aquesta extensió està restringida. El seu ús pot ser perillós.</string>
   <!-- Status message below an add-on in the add-ons manager when this add-on hasn't been signed correctly. %1$s is the add-on name. -->
   <string name="mozac_feature_addons_status_unsigned">No s’ha pogut verificar que «%1$s» sigui segur i s’ha inhabilitat.</string>
   <!-- Status message below an add-on in the add-ons manager when this add-on isn't compatible with the application version. %1$s is the add-on name, %2$s is the app name and %3$s is the app version. -->

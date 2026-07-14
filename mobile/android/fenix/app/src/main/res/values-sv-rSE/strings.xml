@@ -1973,6 +1973,8 @@
   <string name="webcompat_reporter_clear_reason_content_description">Rensa valt skäl</string>
   <!-- The error message of the description when the user selects "Something else" as the reason, but left the description empty or too short. -->
   <string name="webcompat_reporter_description_error">Ange minst 10 tecken</string>
+  <!-- The label/title of a mandatory field in the Web Compat Reporter feature for adding additional information. -->
+  <string name="webcompat_reporter_label_mandatory_description">Beskriv problemet i detalj för att hjälpa oss undersöka problemet</string>
   <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_label_whats_broken_2">Vad är trasigt?</string>
   <!-- The placeholder text for the dropdown where a user selects a high-level reason why the site is broken. -->
@@ -1987,6 +1989,8 @@
   <string name="webcompat_reporter_add_more_info">Lägg till mer info</string>
   <!-- The button text for the cancel button to leave the Web Compat Reporter feature. -->
   <string name="webcompat_reporter_cancel">Avbryt</string>
+  <!-- The button text for the send button to submit the provided form data. -->
+  <string name="webcompat_reporter_send_report">Skicka rapport</string>
   <!-- The button text for the send button to submit the provided form data. -->
   <string name="webcompat_reporter_send">Skicka</string>
   <!-- Text for a snackbar to confirm the successful submission of a WebCompat report. -->
@@ -2456,7 +2460,7 @@
   <!-- Preference for not taking the short survey. -->
   <string name="preferences_not_take_survey">Nej tack</string>
   <!-- Error message shown in a Toast when the system fails to trigger the device uninstallation prompt. -->
-  <string name="uninstall_survey_error_failed">Det gick inte att öppna prompten för systemavinstallation, använd avinstallationsåtgärden direkt.</string>
+  <string name="uninstall_survey_error_failed">Det gick inte att öppna prompten för systemavinstallation. Använd åtgärden för systemavinstallation direkt.</string>
   <!--
     Snackbar
 
@@ -4088,6 +4092,18 @@
     Title text for the uninstall survey dialog, asking the user for the reason they are removing the app
   -->
   <string name="microsurvey_uninstall_survey_title">Din feedback är viktig. Varför avinstallerar du?</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_1_v2">Den är långsam eller opålitlig</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_2_v2">Webbplatser fungerade inte korrekt</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_3_v2">Saknar funktioner som jag behöver</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_4_v2">Videor, nedladdningar eller media fungerade inte</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_5_v2">Den är svår att använda eller dåligt utformad</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_6_v2">Sekretess eller säkerhetsproblem</string>
   <!-- Button label shown at the bottom of the uninstall survey -->
   <string name="uninstall_survey_button_label">Skicka feedback och avinstallera</string>
   <!--
@@ -4681,6 +4697,22 @@
   <string name="context_menu_open_image_with_google_lens">Sök med Google Lens</string>
   <!-- Toast shown when the user denies the camera permission requested by the Lens camera screen -->
   <string name="lens_camera_permission_denied">Tillstånd nekad</string>
+  <!--
+    Title shown at the top of the camera screen, next to the close button, telling the
+    user that the photo they capture will be sent to Google Lens for a visual search.
+  -->
+  <string name="lens_camera_title_lens">Google Lens</string>
+  <!--
+    Title shown at the top of the camera screen, next to the close button, telling the
+    user that the camera is being used to scan a QR code.
+  -->
+  <string name="lens_camera_title_qr">QR-kod</string>
+  <!-- Title for the Google Lens Search Settings page feature toggle -->
+  <string name="search_settings_google_lens_title">Aktivera sökning med Google Lens</string>
+  <!-- Description for the Google Lens Search Settings page feature toggle -->
+  <string name="search_settings_google_lens_description">Skickar bilder och foton till Google för visuell sökning.</string>
+  <!-- Caption shown under the Google Lens toggle clarifying when the feature is available -->
+  <string name="preferences_google_lens_availability_caption">Endast tillgängligt när Google är aktiverat ovan och är din aktiva sökmotor medan du surfar.</string>
   <!-- Title for the Google Lens AI feature toggle -->
   <string name="ai_controls_google_lens_title">Google Lens</string>
   <!-- Description for the Google Lens AI feature toggle -->

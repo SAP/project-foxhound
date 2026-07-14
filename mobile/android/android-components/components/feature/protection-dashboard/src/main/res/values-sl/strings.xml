@@ -9,6 +9,17 @@
 <resources>
   <!-- Title shown in the protection dashboard indicating the user is protected -->
   <string name="mozac_protections_dashboard_youre_protected">Zaščiteni ste</string>
+  <plurals name="mozac_protections_dashboard_trackers_blocked_this_week">
+    <!--
+      Label shown below the tracker count in the dashboard. The count is displayed separately
+      above this string and is used to select the correct plural form. Do not include the number in
+      the translation.
+    -->
+    <item quantity="one">En sledilec je bil blokiran ta teden.</item>
+    <item quantity="two">Dva sledilca sta bila blokirana ta teden.</item>
+    <item quantity="few">Trije sledilci so bili blokirani ta teden.</item>
+    <item quantity="other">Več sledilcev je bilo blokiranih ta teden.</item>
+  </plurals>
   <plurals name="mozac_protections_dashboard_data_saved">
     <!-- Label showing data saved in megabytes. %1$d is the number of MB saved -->
     <item quantity="one">Prihranek %1$d MB</item>
@@ -35,4 +46,15 @@
   <string name="mozac_protections_dashboard_empty_title">%1$s blokira sledilce, medtem ko brskate.</string>
   <!-- Subtitle shown when no trackers have been blocked yet -->
   <string name="mozac_protections_dashboard_empty_subtitle">Blokirane sledilce boste videli tukaj.</string>
+  <plurals name="mozac_protections_dashboard_total_blocked_since_2">
+    <!--
+      Footer line shown in the dashboard summarizing total trackers blocked
+      since a specific date. %1$d is the trackers count number (e.g. 123).
+      %2$s is the formatted date (e.g. "February 23, 2026").
+    -->
+    <item quantity="one">%1$d sledilec blokiran od %2$s</item>
+    <item quantity="two">%1$d sledilca blokirana od %2$s</item>
+    <item quantity="few">%1$d sledilci so bili blokirani od %2$s</item>
+    <item quantity="other">%1$d sledilcev je bilo blokiranih od %2$s</item>
+  </plurals>
 </resources>
