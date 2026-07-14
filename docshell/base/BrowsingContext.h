@@ -107,8 +107,8 @@ struct EmbedderColorSchemes {
 // Racy sets will be resolved as-if they occurred in the order the parent
 // process finds out about them.
 //
-// The `DidSet` and `CanSet` methods may be overloaded to provide different
-// behavior for a specific field.
+// The `DidSet` method may, and the `CanSet` method must, be overloaded to
+// provide different behavior for a specific field.
 //  * `DidSet` is called to run code in every process whenever the value is
 //    updated (This currently occurs even if the value didn't change, though
 //    this may change in the future).
@@ -1269,14 +1269,27 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
   // Update dependents if the activeness of this BC was explicitly changed.
   void ActivenessChanged(bool aIsActive);
 
+  using CanSetResult = syncedcontext::CanSetResult;
+
+  // Deleted catch-all overload: every field must provide a `CanSet` whose value
+  // parameter exactly matches the field's type.
+  template <size_t I, typename T>
+  bool CanSet(FieldIndex<I>, const T&, ContentParent*) = delete;
+
+  // Overload `DidSet` to get notifications for a particular field being set.
+  //
+  // You can also overload the variant that gets the old value if you need it.
+  template <size_t I>
+  void DidSet(FieldIndex<I>) {}
+  template <size_t I, typename T>
+  void DidSet(FieldIndex<I>, T&& aOldValue) {}
+
   bool CanSet(FieldIndex<IDX_SessionStoreEpoch>, uint32_t aEpoch,
               ContentParent* aSource) {
     return IsTop() && !aSource;
   }
 
   void DidSet(FieldIndex<IDX_SessionStoreEpoch>, uint32_t aOldValue);
-
-  using CanSetResult = syncedcontext::CanSetResult;
 
   // Ensure that opener is in the same BrowsingContextGroup.
   bool CanSet(FieldIndex<IDX_OpenerId>, const uint64_t& aValue,
@@ -1337,6 +1350,10 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
 
   bool CanSet(FieldIndex<IDX_InRDMPane>, const bool&, ContentParent* aSource);
   void DidSet(FieldIndex<IDX_InRDMPane>, bool aOldValue);
+  bool CanSet(FieldIndex<IDX_HasOrientationOverride>, const bool&,
+              ContentParent*) {
+    return true;
+  }
   void DidSet(FieldIndex<IDX_HasOrientationOverride>, bool aOldValue);
   MOZ_CAN_RUN_SCRIPT_BOUNDARY void DidSet(FieldIndex<IDX_ForceDesktopViewport>,
                                           bool aOldValue);
@@ -1398,6 +1415,9 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
   // Ensure that we only set the flag on the top level browsingContext.
   // And then, we do a pre-order walk in the tree to refresh the
   // volume of all media elements.
+  bool CanSet(FieldIndex<IDX_Muted>, const bool&, ContentParent*) {
+    return true;
+  }
   void DidSet(FieldIndex<IDX_Muted>);
 
   bool CanSet(FieldIndex<IDX_IsAppTab>, const bool& aValue,
@@ -1435,11 +1455,25 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
 
   void DidSet(FieldIndex<IDX_IsPopupSpam>);
 
+  bool CanSet(FieldIndex<IDX_GVAudibleAutoplayRequestStatus>,
+              const GVAutoplayRequestStatus&, ContentParent*) {
+    return true;
+  }
   void DidSet(FieldIndex<IDX_GVAudibleAutoplayRequestStatus>);
+  bool CanSet(FieldIndex<IDX_GVInaudibleAutoplayRequestStatus>,
+              const GVAutoplayRequestStatus&, ContentParent*) {
+    return true;
+  }
   void DidSet(FieldIndex<IDX_GVInaudibleAutoplayRequestStatus>);
 
+  bool CanSet(FieldIndex<IDX_Loading>, const bool&, ContentParent*) {
+    return true;
+  }
   void DidSet(FieldIndex<IDX_Loading>);
 
+  bool CanSet(FieldIndex<IDX_AncestorLoading>, const bool&, ContentParent*) {
+    return true;
+  }
   void DidSet(FieldIndex<IDX_AncestorLoading>);
 
   void DidSet(FieldIndex<IDX_PlatformOverride>);
@@ -1483,6 +1517,9 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
               const bool& aTargetTopLevelLinkClicksToBlankInternal,
               ContentParent* aSource);
 
+  bool CanSet(FieldIndex<IDX_HasSessionHistory>, const bool&, ContentParent*) {
+    return true;
+  }
   void DidSet(FieldIndex<IDX_HasSessionHistory>, bool aOldValue);
 
   bool CanSet(FieldIndex<IDX_BrowserId>, const uint64_t& aValue,
@@ -1525,18 +1562,14 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
   bool CanSet(FieldIndex<IDX_ForceOffline>, bool aNewValue,
               ContentParent* aSource);
 
-  bool CanSet(FieldIndex<IDX_InnerSizeSpoofedForRFP>, bool, ContentParent*) {
+  bool CanSet(FieldIndex<IDX_InnerSizeSpoofedForRFP>, const CSSIntSize&,
+              ContentParent*) {
     return IsTop();
   }
 
   bool CanSet(FieldIndex<IDX_EmbeddedInContentDocument>, bool,
               ContentParent* aSource) {
     return CheckOnlyEmbedderCanSet(aSource);
-  }
-
-  template <size_t I, typename T>
-  bool CanSet(FieldIndex<I>, const T&, ContentParent*) {
-    return true;
   }
 
   bool CanSet(FieldIndex<IDX_IPAddressSpace>, nsILoadInfo::IPAddressSpace,
@@ -1552,18 +1585,98 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
     return IsTop();
   }
 
-  // Overload `DidSet` to get notifications for a particular field being set.
-  //
-  // You can also overload the variant that gets the old value if you need it.
-  template <size_t I>
-  void DidSet(FieldIndex<I>) {}
-  template <size_t I, typename T>
-  void DidSet(FieldIndex<I>, T&& aOldValue) {}
+  bool CanSet(FieldIndex<IDX_Name>, const nsString&, ContentParent*) {
+    return true;
+  }
+  bool CanSet(FieldIndex<IDX_Closed>, const bool&, ContentParent*) {
+    return true;
+  }
+  bool CanSet(FieldIndex<IDX_OnePermittedSandboxedNavigatorId>, const uint64_t&,
+              ContentParent*) {
+    return true;
+  }
+  bool CanSet(FieldIndex<IDX_HadOriginalOpener>, const bool&, ContentParent*) {
+    return true;
+  }
+  bool CanSet(FieldIndex<IDX_SandboxFlags>, const uint32_t&, ContentParent*) {
+    return true;
+  }
+  bool CanSet(FieldIndex<IDX_InitialSandboxFlags>, const uint32_t&,
+              ContentParent*) {
+    return true;
+  }
+  bool CanSet(FieldIndex<IDX_HistoryID>, const nsID&, ContentParent*) {
+    return true;
+  }
+  bool CanSet(FieldIndex<IDX_IsPrinting>, const bool&, ContentParent*) {
+    return true;
+  }
+  bool CanSet(FieldIndex<IDX_ForceEnableTrackingProtection>, const bool&,
+              ContentParent*) {
+    return true;
+  }
+  bool CanSet(FieldIndex<IDX_IsPopupRequested>, const bool&, ContentParent*) {
+    return true;
+  }
+  bool CanSet(FieldIndex<IDX_ScreenHeightOverride>, const uint64_t&,
+              ContentParent*) {
+    return true;
+  }
+  bool CanSet(FieldIndex<IDX_ScreenWidthOverride>, const uint64_t&,
+              ContentParent*) {
+    return true;
+  }
+  bool CanSet(FieldIndex<IDX_HasScreenAreaOverride>, const bool&,
+              ContentParent*) {
+    return true;
+  }
+  bool CanSet(FieldIndex<IDX_CurrentOrientationAngle>, const float&,
+              ContentParent*) {
+    return true;
+  }
+  bool CanSet(FieldIndex<IDX_CurrentOrientationType>,
+              const mozilla::dom::OrientationType&, ContentParent*) {
+    return true;
+  }
+  bool CanSet(FieldIndex<IDX_MaxTouchPointsOverride>, const uint8_t&,
+              ContentParent*) {
+    return true;
+  }
+  bool CanSet(FieldIndex<IDX_CurrentLoadIdentifier>, const Maybe<uint64_t>&,
+              ContentParent*) {
+    return true;
+  }
+  bool CanSet(FieldIndex<IDX_AndroidAppLinkLoadIdentifier>,
+              const Maybe<uint64_t>&, ContentParent*) {
+    return true;
+  }
+  bool CanSet(FieldIndex<IDX_HasLoadedNonInitialDocument>, const bool&,
+              ContentParent*) {
+    return true;
+  }
+  bool CanSet(FieldIndex<IDX_HistoryEntryCount>, const uint32_t&,
+              ContentParent*) {
+    return true;
+  }
 
+  bool CanSet(FieldIndex<IDX_FullZoom>, const float&, ContentParent*) {
+    return true;
+  }
   void DidSet(FieldIndex<IDX_FullZoom>, float aOldValue);
+  bool CanSet(FieldIndex<IDX_TextZoom>, const float&, ContentParent*) {
+    return true;
+  }
   void DidSet(FieldIndex<IDX_TextZoom>, float aOldValue);
+  bool CanSet(FieldIndex<IDX_AuthorStyleDisabledDefault>, const bool&,
+              ContentParent*) {
+    return true;
+  }
   void DidSet(FieldIndex<IDX_AuthorStyleDisabledDefault>);
 
+  bool CanSet(FieldIndex<IDX_IsSyntheticDocumentContainer>, const bool&,
+              ContentParent*) {
+    return true;
+  }
   void DidSet(FieldIndex<IDX_IsSyntheticDocumentContainer>);
 
   void DidSet(FieldIndex<IDX_IsUnderHiddenEmbedderElement>, bool aOldValue);
