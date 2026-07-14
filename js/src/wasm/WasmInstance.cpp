@@ -2637,8 +2637,14 @@ bool Instance::init(JSContext* cx, const JSObjectVector& funcImports,
   // Create and initialize alloc sites, they are all the same for Wasm.
   uint32_t allocSitesCount = codeTailMeta().numAllocSites;
   if (allocSitesCount > 0) {
-    allocSites_ =
-        (gc::AllocSite*)js_malloc(sizeof(gc::AllocSite) * allocSitesCount);
+    mozilla::CheckedInt<size_t> numBytesRequired =
+        mozilla::CheckedInt<size_t>(allocSitesCount) *
+        mozilla::CheckedInt<size_t>(sizeof(gc::AllocSite));
+    if (!numBytesRequired.isValid()) {
+      ReportOutOfMemory(cx);
+      return false;
+    }
+    allocSites_ = (gc::AllocSite*)js_malloc(numBytesRequired.value());
     if (!allocSites_) {
       ReportOutOfMemory(cx);
       return false;
