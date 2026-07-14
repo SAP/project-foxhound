@@ -45,6 +45,7 @@ button {
   }
 
   &:focus-visible {
+    outline: var(--focus-outline);
     outline-offset: var(--focus-outline-inset);
   }
 
