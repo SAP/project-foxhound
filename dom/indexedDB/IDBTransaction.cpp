@@ -345,7 +345,13 @@ void IDBTransaction::TransitionToActive() {
 
   DrainDeferredResponses();
 
-  mReadyState = ReadyState::Active;
+  // Draining can run script that aborts the transaction; only become
+  // Active again if we're still Inactive so post-abort guards stay effective.
+  MOZ_DIAGNOSTIC_ASSERT(mReadyState == ReadyState::Inactive ||
+                        mReadyState == ReadyState::Finished);
+  if (mReadyState == ReadyState::Inactive) {
+    mReadyState = ReadyState::Active;
+  }
 }
 
 void IDBTransaction::TransitionToInactiveWithDeferral() {
