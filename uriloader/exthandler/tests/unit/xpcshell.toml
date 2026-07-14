@@ -62,6 +62,10 @@ fail-if = [
 ]
 support-files = ["handlers.json"]
 
+["test_launch_first_click_with_permission.js"]
+# ContentDispatchChooser is not built on Android (see toolkit/moz.build).
+skip-if = ["os == 'android'"]
+
 ["test_punycodeURIs.js"]
 skip-if = [
   "os == 'win' && msix", # https://bugzilla.mozilla.org/show_bug.cgi?id=1809485

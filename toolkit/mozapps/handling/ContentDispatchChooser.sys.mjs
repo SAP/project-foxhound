@@ -153,7 +153,7 @@ export class nsContentDispatchChooser {
    * protocol navigation.
    */
   async _prompt(aHandler, aPrincipal, aHasPermission, aBrowsingContext, aURI) {
-    let shouldOpenHandler = false;
+    let shouldOpenHandler = aHasPermission;
     let resetHandlerChoice = false;
     let updateHandlerData = false;
 
