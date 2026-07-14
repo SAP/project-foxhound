@@ -49,6 +49,37 @@ browser.engagement:
       - BASELINE_PING
       - METRIC_ON_EVENTS_LIFETIME
 
+  active_ticks_non_synthesized:
+    type: counter
+    description: |
+      The number of five-second intervals ('ticks') the user was considered
+      'active', counting only non-synthesized events.
+
+      This is a corrected version of `active_ticks` that excludes synthesized
+      mouse and pointer events (for example, the synthesized pointer move that
+      is dispatched when content shifts under a stationary cursor during
+      scrolling, reflow or content insertion). Such synthesized events inflated
+      `active_ticks` starting in Firefox 140. Recorded side-by-side with
+      `active_ticks` for data continuity while the correction is evaluated.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2050081
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2050081
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - csadilek@mozilla.com
+      - tlong@mozilla.com
+    expires: 161
+    send_in_pings:
+      - baseline
+      - metrics
+      - usage-reporting
+      - events
+    no_lint:
+      - BASELINE_PING
+      - METRIC_ON_EVENTS_LIFETIME
+
   uri_count:
     type: counter
     description: |

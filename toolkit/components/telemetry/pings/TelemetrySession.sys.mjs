@@ -225,6 +225,7 @@ export var TelemetrySession = Object.freeze({
     Impl._subsessionStartActiveTicks = 0;
     Impl._sessionActiveTicks = 0;
     Impl._isUserActive = true;
+    Impl._isUserActiveNonSynthesized = true;
     Impl._subsessionStartTimeMonotonic = 0;
     Impl._lastEnvironmentChangeDate = Policy.monotonicNow();
     this.testUninstall();
@@ -305,6 +306,10 @@ var Impl = {
   // The activity state for the user. If false, don't count the next
   // active tick. Otherwise, increment the active ticks as usual.
   _isUserActive: true,
+  // Like _isUserActive, but only tracks non-synthesized events. Used to record
+  // the corrected active tick (active_ticks_non_synthesized) side-by-side with
+  // the legacy active tick.
+  _isUserActiveNonSynthesized: true,
   _startupIO: {},
   // The previous build ID, if this is the first run with a new build.
   // Null if this is the first run, or the previous build ID is unknown.
@@ -841,6 +846,8 @@ var Impl = {
       // Attach the active-ticks related observers.
       this.addObserver("user-interaction-active");
       this.addObserver("user-interaction-inactive");
+      this.addObserver("user-interaction-active-non-synthesized");
+      this.addObserver("user-interaction-inactive-non-synthesized");
       this._earlyObserversRegistered = true;
     }
   },
@@ -1151,6 +1158,20 @@ var Impl = {
   },
 
   /**
+   * Like _onActiveTick, but only counts ticks driven by non-synthesized events.
+   * Recorded side-by-side with activeTicks for data continuity while the
+   * correction is evaluated.
+   */
+  _onActiveTickNonSynthesized(aUserActive) {
+    const needsUpdate = aUserActive && this._isUserActiveNonSynthesized;
+    this._isUserActiveNonSynthesized = aUserActive;
+
+    if (needsUpdate) {
+      Glean.browserEngagement.activeTicksNonSynthesized.add(1);
+    }
+  },
+
+  /**
    * This observer drives telemetry.
    */
   observe(aSubject, aTopic) {
@@ -1217,6 +1238,12 @@ var Impl = {
         break;
       case "user-interaction-inactive":
         this._onActiveTick(false);
+        break;
+      case "user-interaction-active-non-synthesized":
+        this._onActiveTickNonSynthesized(true);
+        break;
+      case "user-interaction-inactive-non-synthesized":
+        this._onActiveTickNonSynthesized(false);
         break;
     }
     return undefined;

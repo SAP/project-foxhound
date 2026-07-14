@@ -93,6 +93,68 @@ add_task(async function test_record_activeTicks() {
   await TelemetryController.testShutdown();
 });
 
+add_task(async function test_record_activeTicks_nonSynthesized() {
+  await TelemetryController.testReset();
+  Services.fog.testResetFOG();
+
+  let active = () =>
+    Services.obs.notifyObservers(null, "user-interaction-active");
+  let inactive = () =>
+    Services.obs.notifyObservers(null, "user-interaction-inactive");
+  let activeNonSynth = () =>
+    Services.obs.notifyObservers(
+      null,
+      "user-interaction-active-non-synthesized"
+    );
+  let inactiveNonSynth = () =>
+    Services.obs.notifyObservers(
+      null,
+      "user-interaction-inactive-non-synthesized"
+    );
+
+  let checkTicks = (expectedLegacy, expectedNonSynth) => {
+    Assert.equal(
+      Glean.browserEngagement.activeTicks.testGetValue() ?? 0,
+      expectedLegacy,
+      "Legacy active ticks must match the expected value."
+    );
+    Assert.equal(
+      Glean.browserEngagement.activeTicksNonSynthesized.testGetValue() ?? 0,
+      expectedNonSynth,
+      "Non-synthesized active ticks must match the expected value."
+    );
+  };
+
+  // The non-synthesized stream is counted independently from the legacy stream.
+  for (let i = 0; i < 3; i++) {
+    activeNonSynth();
+  }
+  checkTicks(0, 3);
+
+  // The legacy stream is unaffected by the non-synthesized notifications.
+  for (let i = 0; i < 2; i++) {
+    active();
+  }
+  checkTicks(2, 3);
+
+  // Going inactive resets the non-synthesized debounce, so the next active is
+  // treated as the start of a tick and not counted.
+  inactiveNonSynth();
+  checkTicks(2, 3);
+  activeNonSynth();
+  checkTicks(2, 3);
+  activeNonSynth();
+  checkTicks(2, 4);
+
+  // The legacy inactive notification doesn't reset the non-synthesized stream.
+  inactive();
+  checkTicks(2, 4);
+  activeNonSynth();
+  checkTicks(2, 5);
+
+  await TelemetryController.testShutdown();
+});
+
 add_task(
   {
     skip_if: () => gIsAndroid,
