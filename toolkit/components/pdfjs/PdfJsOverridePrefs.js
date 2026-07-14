@@ -40,3 +40,4 @@
 #endif
 
 pref("pdfjs.enableOptimizedPartialRendering", true);
+pref("pdfjs.enableSelectionRendering", false);
