@@ -40,6 +40,7 @@ import mozilla.components.lib.state.helpers.StoreProvider.Companion.fragmentStor
 import mozilla.components.support.ktx.android.view.hideKeyboard
 import org.mozilla.fenix.HomeActivity
 import org.mozilla.fenix.R
+import org.mozilla.fenix.browser.browsingmode.BrowsingMode
 import org.mozilla.fenix.components.AppStore
 import org.mozilla.fenix.components.Components
 import org.mozilla.fenix.components.appstate.AppAction.SearchAction.SearchEnded
@@ -126,7 +127,10 @@ class AwesomeBarComposable(
                         state.clipboardHasUrl
             }
         }
-        val clipboardBarBackground = edgeToEdgeClipboardBarBackground(isEdgeToEdgeBackgroundEnabled)
+        val clipboardBarBackground = edgeToEdgeClipboardBarBackground(
+            shouldUseEdgeToEdgeColors = isEdgeToEdgeBackgroundEnabled,
+            isPrivateMode = activity.browsingModeManager.mode == BrowsingMode.Private,
+        )
         val view = LocalView.current
         val focusManager = LocalFocusManager.current
         val keyboardController = LocalSoftwareKeyboardController.current
