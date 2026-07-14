@@ -2255,17 +2255,18 @@ CodeOffset BaseCompiler::builtinCall(SymbolicAddress builtin,
   return callSymbolic(builtin, call);
 }
 
-CodeOffset BaseCompiler::builtinInstanceMethodCall(
+void BaseCompiler::builtinInstanceMethodCall(
     const SymbolicAddressSignature& builtin, const ABIArg& instanceArg,
-    const FunctionCall& call) {
+    const FunctionCall& call, CodeOffset* callStackMapKey,
+    CodeOffset* trapStackMapKey) {
 #ifndef RABALDR_PIN_INSTANCE
   // Builtin method calls assume the instance register has been set.
   fr.loadInstancePtr(InstanceReg);
 #endif
   CallSiteDesc desc(bytecodeOffset(), CallSiteKind::Symbolic);
-  return masm.wasmCallBuiltinInstanceMethod(desc, instanceArg, builtin.identity,
-                                            builtin.failureMode,
-                                            builtin.failureTrap);
+  masm.wasmCallBuiltinInstanceMethod(desc, instanceArg, builtin.identity,
+                                     builtin.failureMode, builtin.failureTrap,
+                                     callStackMapKey, trapStackMapKey);
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -6554,12 +6555,18 @@ bool BaseCompiler::emitInstanceCall(const SymbolicAddressSignature& builtin) {
     }
     passArg(t, peek(numNonInstanceArgs - i), &baselineCall);
   }
-  CodeOffset raOffset =
-      builtinInstanceMethodCall(builtin, instanceArg, baselineCall);
-  if (!createStackMap("emitInstanceCall", raOffset)) {
+
+  CodeOffset callStackMapKey;
+  CodeOffset trapStackMapKey;
+  builtinInstanceMethodCall(builtin, instanceArg, baselineCall,
+                            &callStackMapKey, &trapStackMapKey);
+  if (!createStackMap("emitInstanceCall-call", callStackMapKey)) {
     return false;
   }
-
+  if (trapStackMapKey.bound() &&
+      !createStackMap("emitInstanceCall-trap", trapStackMapKey)) {
+    return false;
+  }
   endCall(baselineCall, stackSpace);
 
   popValueStackBy(numNonInstanceArgs);

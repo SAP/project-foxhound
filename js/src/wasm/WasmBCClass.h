@@ -1053,9 +1053,11 @@ struct BaseCompiler final {
   void returnCallRef(const Stk& calleeRef, const FunctionCall& call,
                      const FuncType& funcType);
   CodeOffset builtinCall(SymbolicAddress builtin, const FunctionCall& call);
-  CodeOffset builtinInstanceMethodCall(const SymbolicAddressSignature& builtin,
-                                       const ABIArg& instanceArg,
-                                       const FunctionCall& call);
+  void builtinInstanceMethodCall(const SymbolicAddressSignature& builtin,
+                                 const ABIArg& instanceArg,
+                                 const FunctionCall& call,
+                                 CodeOffset* callStackMapKey,
+                                 CodeOffset* trapStackMapKey);
 
   // Helpers to pick up the returned value from the return register.
   inline RegI32 captureReturnedI32();

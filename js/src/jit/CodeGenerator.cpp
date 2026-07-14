@@ -10413,11 +10413,13 @@ void CodeGenerator::visitWasmCall(LWasmCall* lir) {
       reloadPinnedRegs = true;
       switchRealm = false;
       break;
-    case wasm::CalleeDesc::BuiltinInstanceMethod:
-      retOffset = masm.wasmCallBuiltinInstanceMethod(
-          desc, callBase->instanceArg(), callee.builtin(),
-          callBase->builtinMethodFailureMode(),
-          callBase->builtinMethodFailureTrap());
+    case wasm::CalleeDesc::BuiltinInstanceMethod: {
+      CodeOffset unused_trapStackMapKey;
+      masm.wasmCallBuiltinInstanceMethod(desc, callBase->instanceArg(),
+                                         callee.builtin(),
+                                         callBase->builtinMethodFailureMode(),
+                                         callBase->builtinMethodFailureTrap(),
+                                         &retOffset, &unused_trapStackMapKey);
       // The builtin ABI preserves the instance and pinned registers. However,
       // builtins may grow the memory which requires us to reload the pinned
       // registers.
@@ -10425,6 +10427,7 @@ void CodeGenerator::visitWasmCall(LWasmCall* lir) {
       reloadPinnedRegs = true;
       switchRealm = false;
       break;
+    }
     case wasm::CalleeDesc::FuncRef:
       if (isReturnCall) {
         ReturnCallAdjustmentInfo retCallInfo(

@@ -3992,20 +3992,26 @@ class MacroAssembler : public MacroAssemblerSpecific {
   // This function takes care of loading the pointer to the current instance
   // as the implicit first argument. It preserves instance and pinned registers.
   // (instance & pinned regs are non-volatile registers in the system ABI).
-  CodeOffset wasmCallBuiltinInstanceMethod(const wasm::CallSiteDesc& desc,
-                                           const ABIArg& instanceArg,
-                                           wasm::SymbolicAddress builtin,
-                                           wasm::FailureMode failureMode,
-                                           wasm::Trap failureTrap);
+  // Offsets for stackmaps for the call and (if required) for the following
+  // failure trap, are returned.
+  void wasmCallBuiltinInstanceMethod(const wasm::CallSiteDesc& desc,
+                                     const ABIArg& instanceArg,
+                                     wasm::SymbolicAddress builtin,
+                                     wasm::FailureMode failureMode,
+                                     wasm::Trap failureTrap,
+                                     CodeOffset* callStackMapKey,
+                                     CodeOffset* trapStackMapKey);
 
   // Performs the appropriate check based on the instance call's FailureMode,
   // and traps if the check fails. The resultRegister should likely be
   // ReturnReg, but this depends on whatever you do with registers immediately
-  // after the call.
-  void wasmTrapOnFailedInstanceCall(Register resultRegister,
-                                    wasm::FailureMode failureMode,
-                                    wasm::Trap failureTrap,
-                                    const wasm::TrapSiteDesc& trapSiteDesc);
+  // after the call. In the case where a trap is generated, the returned
+  // CodeOffset points at the first byte of the instruction following the trap,
+  // and that is where a stackmap, if needed, should be keyed.  If a trap is not
+  // generated, a CodeOffset satisfying !CodeOffset::bound() is returned.
+  CodeOffset wasmTrapOnFailedInstanceCall(
+      Register resultRegister, wasm::FailureMode failureMode,
+      wasm::Trap failureTrap, const wasm::TrapSiteDesc& trapSiteDesc);
 
   // Performs a bounds check for ranged wasm operations like memory.fill or
   // array.fill. This handles the bizarre edge case in the wasm spec where a
