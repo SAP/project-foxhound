@@ -1009,6 +1009,22 @@ class gfxShapedText {
       mValue |= FLAG_CHAR_IS_FORMATTING_CONTROL;
     }
 
+    // Clear a glyph record to "missing", preserving line-break, clustering,
+    // and character-type flags if present.
+    void ClearGlyph() {
+      if (IsSimpleGlyph()) {
+        // Clear everything except the COMMON flags; this includes clearing
+        // FLAG_IS_SIMPLE_GLYPH, so the record becomes "complex, missing".
+        mValue &= COMMON_FLAGS_MASK;
+      } else {
+        // Clear the GLYPH_COUNT_MASK field and the NOT_MISSING and
+        // NOT_LIGATURE_GROUP_START flags, but leave other flags (clusters,
+        // line-breaks, char-type) intact.
+        mValue &= ~(GLYPH_COUNT_MASK | FLAG_NOT_MISSING |
+                    FLAG_NOT_LIGATURE_GROUP_START);
+      }
+    }
+
    private:
     uint32_t mValue;
   };
@@ -1126,6 +1142,10 @@ class gfxShapedText {
   uint32_t GetLength() const { return mLength; }
 
   bool FilterIfIgnorable(uint32_t aIndex, uint32_t aCh);
+
+  // Erase glyph data from the gfxShapedText, while retaining line-break and
+  // cluster flags.
+  void ClearGlyphs();
 
  protected:
   // Allocate aCount DetailedGlyphs for the given index
