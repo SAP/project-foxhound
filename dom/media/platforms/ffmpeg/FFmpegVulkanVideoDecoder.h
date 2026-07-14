@@ -73,7 +73,6 @@ struct FFmpegVulkanVideoDecoder {
   PFN_vkQueueSubmit mQueueSubmit = nullptr;
   PFN_vkCmdPipelineBarrier mCmdPipelineBarrier = nullptr;
   PFN_vkCmdCopyImage mCmdCopyImage = nullptr;
-  PFN_vkDeviceWaitIdle mDeviceWaitIdle = nullptr;
 
   // Function pointers - image & memory
   PFN_vkCreateImage mCreateImage = nullptr;

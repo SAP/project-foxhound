@@ -68,8 +68,14 @@ FFmpegVideoDecoder<
 void FFmpegVideoDecoder<LIBAV_VER>::FFmpegVulkanVideoDecoder::Cleanup() {
   FFMPEGV_LOG("FFmpegVulkanVideoDecoder::Cleanup()");
   if (mDevice != VK_NULL_HANDLE) {
-    if (mDeviceWaitIdle) {
-      mDeviceWaitIdle(mDevice);
+    // Wait on per-decoder copy fences instead of vkDeviceWaitIdle, so we
+    // don't stall the shared VkDevice and block other decoders.
+    if (mWaitForFences) {
+      for (uint32_t qi = 0; qi < mCopyQueueCount; qi++) {
+        if (mCopyFence[qi] != VK_NULL_HANDLE) {
+          mWaitForFences(mDevice, 1, &mCopyFence[qi], VK_TRUE, UINT64_MAX);
+        }
+      }
     }
     for (uint32_t qi = 0; qi < mCopyQueueCount; qi++) {
       if ((mCopyCmdBuf[qi] != VK_NULL_HANDLE) &&
@@ -243,7 +249,6 @@ void FFmpegVideoDecoder<
   load(mQueueSubmit, "vkQueueSubmit");
   load(mCmdPipelineBarrier, "vkCmdPipelineBarrier");
   load(mCmdCopyImage, "vkCmdCopyImage");
-  load(mDeviceWaitIdle, "vkDeviceWaitIdle");
 
   load(mCreateImage, "vkCreateImage");
   load(mDestroyImage, "vkDestroyImage");

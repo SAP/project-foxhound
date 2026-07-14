@@ -16,6 +16,9 @@
 #include "nsTHashMap.h"
 #if defined(MOZ_USE_HWDECODE) && defined(MOZ_WIDGET_GTK)
 #  include "FFmpegVideoFramePool.h"
+#  if LIBAVCODEC_VERSION_MAJOR >= 60 && !defined(FFVPX_VERSION)
+#    include "VulkanDeviceHolder.h"
+#  endif
 #endif
 #include "libavutil/pixfmt.h"
 #if LIBAVCODEC_VERSION_MAJOR < 54
@@ -281,6 +284,7 @@ class FFmpegVideoDecoder<LIBAV_VER>
   AVBufferRef* mVAAPIDeviceContext = nullptr;
   AVBufferRef* mVulkanDeviceContext = nullptr;
 #  if LIBAVCODEC_VERSION_MAJOR >= 60 && !defined(FFVPX_VERSION)
+  RefPtr<VulkanDeviceHolder> mVulkanDeviceHolder;
   FFmpegVulkanVideoDecoder mVulkanDecoder;
   VkImageDrmFormatModifierListCreateInfoEXT mVulkanDrmModifierList = {};
   VkImageFormatListCreateInfo mVulkanImageFormatList = {};

@@ -357,14 +357,6 @@ bool FFmpegVideoDecoder<LIBAV_VER>::CreateVulkanDeviceContext(
     return false;
   }
 
-  // Create FFmpeg context with the selected device
-  AVDictionary* opts = nullptr;
-  auto cleanupDict = MakeScopeExit([&] {
-    if (opts) {
-      mLib->av_dict_free(&opts);
-    }
-  });
-
   const char* device_extensions =
       "VK_KHR_timeline_semaphore+"
       "VK_KHR_external_memory_fd+"
@@ -381,18 +373,19 @@ bool FFmpegVideoDecoder<LIBAV_VER>::CreateVulkanDeviceContext(
       "VK_KHR_internally_synchronized_queues+"
 #    endif
       "VK_KHR_video_decode_av1";
-  mLib->av_dict_set(&opts, "device_extensions", device_extensions, 0);
 
-  int ret = mLib->av_hwdevice_ctx_create(
-      &mVulkanDeviceContext, AV_HWDEVICE_TYPE_VULKAN,
-      mVulkanDecoder.mNegotiatedVulkanDeviceName, opts, 0);
-  if (ret < 0) {
-    FFMPEG_LOG("av_hwdevice_ctx_create failed for {}",
+  // Share one VkDevice across all decoders in the process to avoid paying
+  // vkCreateDevice per stream.
+  mVulkanDeviceHolder = VulkanDeviceHolder::GetOrCreate(
+      mLib, mVulkanDecoder.mNegotiatedVulkanDeviceName, device_extensions);
+  if (!mVulkanDeviceHolder) {
+    FFMPEG_LOG("VulkanDeviceHolder::GetOrCreate failed for {}",
                mVulkanDecoder.mNegotiatedVulkanDeviceName);
     return false;
   }
 
-  mCodecContext->hw_device_ctx = mLib->av_buffer_ref(mVulkanDeviceContext);
+  mVulkanDeviceContext = mVulkanDeviceHolder->Ref();
+  mCodecContext->hw_device_ctx = mVulkanDeviceHolder->Ref();
 
   AVHWDeviceContext* devCtx = (AVHWDeviceContext*)mVulkanDeviceContext->data;
   AVVulkanDeviceContext* vkCtx = (AVVulkanDeviceContext*)devCtx->hwctx;
