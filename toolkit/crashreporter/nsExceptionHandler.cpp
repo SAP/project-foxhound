@@ -1315,36 +1315,35 @@ static void WriteAnnotationsForMainProcessCrash(PlatformWriter& pw,
   JSONAnnotationWriter writer(pw);
 
   for (auto key : MakeEnumeratedRange(Annotation::Count)) {
-    AnnotationContents contents = {};
+    uint32_t contents = 0;
+    size_t len = 0;
     size_t address =
-        mozannotation_get_contents(static_cast<uint32_t>(key), &contents);
+        mozannotation_get_contents(static_cast<uint32_t>(key), &contents, &len);
     if (address != 0) {
       switch (TypeOfAnnotation(key)) {
         case AnnotationType::String:
-          switch (contents.tag) {
-            case AnnotationContents::Tag::NSCStringPointer: {
+          switch (contents) {
+            case ANNOTATION_CONTENTS_NSCSTRINGPOINTER: {
               const nsCString* string =
                   reinterpret_cast<const nsCString*>(address);
               writer.Write(key, string->Data(), string->Length());
             } break;
-            case AnnotationContents::Tag::CStringPointer:
+            case ANNOTATION_CONTENTS_CSTRINGPOINTER:
               address = *(reinterpret_cast<size_t*>(address));
               if (address == 0) {
                 break;
               }
               // FALLTHROUGH
-            case AnnotationContents::Tag::CString: {
+            case ANNOTATION_CONTENTS_CSTRING: {
               writer.Write(key, reinterpret_cast<const char*>(address));
             } break;
-            case AnnotationContents::Tag::ByteBuffer:
-              writer.Write(key, reinterpret_cast<const char*>(address),
-                           static_cast<size_t>(contents.byte_buffer._0));
+            case ANNOTATION_CONTENTS_BYTEBUFFER:
+              writer.Write(key, reinterpret_cast<const char*>(address), len);
               break;
-            case AnnotationContents::Tag::OwnedByteBuffer:
-              writer.Write(key, reinterpret_cast<const char*>(address),
-                           static_cast<size_t>(contents.owned_byte_buffer._0));
+            case ANNOTATION_CONTENTS_OWNEDBYTEBUFFER:
+              writer.Write(key, reinterpret_cast<const char*>(address), len);
               break;
-            case AnnotationContents::Tag::Empty:
+            case ANNOTATION_CONTENTS_EMPTY:
               break;
           }
           break;
@@ -3111,11 +3110,10 @@ bool WriteExtraFile(const nsAString& id, const AnnotationTable& annotations) {
 }
 
 template <typename T>
-static bool IsFixedSizeAnnotation(AnnotationContents& contents) {
-  return ((contents.tag == AnnotationContents::Tag::ByteBuffer) &&
-          (contents.byte_buffer._0 == sizeof(T))) ||
-         ((contents.tag == AnnotationContents::Tag::OwnedByteBuffer) &&
-          (contents.owned_byte_buffer._0 == sizeof(T)));
+static bool IsFixedSizeAnnotation(uint32_t contents, size_t len) {
+  return ((contents == ANNOTATION_CONTENTS_BYTEBUFFER) && (len == sizeof(T))) ||
+         ((contents == ANNOTATION_CONTENTS_OWNEDBYTEBUFFER) &&
+          (len == sizeof(T)));
 }
 
 // This adds annotations that were populated in the main process but are not
@@ -3124,57 +3122,56 @@ static bool IsFixedSizeAnnotation(AnnotationContents& contents) {
 // uptime, etc...
 static void AddSharedAnnotations(AnnotationTable& aAnnotations) {
   for (auto key : MakeEnumeratedRange(Annotation::Count)) {
-    AnnotationContents contents = {};
+    uint32_t contents = 0;
+    size_t len = 0;
     nsAutoCString value;
     size_t address =
-        mozannotation_get_contents(static_cast<uint32_t>(key), &contents);
+        mozannotation_get_contents(static_cast<uint32_t>(key), &contents, &len);
 
     if (address) {
       switch (TypeOfAnnotation(key)) {
         case AnnotationType::String:
-          switch (contents.tag) {
-            case AnnotationContents::Tag::Empty:
+          switch (contents) {
+            case ANNOTATION_CONTENTS_EMPTY:
               break;
-            case AnnotationContents::Tag::CStringPointer:
+            case ANNOTATION_CONTENTS_CSTRINGPOINTER:
               address = *reinterpret_cast<size_t*>(address);
               if (address == 0) {
                 break;
               }
               // FALLTHROUGH
-            case AnnotationContents::Tag::CString:
+            case ANNOTATION_CONTENTS_CSTRING:
               value.Assign(reinterpret_cast<const char*>(address));
               break;
-            case AnnotationContents::Tag::NSCStringPointer:
+            case ANNOTATION_CONTENTS_NSCSTRINGPOINTER:
               value.Assign(*reinterpret_cast<nsCString*>(address));
               break;
-            case AnnotationContents::Tag::ByteBuffer:
-              value.Assign(reinterpret_cast<const char*>(address),
-                           contents.byte_buffer._0);
+            case ANNOTATION_CONTENTS_BYTEBUFFER:
+              value.Assign(reinterpret_cast<const char*>(address), len);
               break;
-            case AnnotationContents::Tag::OwnedByteBuffer:
-              value.Assign(reinterpret_cast<const char*>(address),
-                           contents.owned_byte_buffer._0);
+            case ANNOTATION_CONTENTS_OWNEDBYTEBUFFER:
+              value.Assign(reinterpret_cast<const char*>(address), len);
               break;
           }
 
           break;
         case AnnotationType::Boolean:
-          if (IsFixedSizeAnnotation<bool>(contents)) {
+          if (IsFixedSizeAnnotation<bool>(contents, len)) {
             value.Assign(*reinterpret_cast<const bool*>(address) ? "1" : "0");
           }
           break;
         case AnnotationType::U32:
-          if (IsFixedSizeAnnotation<uint32_t>(contents)) {
+          if (IsFixedSizeAnnotation<uint32_t>(contents, len)) {
             value.AppendInt(*reinterpret_cast<const uint32_t*>(address));
           }
           break;
         case AnnotationType::U64:
-          if (IsFixedSizeAnnotation<uint64_t>(contents)) {
+          if (IsFixedSizeAnnotation<uint64_t>(contents, len)) {
             value.AppendInt(*reinterpret_cast<const uint64_t*>(address));
           }
           break;
         case AnnotationType::USize:
-          if (IsFixedSizeAnnotation<size_t>(contents)) {
+          if (IsFixedSizeAnnotation<size_t>(contents, len)) {
 #ifdef XP_MACOSX
             // macOS defines size_t as unsigned long, which causes ambiguity
             // when it comes to function overload, use a 64-bit integer instead
