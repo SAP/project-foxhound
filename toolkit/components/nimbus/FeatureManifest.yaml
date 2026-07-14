@@ -2077,6 +2077,27 @@ sessionRestore:
         2 = open last visited page in a tab,
         3 = re-open previous windows and tabs (session restore enabled)
 
+sessionRestoreNewTab:
+  description: Open a new tab after session restore on startup
+  owner: hsohaney@mozilla.com
+  hasExposure: true
+  exposureDescription: >
+    Recorded when a setting-based session restore occurs at startup,
+    regardless of whether the new tab feature is enabled.
+  variables:
+    enabled:
+      type: boolean
+      setPref:
+        branch: default
+        pref: browser.sessionstore.newTabOnRestore
+      description: Whether to open a new tab after session restore on startup.
+    showSetting:
+      type: boolean
+      setPref:
+        branch: default
+        pref: browser.sessionstore.newTabOnRestore.showSetting
+      description: Whether to show the new-tab-on-restore checkbox in about:preferences.
+
 screenshots:
   description: The built-in Screenshots feature
   owner: sfoster@mozilla.com

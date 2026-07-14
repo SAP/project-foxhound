@@ -174,6 +174,8 @@ XPCOMUtils.defineLazyServiceGetters(lazy, {
 });
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  AboutNewTab: "resource:///modules/AboutNewTab.sys.mjs",
+  NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   AIWindow:
     "moz-src:///browser/components/aiwindow/ui/modules/AIWindow.sys.mjs",
   AsyncShutdown: "resource://gre/modules/AsyncShutdown.sys.mjs",
@@ -1104,6 +1106,17 @@ var SessionStoreInternal = {
   // whether a setBrowserState call is in progress
   _browserSetState: false,
 
+  // True when restore was triggered by the user's "Open previous windows and
+  // tabs" setting (browser.startup.page == 3), as opposed to a crash or
+  // update restore. Used after restoration completes to decide whether to
+  // open a new tab for the user.
+  _isUserConfiguredRestore: false,
+
+  // True when a URL was provided on the command line at startup
+  // (e.g. `firefox https://example.com`). When true, the new-tab-on-restore
+  // feature is preempted since the user already has a destination.
+  _cmdLineHadURLOnStartup: false,
+
   // time in milliseconds when the session was started (saved across sessions),
   // defaults to now if no session was restored or timestamp doesn't exist
   _sessionStartTime: Date.now(),
@@ -1446,6 +1459,13 @@ var SessionStoreInternal = {
       }
     }
 
+    if (
+      ss.sessionType == ss.RESUME_SESSION &&
+      !this._prefBranch.getBoolPref("sessionstore.resume_session_once")
+    ) {
+      this._isUserConfiguredRestore = true;
+    }
+
     // at this point, we've as good as resumed the session, so we can
     // clear the resume_session_once flag, if it's set
     if (
@@ -1560,6 +1580,11 @@ var SessionStoreInternal = {
       "sessionstore.restore_on_demand"
     );
     this._prefBranch.addObserver("sessionstore.restore_on_demand", this, true);
+
+    Glean.sessionRestore.newTabOnRestoreEnabled.set(
+      this._prefBranch.getBoolPref("sessionstore.newTabOnRestore", false)
+    );
+    this._prefBranch.addObserver("sessionstore.newTabOnRestore", this, true);
   },
 
   /**
@@ -2154,6 +2179,8 @@ var SessionStoreInternal = {
           lazy.SessionCookies.restore(aInitialState.cookies || []);
 
           let overwrite = this._isCmdLineEmpty(aWindow, aInitialState);
+
+          this._cmdLineHadURLOnStartup = !overwrite;
           let options = { firstWindow: true, overwriteTabs: overwrite };
           this.restoreWindows(aWindow, aInitialState, options);
         }
@@ -2272,6 +2299,14 @@ var SessionStoreInternal = {
       let lastSessionState = LastSession.getState();
       this._globalState.setFromState(lastSessionState);
       lazy.SessionCookies.restore(lastSessionState.cookies || []);
+      if (
+        !Services.prefs.getBoolPref(
+          "browser.sessionstore.resume_session_once",
+          false
+        )
+      ) {
+        this._isUserConfiguredRestore = true;
+      }
       this.restoreWindows(aWindow, lastSessionState, {
         firstWindow: true,
       });
@@ -3253,6 +3288,11 @@ var SessionStoreInternal = {
           "sessionstore.closedTabsFromClosedWindows"
         );
         this._closedObjectsChanged = true;
+        break;
+      case "sessionstore.newTabOnRestore":
+        Glean.sessionRestore.newTabOnRestoreEnabled.set(
+          this._prefBranch.getBoolPref("sessionstore.newTabOnRestore", false)
+        );
         break;
     }
   },
@@ -7756,6 +7796,7 @@ var SessionStoreInternal = {
       if (!this._browserSetState) {
         Services.obs.notifyObservers(null, NOTIFY_WINDOWS_RESTORED);
         this._log.debug(`All ${this._restoreCount} windows restored`);
+        this.maybeOpenNewTabAfterRestore();
         this._deferredAllWindowsRestored.resolve();
       } else {
         // _browserSetState is used only by tests, and it uses an alternate
@@ -7777,6 +7818,91 @@ var SessionStoreInternal = {
       this._browserSetState = false;
       this._restoreCount = -1;
     },
+
+  _isNewTabURL(url) {
+    return url == lazy.AboutNewTab.newTabURL;
+  },
+
+  _getActiveURLFromTabData(tabData) {
+    if (!tabData?.entries?.length) {
+      return null;
+    }
+    let activeIndex = (tabData.index || tabData.entries.length) - 1;
+    activeIndex = Math.min(activeIndex, tabData.entries.length - 1);
+    activeIndex = Math.max(activeIndex, 0);
+    return tabData.entries[activeIndex]?.url;
+  },
+
+  maybeOpenNewTabAfterRestore() {
+    if (!this._isUserConfiguredRestore) {
+      return;
+    }
+
+    lazy.NimbusFeatures.sessionRestoreNewTab.recordExposureEvent();
+
+    let newTabOnRestore = Services.prefs.getBoolPref(
+      "browser.sessionstore.newTabOnRestore",
+      false
+    );
+    let showSetting = Services.prefs.getBoolPref(
+      "browser.sessionstore.newTabOnRestore.showSetting",
+      false
+    );
+
+    if (!newTabOnRestore || !showSetting) {
+      Glean.sessionRestore.startupSessionAutoRestored.record({
+        new_tab_action: "disabled",
+      });
+      return;
+    }
+
+    if (this._cmdLineHadURLOnStartup) {
+      Glean.sessionRestore.startupSessionAutoRestored.record({
+        new_tab_action: "preempted",
+      });
+      return;
+    }
+
+    let win = lazy.BrowserWindowTracker.getTopWindow();
+    if (!win) {
+      return;
+    }
+
+    // Let's find if the right-most tab or the selected tab is already newtab
+    // using the cached restore state since it's possible that the actual pages
+    // haven't loaded yet (and can potentially still be about:blank)
+    let windowState = this._windows[win.__SSi];
+    if (windowState?.tabs?.length) {
+      let selectedIndex = (windowState.selected || 1) - 1;
+      let selectedURL = this._getActiveURLFromTabData(
+        windowState.tabs[selectedIndex]
+      );
+      if (this._isNewTabURL(selectedURL)) {
+        Glean.sessionRestore.startupSessionAutoRestored.record({
+          new_tab_action: "reused",
+        });
+        return;
+      }
+
+      let lastTabURL = this._getActiveURLFromTabData(windowState.tabs.at(-1));
+      if (this._isNewTabURL(lastTabURL)) {
+        win.gBrowser.selectedTab = win.gBrowser.visibleTabs.at(-1);
+        Glean.sessionRestore.startupSessionAutoRestored.record({
+          new_tab_action: "reused",
+        });
+        return;
+      }
+    }
+
+    // We're done validating, let's add a new tab and focus it!
+    let newTab = win.gBrowser.addTrustedTab(lazy.AboutNewTab.newTabURL, {
+      triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+    });
+    win.gBrowser.selectedTab = newTab;
+    Glean.sessionRestore.startupSessionAutoRestored.record({
+      new_tab_action: "opened",
+    });
+  },
 
   /**
    * Set the given window's busy state

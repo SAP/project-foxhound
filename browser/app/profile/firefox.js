@@ -1441,6 +1441,11 @@ pref("browser.sessionstore.resume_from_crash", true);
 pref("browser.sessionstore.resume_session_once", false);
 pref("browser.sessionstore.resuming_after_os_restart", false);
 
+// Determines the behavior for opening new tab when users resume sessions
+pref("browser.sessionstore.newTabOnRestore", false);
+// Toggles the visibility of the newTabOnRestore setting in about:preferences
+pref("browser.sessionstore.newTabOnRestore.showSetting", false);
+
 // Toggle for the behavior to include closed tabs from all windows in
 // recently-closed tab lists & counts, and re-open tabs into the current window
 pref("browser.sessionstore.closedTabsFromAllWindows", true);
