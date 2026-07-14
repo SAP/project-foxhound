@@ -1,6 +1,6 @@
 -c ../third_party/python/requirements.txt
 
-mozilla-taskgraph==4.1.3
+mozilla-taskgraph==4.4.0
 requests-unixsocket
 taskcluster-taskgraph[orjson,load-image]==24.1.1
 rtoml==0.13.0; python_version >= "3.10"
