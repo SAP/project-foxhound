@@ -3724,3 +3724,42 @@ add_task(async function testDb() {
 
   Services.prefs.deleteBranch("nimbus.qa.pref-1");
 });
+
+add_task(async function testSetPrefDefaultValueChanged() {
+  const { manager, cleanup } = await setupTest();
+
+  const featureId = "test-set-user-pref";
+  const pref = NimbusFeatures[featureId].getSetPref("bar").pref;
+
+  PrefUtils.setPref(pref, DEFAULT_VALUE, { branch: DEFAULT });
+
+  await NimbusTestUtils.enrollWithFeatureConfig(
+    {
+      featureId,
+      value: { bar: "setPref-value" },
+    },
+    { slug: "slug" }
+  );
+
+  PrefUtils.setPref(pref, "changed-default-value", { branch: DEFAULT });
+
+  const enrollment = manager.store.get("slug");
+  Assert.ok(enrollment?.active, "Enrollment is active");
+  Assert.deepEqual(enrollment.prefs, [
+    {
+      featureId,
+      variable: "bar",
+      name: pref,
+      branch: "user",
+      originalValue: null,
+    },
+  ]);
+
+  manager.unenroll("slug", "test");
+  Assert.deepEqual(
+    PrefUtils.getPref(pref, { branch: DEFAULT }),
+    "changed-default-value"
+  );
+
+  await cleanup();
+});

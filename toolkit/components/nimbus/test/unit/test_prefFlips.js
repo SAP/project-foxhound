@@ -3299,3 +3299,43 @@ add_task(async function testDb() {
 
   Services.prefs.deleteBranch("foo.bar.baz");
 });
+
+add_task(async function testPrefFlipsDefaultValueChanged() {
+  const { manager, cleanup } = await setupTest();
+
+  PrefUtils.setPref(STRING_PREF, "default-value", { branch: DEFAULT });
+
+  await NimbusTestUtils.enrollWithFeatureConfig(
+    {
+      featureId: FEATURE_ID,
+      value: {
+        prefs: {
+          [STRING_PREF]: { value: "prefFlips-value", branch: USER },
+        },
+      },
+    },
+    { slug: "slug" }
+  );
+
+  PrefUtils.setPref(STRING_PREF, "changed-default-value", { branch: DEFAULT });
+
+  const enrollment = manager.store.get("slug");
+  Assert.ok(enrollment?.active, "Enrollment is active");
+  Assert.deepEqual(enrollment.prefFlips, {
+    originalValues: {
+      [STRING_PREF]: null,
+    },
+  });
+
+  manager.unenroll("slug", "test");
+  Assert.equal(
+    PrefUtils.getPref(STRING_PREF, { branch: DEFAULT }),
+    "changed-default-value"
+  );
+  Assert.ok(
+    !Services.prefs.prefHasUserValue(STRING_PREF),
+    "Pref was reset to changed default branch value"
+  );
+
+  await cleanup();
+});
