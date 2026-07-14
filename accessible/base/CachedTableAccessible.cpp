@@ -19,29 +19,42 @@
 namespace mozilla::a11y {
 
 // Used to search for table descendants relevant to table structure.
-class TablePartRule : public PivotRule {
+class MOZ_STACK_CLASS TablePartRule : public PivotRule {
  public:
+  explicit TablePartRule(Accessible* aRoot) : mRoot(aRoot) {}
+
   virtual uint16_t Match(Accessible* aAcc) override {
-    role accRole = aAcc->Role();
-    if (accRole == roles::CAPTION || aAcc->IsTableCell()) {
-      return nsIAccessibleTraversalRule::FILTER_MATCH |
-             nsIAccessibleTraversalRule::FILTER_IGNORE_SUBTREE;
+    if (aAcc == mRoot) {
+      // We obviously need to walk inside our table, but we shouldn't match it.
+      MOZ_ASSERT(aAcc->IsTable());
+      return nsIAccessibleTraversalRule::FILTER_IGNORE;
+    }
+    if (aAcc->IsTable()) {
+      // Don't walk inside nested tables at all.
+      return nsIAccessibleTraversalRule::FILTER_IGNORE_SUBTREE;
     }
     if (aAcc->IsTableRow()) {
       return nsIAccessibleTraversalRule::FILTER_MATCH;
     }
-    if (aAcc->IsTable() ||
-        // Generic containers.
-        accRole == roles::TEXT || accRole == roles::TEXT_CONTAINER ||
-        accRole == roles::SECTION ||
-        // Row groups.
-        accRole == roles::ROWGROUP) {
+    if (aAcc->IsTableCell()) {
+      return nsIAccessibleTraversalRule::FILTER_MATCH |
+             nsIAccessibleTraversalRule::FILTER_IGNORE_SUBTREE;
+    }
+    role accRole = aAcc->Role();
+    if (accRole == roles::CAPTION) {
+      return nsIAccessibleTraversalRule::FILTER_MATCH |
+             nsIAccessibleTraversalRule::FILTER_IGNORE_SUBTREE;
+    }
+    if (aAcc->IsGeneric() || accRole == roles::ROWGROUP) {
       // Walk inside these, but don't match them.
       return nsIAccessibleTraversalRule::FILTER_IGNORE;
     }
     return nsIAccessibleTraversalRule::FILTER_IGNORE |
            nsIAccessibleTraversalRule::FILTER_IGNORE_SUBTREE;
   }
+
+ private:
+  Accessible* mRoot;
 };
 
 // The Accessible* keys should only be used for lookup. They should not be
@@ -81,14 +94,10 @@ void CachedTableAccessible::Invalidate(Accessible* aAcc) {
     return;
   }
 
-  Accessible* table = nsAccUtils::TableFor(aAcc);
-  while (table && table->IsTable()) {
+  if (Accessible* table = nsAccUtils::TableFor(aAcc)) {
     // Destroy the instance (if any). We'll create a new one the next time it
-    // is requested. Climb up the heirarcy to invalidate parent tables as well.
+    // is requested.
     sCachedTables->Remove(table);
-    // The table may be a direct child of another table, invalidate that one as
-    // well.
-    table = table->Parent();
   }
 }
 
@@ -103,7 +112,7 @@ CachedTableAccessible::CachedTableAccessible(Accessible* aAcc) : mAcc(aAcc) {
   // header.
   nsTHashMap<uint32_t, uint32_t> prevColHeaders;
   Pivot pivot(mAcc);
-  TablePartRule rule;
+  TablePartRule rule(mAcc);
   for (Accessible* part = pivot.Next(mAcc, rule); part;
        part = pivot.Next(part, rule)) {
     role partRole = part->Role();
