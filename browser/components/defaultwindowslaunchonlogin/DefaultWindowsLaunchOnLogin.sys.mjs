@@ -9,6 +9,8 @@ export const DEFAULT_WINDOWS_LAUNCH_ON_LOGIN_NIMBUS_FEATURE_ID =
 
 export const DEFAULT_WINDOWS_LAUNCH_ON_LOGIN_PREF =
   "browser.startup.windowsLaunchOnLogin.defaultEnabled";
+export const DEFAULT_WINDOWS_LAUNCH_ON_LOGIN_ALREADY_APPLIED_PREF =
+  "browser.startup.windowsLaunchOnLogin.alreadyApplied";
 
 const lazy = XPCOMUtils.declareLazy({
   AppConstants: "resource://gre/modules/AppConstants.sys.mjs",
@@ -37,9 +39,26 @@ export var DefaultWindowsLaunchOnLogin = {
    * so they can be driven directly from tests.
    */
   async maybeEnableOnFirstRun() {
+    let isFirstRun = lazy.profileService.isFirstRun;
+    let isOfficialBuild = lazy.AppConstants.MOZILLA_OFFICIAL;
+    let alreadyApplied = Services.prefs.getBoolPref(
+      DEFAULT_WINDOWS_LAUNCH_ON_LOGIN_ALREADY_APPLIED_PREF,
+      false
+    );
+
+    // Add ability to enable this for manual testing in debug builds.
+    if (
+      lazy.AppConstants.DEBUG &&
+      Services.env.get("FIREFOX_LOL_OVERRIDE_FIRSTRUN") == "TRUE"
+    ) {
+      isFirstRun = true;
+      isOfficialBuild = true;
+    }
+
     await this.enableOnFirstRunIfNeeded(
-      lazy.profileService.isFirstRun,
-      lazy.AppConstants.MOZILLA_OFFICIAL
+      isFirstRun,
+      isOfficialBuild,
+      alreadyApplied
     );
   },
 
@@ -51,12 +70,17 @@ export var DefaultWindowsLaunchOnLogin = {
    * @param {boolean} isOfficialBuild
    *   False for local developer builds, where we skip so `./mach run` doesn't
    *   register every dev's checkout to launch on login.
+   * @param {boolean} alreadyApplied
+   *   True if the first run launch on login setting has already been applied,
+   *   so we don't apply it again, potentially undoing the user's settings.
+   *   Bug #2049494
    */
-  async enableOnFirstRunIfNeeded(isFirstRun, isOfficialBuild) {
+  async enableOnFirstRunIfNeeded(isFirstRun, isOfficialBuild, alreadyApplied) {
     if (
       lazy.AppConstants.platform !== "win" ||
       !isOfficialBuild ||
-      !isFirstRun
+      !isFirstRun ||
+      alreadyApplied
     ) {
       return;
     }
@@ -70,6 +94,12 @@ export var DefaultWindowsLaunchOnLogin = {
     ) {
       return;
     }
+
+    // Mark the launch on login as applied so we don't do it again
+    Services.prefs.setBoolPref(
+      DEFAULT_WINDOWS_LAUNCH_ON_LOGIN_ALREADY_APPLIED_PREF,
+      true
+    );
 
     if (!(await lazy.WindowsLaunchOnLogin.getLaunchOnLoginApproved())) {
       return;

@@ -73,7 +73,13 @@ add_setup(async () => {
 // prefValue -- in production Nimbus writes that pref via setPref, so driving the
 // pref directly exercises the module's decision logic; the Nimbus -> pref
 // linkage is covered separately by test_nimbus_enrollment_sets_pref.
-async function runWith(isFirstRun, isOfficialBuild, approved, prefValue) {
+async function runWith(
+  isFirstRun,
+  isOfficialBuild,
+  approved,
+  alreadyApplied,
+  prefValue
+) {
   let sandbox = sinon.createSandbox();
   sandbox.stub(DefaultWindowsLaunchOnLogin, "waitForNimbusReady").resolves();
   let approvedStub = sandbox
@@ -88,7 +94,8 @@ async function runWith(isFirstRun, isOfficialBuild, approved, prefValue) {
   try {
     await DefaultWindowsLaunchOnLogin.enableOnFirstRunIfNeeded(
       isFirstRun,
-      isOfficialBuild
+      isOfficialBuild,
+      alreadyApplied
     );
     return { approvedStub, createStub };
   } finally {
@@ -112,7 +119,7 @@ add_task(
       !AppConstants.MOZ_NORMANDY || AppConstants.platform !== "win",
   },
   async function test_disabled_when_pref_off() {
-    let { createStub } = await runWith(true, true, true, false);
+    let { createStub } = await runWith(true, true, true, false, false);
     Assert.ok(
       !createStub.called,
       "createLaunchOnLogin should not be called when the pref is off"
@@ -126,7 +133,7 @@ add_task(
       !AppConstants.MOZ_NORMANDY || AppConstants.platform !== "win",
   },
   async function test_enabled_when_pref_on() {
-    let { createStub } = await runWith(true, true, true, true);
+    let { createStub } = await runWith(true, true, true, false, true);
     Assert.ok(
       createStub.calledOnce,
       "createLaunchOnLogin should be called when the pref is on"
@@ -171,7 +178,7 @@ add_task(
 );
 
 add_task(async function test_skips_when_not_first_run() {
-  let { createStub } = await runWith(false, true, true, true);
+  let { createStub } = await runWith(false, true, true, false, true);
   Assert.ok(
     !createStub.called,
     "createLaunchOnLogin should not be called when isFirstRun is false"
@@ -179,7 +186,7 @@ add_task(async function test_skips_when_not_first_run() {
 });
 
 add_task(async function test_skips_on_unofficial_build() {
-  let { createStub } = await runWith(true, false, true, true);
+  let { createStub } = await runWith(true, false, true, false, true);
   Assert.ok(
     !createStub.called,
     "createLaunchOnLogin should not be called on developer builds"
@@ -192,7 +199,13 @@ add_task(
       !AppConstants.MOZ_NORMANDY || AppConstants.platform !== "win",
   },
   async function test_skips_when_windows_policy_denies() {
-    let { createStub, approvedStub } = await runWith(true, true, false, true);
+    let { createStub, approvedStub } = await runWith(
+      true,
+      true,
+      false,
+      false,
+      true
+    );
     Assert.ok(
       approvedStub.calledOnce,
       "policy approval should be consulted when first run and the pref is on"
@@ -200,6 +213,31 @@ add_task(
     Assert.ok(
       !createStub.called,
       "createLaunchOnLogin should not be called when Windows policy denies"
+    );
+  }
+);
+
+add_task(
+  {
+    skip_if: () =>
+      !AppConstants.MOZ_NORMANDY || AppConstants.platform !== "win",
+  },
+  async function test_skips_when_already_applied() {
+    let { createStub, approvedStub } = await runWith(
+      true,
+      true,
+      true,
+      true,
+      true
+    );
+    Assert.ok(
+      !approvedStub.called,
+      "policy approval should not be consulted when already applied is true"
+    );
+
+    Assert.ok(
+      !createStub.called,
+      "createLaunchOnLogin should not be called when already applied is true"
     );
   }
 );

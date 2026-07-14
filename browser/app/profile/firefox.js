@@ -332,6 +332,7 @@ pref("browser.startup.windowsLaunchOnLogin.disableLaunchOnLoginPrompt", false);
 // by default for everyone. A Nimbus enrollment overrides this in either
 // direction.
 pref("browser.startup.windowsLaunchOnLogin.defaultEnabled", false);
+pref("browser.startup.windowsLaunchOnLogin.alreadyApplied", false);
 #endif
 
 // Show an upgrade dialog on major upgrades.
