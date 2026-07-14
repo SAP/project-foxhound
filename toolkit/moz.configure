@@ -1624,6 +1624,8 @@ with only_when(compile_environment & depends(target.os)(lambda os: os != "WINNT"
 
     set_config("HAVE_EXECINFO", check_header("execinfo.h"))
 
+    set_config("HAVE_SINGLE_THREADED_H", check_header("sys/single_threaded.h"))
+
 # Elfhack
 # ==============================================================
 with only_when("--enable-compile-environment"):

@@ -857,7 +857,6 @@ system_headers = [
     "sys/shm.h",
     "sys/siginfo.h",
     "sys/signal.h",
-    "sys/single_threaded.h",
     "sys/socket.h",
     "sys/sockio.h",
     "sys/sparc/frame.h",
@@ -1030,6 +1029,11 @@ system_headers = [
 if CONFIG["HAVE_EXECINFO"]:
     system_headers += [
         "execinfo.h",
+    ]
+
+if CONFIG["HAVE_SINGLE_THREADED_H"]:
+    system_headers += [
+        "sys/single_threaded.h",
     ]
 
 if CONFIG["MOZ_X11"]:
