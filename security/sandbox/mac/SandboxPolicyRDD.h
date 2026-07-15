@@ -48,7 +48,6 @@ static const char SandboxPolicyRDD[] = R"SANDBOX_LITERAL(
     (allow mach-lookup (global-name crashPort)))
 
   (allow signal (target self))
-  (allow sysctl-read)
   (allow file-read*
     (literal "/dev/random")
     (literal "/dev/urandom")
