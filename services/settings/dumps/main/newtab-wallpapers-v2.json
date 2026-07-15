@@ -1,6 +1,74 @@
 {
   "data": [
     {
+      "order": 3,
+      "theme": "light",
+      "title": "wcw-semifinals-arg",
+      "schema": 1783974974325,
+      "category": "firefox",
+      "attachment": {
+        "hash": "973528df1cf245ec1f5dde994d686997347c28fdaf25056381947dae602a8510",
+        "size": 211301,
+        "filename": "wallpaper-worldcup-D-Argentina-desktop.svg",
+        "location": "main-workspace/newtab-wallpapers-v2/20260713164941--4b93b0a8-3ccc-4356-96d4-4f2637d66eb0--4bed9c8c-2886-4969-b1f7-9c5d15122087.svg",
+        "mimetype": "image/svg+xml"
+      },
+      "background_position": "top right",
+      "id": "4b93b0a8-3ccc-4356-96d4-4f2637d66eb0",
+      "last_modified": 1783975194430
+    },
+    {
+      "order": 5,
+      "theme": "dark",
+      "title": "wcw-semifinals-fra",
+      "schema": 1783965624205,
+      "category": "firefox",
+      "attachment": {
+        "hash": "1c3b28cf5e33e68953c0943feff61eb2bfcffae546b74b08eccaadd1101b735c",
+        "size": 210347,
+        "filename": "wallpaper-worldcup-D-France-desktop.svg",
+        "location": "main-workspace/newtab-wallpapers-v2/20260713180000--ad5a14a9-a5c1-4f07-8dc9-2132f967cdb6--e947e519-0db2-4ad4-94dd-fbe8d96b766b.svg",
+        "mimetype": "image/svg+xml"
+      },
+      "background_position": "top right",
+      "id": "ad5a14a9-a5c1-4f07-8dc9-2132f967cdb6",
+      "last_modified": 1783975194426
+    },
+    {
+      "order": 6,
+      "theme": "dark",
+      "title": "wcw-semifinals-esp",
+      "schema": 1783961949821,
+      "category": "firefox",
+      "attachment": {
+        "hash": "47864ba7ab949efefd34efa7124c72e36a7daa47d3f4acccc8994441bce72e5e",
+        "size": 210365,
+        "filename": "wallpaper-worldcup-D-Spain-desktop.svg",
+        "location": "main-workspace/newtab-wallpapers-v2/20260713165852--e6dc9d35-16c9-4a4a-a84c-12d9be3d213e--b4050fff-c113-4487-bb7a-af4000297e67.svg",
+        "mimetype": "image/svg+xml"
+      },
+      "background_position": "top right",
+      "id": "e6dc9d35-16c9-4a4a-a84c-12d9be3d213e",
+      "last_modified": 1783975194422
+    },
+    {
+      "order": 4,
+      "theme": "dark",
+      "title": "wcw-semifinals-eng",
+      "schema": 1783965609028,
+      "category": "firefox",
+      "attachment": {
+        "hash": "65467c6eea68d8246d90bfddbd16a4759c0a07dac7fdc5cce8821f0df0c65639",
+        "size": 210435,
+        "filename": "wallpaper-worldcup-D-England-desktop.svg",
+        "location": "main-workspace/newtab-wallpapers-v2/20260713180008--6107b831-6c13-4238-85ba-97c9a78270ea--33dec5fb-a839-4663-b3ab-4803ab2ffcce.svg",
+        "mimetype": "image/svg+xml"
+      },
+      "background_position": "top right",
+      "id": "6107b831-6c13-4238-85ba-97c9a78270ea",
+      "last_modified": 1783975194418
+    },
+    {
       "order": 9,
       "theme": "light",
       "title": "wcw-c",
@@ -1345,5 +1413,5 @@
       "last_modified": 1718647622926
     }
   ],
-  "timestamp": 1780931540831
+  "timestamp": 1783975194430
 }
