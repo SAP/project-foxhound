@@ -226,6 +226,8 @@ export var TelemetrySession = Object.freeze({
     Impl._sessionActiveTicks = 0;
     Impl._isUserActive = true;
     Impl._isUserActiveNonSynthesized = true;
+    Impl._consecutiveActiveTicks = 0;
+    Impl._consecutiveActiveTicksNonSynthesized = 0;
     Impl._subsessionStartTimeMonotonic = 0;
     Impl._lastEnvironmentChangeDate = Policy.monotonicNow();
     this.testUninstall();
@@ -310,6 +312,12 @@ var Impl = {
   // the corrected active tick (active_ticks_non_synthesized) side-by-side with
   // the legacy active tick.
   _isUserActiveNonSynthesized: true,
+  // Length of the current uninterrupted run of active ticks. Recorded as a
+  // sample into the consecutiveActiveTicks distribution when the run ends
+  // (i.e. the user goes inactive), then reset.
+  _consecutiveActiveTicks: 0,
+  // Like _consecutiveActiveTicks, but for the non-synthesized stream.
+  _consecutiveActiveTicksNonSynthesized: 0,
   _startupIO: {},
   // The previous build ID, if this is the first run with a new build.
   // Null if this is the first run, or the previous build ID is unknown.
@@ -1029,7 +1037,7 @@ var Impl = {
         lazy.TelemetryReportingPolicy.isFirstRun();
 
       if (sendFirstShutdownPing) {
-        let options = {
+        options = {
           addClientId: true,
           addEnvironment: true,
           usePingSender: true,
@@ -1154,20 +1162,6 @@ var Impl = {
     if (needsUpdate) {
       this._sessionActiveTicks++;
       Glean.browserEngagement.activeTicks.add(1);
-    }
-  },
-
-  /**
-   * Like _onActiveTick, but only counts ticks driven by non-synthesized events.
-   * Recorded side-by-side with activeTicks for data continuity while the
-   * correction is evaluated.
-   */
-  _onActiveTickNonSynthesized(aUserActive) {
-    const needsUpdate = aUserActive && this._isUserActiveNonSynthesized;
-    this._isUserActiveNonSynthesized = aUserActive;
-
-    if (needsUpdate) {
-      Glean.browserEngagement.activeTicksNonSynthesized.add(1);
     }
   },
 

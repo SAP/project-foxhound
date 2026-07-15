@@ -155,6 +155,86 @@ add_task(async function test_record_activeTicks_nonSynthesized() {
   await TelemetryController.testShutdown();
 });
 
+add_task(async function test_record_consecutiveActiveTicks() {
+  await TelemetryController.testReset();
+  Services.fog.testResetFOG();
+
+  let active = () =>
+    Services.obs.notifyObservers(null, "user-interaction-active");
+  let inactive = () =>
+    Services.obs.notifyObservers(null, "user-interaction-inactive");
+  let activeNonSynth = () =>
+    Services.obs.notifyObservers(
+      null,
+      "user-interaction-active-non-synthesized"
+    );
+  let inactiveNonSynth = () =>
+    Services.obs.notifyObservers(
+      null,
+      "user-interaction-inactive-non-synthesized"
+    );
+
+  // Reduce a distribution to the number of samples and their sum, so we can
+  // assert on the recorded run lengths without depending on bucket boundaries.
+  let summarize = label => {
+    let data =
+      Glean.browserEngagement.consecutiveActiveTicks[label].testGetValue();
+    if (!data) {
+      return { count: 0, sum: 0 };
+    }
+    let count = Object.values(data.values).reduce((a, b) => a + b, 0);
+    return { count, sum: data.sum };
+  };
+
+  let checkDist = (label, expectedCount, expectedSum) => {
+    let { count, sum } = summarize(label);
+    Assert.equal(
+      count,
+      expectedCount,
+      `${label}: number of recorded runs must match.`
+    );
+    Assert.equal(sum, expectedSum, `${label}: sum of run lengths must match.`);
+  };
+
+  // A run in progress is not recorded until the user goes inactive. The first
+  // active after testReset is counted because the initial state is active.
+  active();
+  active();
+  active();
+  checkDist("active_ticks", 0, 0);
+
+  // Ending the run records its length (3) as a single sample.
+  inactive();
+  checkDist("active_ticks", 1, 3);
+
+  // The first active out of inactivity is just the start of the run and is not
+  // counted, so this run has length 1.
+  active();
+  active();
+  inactive();
+  checkDist("active_ticks", 2, 4);
+
+  // An empty run (start immediately followed by inactive) records nothing.
+  active();
+  inactive();
+  checkDist("active_ticks", 2, 4);
+
+  // Consecutive inactive notifications don't record spurious samples.
+  inactive();
+  checkDist("active_ticks", 2, 4);
+
+  // The non-synthesized stream is tracked independently.
+  checkDist("active_ticks_non_synthesized", 0, 0);
+  activeNonSynth();
+  activeNonSynth();
+  inactiveNonSynth();
+  checkDist("active_ticks_non_synthesized", 1, 2);
+  // The legacy distribution is unchanged by the non-synthesized stream.
+  checkDist("active_ticks", 2, 4);
+
+  await TelemetryController.testShutdown();
+});
+
 add_task(
   {
     skip_if: () => gIsAndroid,

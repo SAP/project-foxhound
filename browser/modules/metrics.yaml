@@ -80,6 +80,51 @@ browser.engagement:
       - BASELINE_PING
       - METRIC_ON_EVENTS_LIFETIME
 
+  consecutive_active_ticks:
+    type: labeled_custom_distribution
+    range_min: 1
+    range_max: 2000
+    bucket_count: 50
+    histogram_type: exponential
+    description: |
+      Distribution of the number of consecutive five-second intervals ('ticks')
+      the user was considered 'active' before transitioning to inactive.
+
+      Each sample is the length of one uninterrupted run of active ticks,
+      recorded when the run ends. This complements the `active_ticks` counters
+      (which only track the total) by capturing how long users stay
+      continuously engaged, and helps inform whether additional active-tick
+      intervals should be introduced in the future.
+
+      The `active_ticks` label mirrors the legacy `active_ticks` counter,
+      counting all events. The `active_ticks_non_synthesized` label mirrors
+      `active_ticks_non_synthesized`, excluding synthesized mouse and pointer
+      events. The two labels are recorded side-by-side for easier analysis.
+
+      A run still in progress when a ping is submitted is not recorded in that
+      ping; it is recorded in a later ping once the run ends.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2050093
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2050093
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - csadilek@mozilla.com
+      - tlong@mozilla.com
+    expires: 161
+    labels:
+      - active_ticks
+      - active_ticks_non_synthesized
+    send_in_pings:
+      - baseline
+      - metrics
+      - usage-reporting
+      - events
+    no_lint:
+      - BASELINE_PING
+      - METRIC_ON_EVENTS_LIFETIME
+
   uri_count:
     type: counter
     description: |
