@@ -916,6 +916,19 @@ actually emit from tabs, this is always true. For other triggers, like
 declare const browserIsSelected: boolean;
 ```
 
+### `hasActiveAIWindow`
+
+Whether any currently open window is an active Smart Window. Unlike
+`isAIWindow`, which only reflects the window that fired the trigger, this checks
+every window, so a message can be suppressed while a Smart Window is open
+anywhere.
+
+#### Definition
+
+```ts
+declare const hasActiveAIWindow: boolean;
+```
+
 ### `isAIWindow`
 
 A context property included for all triggers that evaluates to `true` when the

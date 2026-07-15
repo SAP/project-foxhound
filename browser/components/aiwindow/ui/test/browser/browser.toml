@@ -80,6 +80,8 @@ skip-if = [
 
 ["browser_aiwindow_kit_mention.js"]
 
+["browser_aiwindow_last_usage_timestamp.js"]
+
 ["browser_aiwindow_memories.js"]
 
 ["browser_aiwindow_memories_toggle_prefs.js"]

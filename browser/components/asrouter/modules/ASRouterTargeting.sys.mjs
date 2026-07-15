@@ -53,6 +53,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
   AboutNewTabResourceMapping:
     "resource:///modules/AboutNewTabResourceMapping.sys.mjs",
   AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
+  AIWindow:
+    "moz-src:///browser/components/aiwindow/ui/modules/AIWindow.sys.mjs",
   AboutNewTab: "resource:///modules/AboutNewTab.sys.mjs",
   AppProvidedConfigEngine:
     "moz-src:///toolkit/components/search/ConfigSearchEngine.sys.mjs",
@@ -934,6 +936,9 @@ const TargetingGetters = {
     }
 
     return false;
+  },
+  get hasActiveAIWindow() {
+    return !!lazy.AIWindow?.hasActiveAIWindows?.();
   },
   get hasAccessedFxAPanel() {
     return lazy.hasAccessedFxAPanel;
