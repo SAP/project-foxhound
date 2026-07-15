@@ -92,7 +92,7 @@ add_task(async function testResourceFailure() {
     "createBackupTestRecoveredProfile"
   );
 
-  await bs.getBackupFileInfo(backupFilePath);
+  await bs.loadBackupFileInfo(backupFilePath);
   const restoreID = bs.state.restoreID;
 
   await Assert.rejects(

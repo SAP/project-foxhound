@@ -61,7 +61,7 @@ async function testWrongPassword(passwordToUse) {
     await IOUtils.remove(recoveredProfilePath, { recursive: true });
   });
 
-  await bs.getBackupFileInfo(testBackupPath);
+  await bs.loadBackupFileInfo(testBackupPath);
   const restoreID = bs.state.restoreID;
 
   await Assert.rejects(
