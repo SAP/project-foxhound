@@ -9,9 +9,24 @@ const { TelemetrySession } = ChromeUtils.importESModule(
   "resource://gre/modules/TelemetrySession.sys.mjs"
 );
 
+// Helpers to fire the user-interaction notifications that drive active-tick
+// telemetry. The "-non-synthesized" variants drive the corrected stream added
+// in Bug 2050081.
+const active = () =>
+  Services.obs.notifyObservers(null, "user-interaction-active");
+const inactive = () =>
+  Services.obs.notifyObservers(null, "user-interaction-inactive");
+const activeNonSynth = () =>
+  Services.obs.notifyObservers(null, "user-interaction-active-non-synthesized");
+const inactiveNonSynth = () =>
+  Services.obs.notifyObservers(
+    null,
+    "user-interaction-inactive-non-synthesized"
+  );
+
 function tick(aHowMany) {
   for (let i = 0; i < aHowMany; i++) {
-    Services.obs.notifyObservers(null, "user-interaction-active");
+    active();
   }
 }
 
@@ -97,21 +112,6 @@ add_task(async function test_record_activeTicks_nonSynthesized() {
   await TelemetryController.testReset();
   Services.fog.testResetFOG();
 
-  let active = () =>
-    Services.obs.notifyObservers(null, "user-interaction-active");
-  let inactive = () =>
-    Services.obs.notifyObservers(null, "user-interaction-inactive");
-  let activeNonSynth = () =>
-    Services.obs.notifyObservers(
-      null,
-      "user-interaction-active-non-synthesized"
-    );
-  let inactiveNonSynth = () =>
-    Services.obs.notifyObservers(
-      null,
-      "user-interaction-inactive-non-synthesized"
-    );
-
   let checkTicks = (expectedLegacy, expectedNonSynth) => {
     Assert.equal(
       Glean.browserEngagement.activeTicks.testGetValue() ?? 0,
@@ -158,21 +158,6 @@ add_task(async function test_record_activeTicks_nonSynthesized() {
 add_task(async function test_record_consecutiveActiveTicks() {
   await TelemetryController.testReset();
   Services.fog.testResetFOG();
-
-  let active = () =>
-    Services.obs.notifyObservers(null, "user-interaction-active");
-  let inactive = () =>
-    Services.obs.notifyObservers(null, "user-interaction-inactive");
-  let activeNonSynth = () =>
-    Services.obs.notifyObservers(
-      null,
-      "user-interaction-active-non-synthesized"
-    );
-  let inactiveNonSynth = () =>
-    Services.obs.notifyObservers(
-      null,
-      "user-interaction-inactive-non-synthesized"
-    );
 
   // Reduce a distribution to the number of samples and their sum, so we can
   // assert on the recorded run lengths without depending on bucket boundaries.
@@ -231,6 +216,59 @@ add_task(async function test_record_consecutiveActiveTicks() {
   checkDist("active_ticks_non_synthesized", 1, 2);
   // The legacy distribution is unchanged by the non-synthesized stream.
   checkDist("active_ticks", 2, 4);
+
+  await TelemetryController.testShutdown();
+});
+
+add_task(async function test_record_inactivePeriodDuration() {
+  await TelemetryController.testReset();
+  Services.fog.testResetFOG();
+
+  // Notifications fire synchronously, so each recorded period has a near-zero
+  // duration; assert on the number of recorded periods rather than their times.
+  let checkCount = (label, expected) => {
+    let data =
+      Glean.browserEngagement.inactivePeriodDuration[label].testGetValue();
+    Assert.equal(
+      data ? data.count : 0,
+      expected,
+      `${label}: number of recorded inactive periods must match.`
+    );
+  };
+
+  // Nothing is recorded until an inactive period completes (inactive->active).
+  active();
+  inactive();
+  checkCount("active_ticks", 0);
+
+  // Activity resumes: the completed inactive period is recorded.
+  active();
+  checkCount("active_ticks", 1);
+
+  // A second complete inactive period.
+  inactive();
+  active();
+  checkCount("active_ticks", 2);
+
+  // An inactive period in progress is not recorded until activity resumes.
+  inactive();
+  checkCount("active_ticks", 2);
+  active();
+  checkCount("active_ticks", 3);
+
+  // Consecutive inactive notifications don't start overlapping periods.
+  inactive();
+  inactive();
+  active();
+  checkCount("active_ticks", 4);
+
+  // The non-synthesized stream is tracked independently.
+  checkCount("active_ticks_non_synthesized", 0);
+  activeNonSynth();
+  inactiveNonSynth();
+  activeNonSynth();
+  checkCount("active_ticks_non_synthesized", 1);
+  checkCount("active_ticks", 4);
 
   await TelemetryController.testShutdown();
 });
