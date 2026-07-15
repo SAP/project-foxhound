@@ -162,13 +162,20 @@
      */
     add_task(async function test_new_file_selected() {
       let restoreFromBackup = document.getElementById("test-restore-from-backup");
-
       let content = document.getElementById("content");
+
+      // Simulate parent setting backupFileToRestore via setBackupFileToRestore.
+      restoreFromBackup.backupServiceState = {
+        ...restoreFromBackup.backupServiceState,
+        backupFileToRestore: "/Some/User/Documents/Firefox Backup/backup-default.html",
+        backupFileInfo: null,
+      };
+      await restoreFromBackup.updateComplete;
+
       let promise = BrowserTestUtils.waitForEvent(content, "BackupUI:GetBackupFileInfo");
 
       let selectEvent = new CustomEvent("BackupUI:SelectNewFilepickerPath", {
         detail: {
-          path: "/Some/User/Documents/Firefox Backup/backup-default.html",
           iconURL: "chrome://global/skin/icons/document.svg"
         }
       });
@@ -179,8 +186,9 @@
     });
 
     /**
-     * Tests that missing backup file info doesn't result in another backup
-     * file info request.
+     * Tests that SelectNewFilepickerPath triggers a GetBackupFileInfo request
+     * when state has a backupFileToRestore, and that a subsequent state update
+     * with the same path does not result in a duplicate request.
      */
     add_task(async function test_getbackupfileinfo_from_picked_file() {
       let restoreFromBackup = document.getElementById("test-restore-from-backup");
@@ -188,24 +196,8 @@
       let path = "/Some/User/Documents/Firefox Backup/backup-default.html";
 
       for (let i = 0; i < 2; i++) {
-        let promise = BrowserTestUtils.waitForEvent(content, "BackupUI:GetBackupFileInfo");
-
-        let selectEvent = new CustomEvent("BackupUI:SelectNewFilepickerPath", {
-          detail: {
-            path,
-            iconURL: "chrome://global/skin/icons/document.svg"
-          }
-        });
-        restoreFromBackup.dispatchEvent(selectEvent);
-        await promise;
-
-        let inTest = true;
-        BrowserTestUtils.waitForEvent(content, "BackupUI:GetBackupFileInfo").then(() => {
-          // This lingers after the test finishes, so make sure it's a no-op.
-          // (Within this test, it should NOT be sent.)
-          ok(!inTest, "A second GetBackupFileInfo request was sent");
-        });
-
+        // Simulate parent setting backupFileToRestore via setBackupFileToRestore
+        // before SelectNewFilepickerPath reaches the component.
         restoreFromBackup.backupServiceState = {
           ...restoreFromBackup.backupServiceState,
           backupFileToRestore: path,
@@ -213,8 +205,33 @@
         };
         await restoreFromBackup.updateComplete;
 
-        // BrowserTestUtils.waitForEvent doesn't run immediately, so give it a
-        // tick.
+        let promise = BrowserTestUtils.waitForEvent(content, "BackupUI:GetBackupFileInfo");
+
+        // SelectNewFilepickerPath resets dedup, getBackupFileInfo() reads path
+        // from state and dispatches GetBackupFileInfo.
+        let selectEvent = new CustomEvent("BackupUI:SelectNewFilepickerPath", {
+          detail: {
+            iconURL: "chrome://global/skin/icons/document.svg"
+          }
+        });
+        restoreFromBackup.dispatchEvent(selectEvent);
+        await promise;
+
+        ok(true, "GetBackupFileInfo dispatched after SelectNewFilepickerPath");
+
+        let inTest = true;
+        BrowserTestUtils.waitForEvent(content, "BackupUI:GetBackupFileInfo").then(() => {
+          ok(!inTest, "A second GetBackupFileInfo request was sent");
+        });
+
+        // Same state again should not trigger a duplicate request.
+        restoreFromBackup.backupServiceState = {
+          ...restoreFromBackup.backupServiceState,
+          backupFileToRestore: path,
+          backupFileInfo: null,
+        };
+        await restoreFromBackup.updateComplete;
+
         await TestUtils.waitForTick();
 
         inTest = false;

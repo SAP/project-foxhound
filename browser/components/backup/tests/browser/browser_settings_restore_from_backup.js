@@ -521,7 +521,7 @@ add_task(async function test_restore_from_backup_prefills_prior_valid_backup() {
 
     // Wait for the state to reflect the newly selected file. We can't
     // simply wait for the next BackupUI:StateWasUpdated because a stale
-    // getBackupFileInfo request (from maybeGetBackupFileInfo during
+    // loadBackupFileInfo request (from maybeGetBackupFileInfo during
     // connectedCallback) may resolve first with an outdated state.
     await TestUtils.waitForCondition(async () => {
       await restoreFromBackup.updateComplete;

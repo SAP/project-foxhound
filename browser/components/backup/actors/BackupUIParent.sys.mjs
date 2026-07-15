@@ -229,7 +229,9 @@ export class BackupUIParent extends JSWindowActorParent {
       let iconURL = this.#bs.getIconFromFilePath(path);
       let filename = PathUtils.filename(path);
 
-      if (!filter) {
+      if (filter) {
+        this.#bs.setBackupFileToRestore(path);
+      } else {
         if (alsoDeleteLastBackup) {
           try {
             await this.#bs.deleteLastBackup();
@@ -249,13 +251,15 @@ export class BackupUIParent extends JSWindowActorParent {
         iconURL,
       };
     } else if (message.name == "GetBackupFileInfo") {
-      let { backupFile } = message.data;
-      try {
-        await this.#bs.getBackupFileInfo(backupFile);
-      } catch (e) {
-        /**
-         * TODO: (Bug 1905156) display a localized version of error in the restore dialog.
-         */
+      let backupFile = this.#bs.state.backupFileToRestore;
+      if (backupFile) {
+        try {
+          await this.#bs.loadBackupFileInfo(backupFile);
+        } catch (e) {
+          /**
+           * TODO: (Bug 1905156) display a localized version of error in the restore dialog.
+           */
+        }
       }
     } else if (message.name == "FindBackupsInWellKnownLocations") {
       let { source } = message.data;
