@@ -46,6 +46,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "moz-src:///browser/components/aiwindow/services/MemoryStore.sys.mjs",
   NewTabPagePreloading:
     "moz-src:///browser/components/tabbrowser/NewTabPagePreloading.sys.mjs",
+  NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   ONLOGOUT_NOTIFICATION: "resource://gre/modules/FxAccountsCommon.sys.mjs",
   PanelMultiView:
     "moz-src:///browser/components/customizableui/PanelMultiView.sys.mjs",
@@ -129,6 +130,7 @@ export const AIWindow = {
     Services.obs.addObserver(this, "tabstrip-orientation-change");
     lazy.SmartWindowTelemetry.init();
     lazy.getAllModelsData(); // loads model data into cache for about:preferences
+    lazy.NimbusFeatures.smartWindow.onUpdate(this.onNimbusUpdate);
     this._initialized = true;
 
     // On startup/restart, if the first window initialized is an
@@ -172,7 +174,15 @@ export const AIWindow = {
       this.handlePlacesEvents
     );
 
+    lazy.NimbusFeatures.smartWindow.offUpdate(this.onNimbusUpdate);
+
     this._initialized = false;
+  },
+
+  onNimbusUpdate() {
+    if (lazy.NimbusFeatures.smartWindow.getVariable("enabled")) {
+      Services.prefs.setBoolPref(PREF_SMARTWINDOW_ENABLED, true);
+    }
   },
 
   observe(_subject, topic) {

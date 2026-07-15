@@ -8,6 +8,7 @@ const { NimbusTestUtils } = ChromeUtils.importESModule(
 );
 
 const PREF_IS_DEFAULT_WINDOW = "browser.smartwindow.isDefaultWindow";
+const PREF_SMARTWINDOW_ENABLED = "browser.smartwindow.enabled";
 
 /**
  * Enrolling in the smartWindow feature with isDefault=true sets the
@@ -82,5 +83,52 @@ add_task(async function test_nimbus_enrollment_respects_eligibility_checks() {
 
   await cleanup();
   Services.prefs.clearUserPref(PREF_IS_DEFAULT_WINDOW);
+  await SpecialPowers.popPrefEnv();
+});
+
+/**
+ * Enrolling in the smartWindow feature with enabled=true flips the
+ * browser.smartwindow.enabled pref to true via AIWindow.onNimbusUpdate.
+ */
+add_task(async function test_nimbus_enabled_variable_sets_pref() {
+  await SpecialPowers.pushPrefEnv({
+    set: [[PREF_SMARTWINDOW_ENABLED, false]],
+  });
+
+  const cleanup = await NimbusTestUtils.enrollWithFeatureConfig({
+    featureId: "smartWindow",
+    value: { enabled: true },
+  });
+
+  ok(
+    Services.prefs.getBoolPref(PREF_SMARTWINDOW_ENABLED),
+    "browser.smartwindow.enabled is true after enrolling with enabled=true"
+  );
+
+  await cleanup();
+  Services.prefs.clearUserPref(PREF_SMARTWINDOW_ENABLED);
+  await SpecialPowers.popPrefEnv();
+});
+
+/**
+ * Turning off the enabled variable does not disable the feature: the
+ * browser.smartwindow.enabled pref is only ever flipped on, never off.
+ */
+add_task(async function test_nimbus_enabled_false_does_not_disable() {
+  await SpecialPowers.pushPrefEnv({
+    set: [[PREF_SMARTWINDOW_ENABLED, true]],
+  });
+
+  const cleanup = await NimbusTestUtils.enrollWithFeatureConfig({
+    featureId: "smartWindow",
+    value: { enabled: false },
+  });
+
+  ok(
+    Services.prefs.getBoolPref(PREF_SMARTWINDOW_ENABLED),
+    "browser.smartwindow.enabled remains true; disabling the variable does not disable the feature"
+  );
+
+  await cleanup();
   await SpecialPowers.popPrefEnv();
 });

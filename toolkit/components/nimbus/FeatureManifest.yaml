@@ -5991,6 +5991,9 @@ smartWindow:
   owner: echa@mozilla.com
   hasExposure: false
   variables:
+    enabled:
+      type: boolean
+      description: Enables the Smart Window feature when true. Turning off this variable will not disable the feature.
     isDefault:
       type: boolean
       setPref:
