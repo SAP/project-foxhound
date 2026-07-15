@@ -24,3 +24,30 @@ moz-button[type="primary"] {
   --button-text-color-primary-hover: var(--color-white);
   --button-text-color-primary-active: var(--color-white);
 }
+
+moz-button[type="ghost"] {
+  --button-background-color-ghost: var(--button-background-color);
+  --button-background-color-ghost-active: var(--button-background-color-active);
+  --button-background-color-ghost-hover: var(--button-background-color-hover);
+  --button-background-color-ghost-selected: var(--button-background-color-selected);
+  --button-text-color-ghost: light-dark(var(--color-violet-90), var(--color-violet-0));
+  --button-text-color-ghost-active: var(--button-text-color-ghost);
+  --button-text-color-ghost-hover: var(--button-text-color-ghost);
+  --button-text-color-ghost-selected: var(--button-text-color-ghost);
+
+  /* stylelint-disable-next-line media-query-no-invalid */
+  @media -moz-pref("browser.nova.enabled") {
+    --button-background-color-ghost: transparent;
+    --button-background-color-ghost-hover: var(--smartwindow-panel-item-background-color-hover);
+    --button-background-color-ghost-active: var(--smartwindow-panel-item-background-color-active);
+    --button-background-color-ghost-selected: var(--smartwindow-panel-item-background-color-active);
+    --button-text-color-ghost: var(--smartwindow-text-color-accent-primary);
+    --button-text-color-ghost-hover: var(--button-text-color-ghost);
+    --button-text-color-ghost-active: var(--button-text-color-ghost);
+    --button-text-color-ghost-selected: var(--button-text-color-ghost);
+    --button-border-color-ghost: light-dark(var(--color-violet-30), var(--color-violet-40));
+    --button-border-color-ghost-hover: var(--button-border-color-ghost);
+    --button-border-color-ghost-active: var(--button-border-color-ghost);
+    --button-border-color-ghost-selected: var(--button-border-color-ghost);
+  }
+}
