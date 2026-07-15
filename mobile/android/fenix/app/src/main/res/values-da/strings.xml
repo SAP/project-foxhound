@@ -651,6 +651,8 @@
     %1$s is replaced by an active link, using nova_onboarding_marketing_body_link_text_1 as text (“Learn More”).
   -->
   <string name="nova_onboarding_marketing_body_7" tools:ignore="BrandUsage">Du kan hjælpe os med at nå ud til flere personer ved at give Mozilla tilladelse til at informere den platform, du kom fra, om, at du bruger Firefox. %1$s</string>
+  <!-- Marketing onboarding additional body text. 'Firefox' is intentionally hardcoded. -->
+  <string name="nova_onboarding_marketing_body_line_two" tools:ignore="BrandUsage">Firefox er stolt af at være uafhængig og vi sætter en ære i at forsvare det åbne internet mod teknologimonopoler.</string>
   <!--
     Marketing onboarding additional body text. 'Firefox' is intentionally hardcoded.
     “Allowing” refers to the main button “Allow and Continue”; the ask for the user is to allow communicating back to the platform.
@@ -1969,6 +1971,8 @@
   <string name="webcompat_reporter_label_whats_broken_3">Hvad virker ikke?</string>
   <!-- Content description for the icon button that clears the selected broken site reason in the WebCompat Reporter. -->
   <string name="webcompat_reporter_clear_reason_content_description">Ryd den valgte årsag</string>
+  <!-- The error message of the description when the user selects "Something else" as the reason, but left the description empty or too short. -->
+  <string name="webcompat_reporter_description_error">Indtast mindst ti tegn</string>
   <!-- The label/title of a mandatory field in the Web Compat Reporter feature for adding additional information. -->
   <string name="webcompat_reporter_label_mandatory_description">Beskriv problemet i detaljer for at hjælpe os med at undersøge det</string>
   <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
@@ -3118,6 +3122,12 @@
   <string name="ip_protection_onboarding_body">%1$s ved at skjule din placering, selv på offentlige wi-fi. Få %2$d GB gratis hver måned.</string>
   <!-- Used as text for a link in ip_protection_onboarding_body. Make sure to adapt capitalization if the link is in the middle of the sentence. -->
   <string name="ip_protection_onboarding_body_link">Brug nettet med ekstra beskyttelse</string>
+  <!--
+    The body of the VPN onboarding card for a promotion that provides unlimited data bandwidth for a certain time.
+    %1$s is a localized date (for example "Jun 9") indicating the end of the promotional period.
+    %2$s is a link using ip_protection_onboarding_body_link_promo (“Learn more”) as text. It links to a support article about VPN on Firefox.
+  -->
+  <string name="ip_protection_onboarding_body_promo">Slå den til for at gøre din browsing mere privat og sværere at spore. Prøv den nu og få ubegrænset båndbredde indtil %1$s. %2$s</string>
   <!-- Used as text for a link in ip_protection_onboarding_body. Make sure to adapt capitalization if the link is in the middle of the sentence. -->
   <string name="ip_protection_onboarding_body_link_promo">Læs mere</string>
   <!-- Label for the dismiss button on the onboarding bottom sheet. -->
@@ -4092,6 +4102,8 @@
   <string name="uninstall_survey_option_4_v2">Videoer, filhentninger eller medier virkede ikke</string>
   <!-- Uninstall survey answer option -->
   <string name="uninstall_survey_option_5_v2">Den er svær at bruge eller dårligt designet</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_6_v2">Bekymringer om privatlivet eller sikkerhed</string>
   <!-- Button label shown at the bottom of the uninstall survey -->
   <string name="uninstall_survey_button_label">Send feedback og afinstaller</string>
   <!--

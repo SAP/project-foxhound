@@ -1545,6 +1545,8 @@
   <string name="add_tab">Rejtarik pśidaś</string>
   <!-- Content description (not visible, for screen readers etc.): Add tab button. Adds a news tab when pressed -->
   <string name="add_private_tab">Priwatny rejtarik pśidaś</string>
+  <!-- Content description (not visible, for screen readers etc.): Create tab group button. Opens the create tab group sheet when pressed -->
+  <string name="create_tab_group_content_description">Rejtarikowu kupku napóraś</string>
   <!-- Text for the tab search bar placeholder -->
   <string name="tab_manager_search_bar_placeholder">Pśepytajśo swóje rejtariki</string>
   <!-- Text shown in the menu to view recently closed tabs -->

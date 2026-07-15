@@ -41,7 +41,7 @@
     Title shown when no trackers have been blocked yet
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
-  <string name="mozac_protections_dashboard_empty_title">%1$s blokuje elementy śledzące podczas przeglądania.</string>
+  <string name="mozac_protections_dashboard_empty_title">%1$s blokuje elementy śledzące podczas przeglądania Internetu.</string>
   <!-- Subtitle shown when no trackers have been blocked yet -->
   <string name="mozac_protections_dashboard_empty_subtitle">Zobaczysz je tutaj.</string>
   <plurals name="mozac_protections_dashboard_total_blocked_since_2">

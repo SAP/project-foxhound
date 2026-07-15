@@ -1545,6 +1545,8 @@
   <string name="add_tab">Pridať kartu</string>
   <!-- Content description (not visible, for screen readers etc.): Add tab button. Adds a news tab when pressed -->
   <string name="add_private_tab">Pridať súkromnú kartu</string>
+  <!-- Content description (not visible, for screen readers etc.): Create tab group button. Opens the create tab group sheet when pressed -->
+  <string name="create_tab_group_content_description">Vytvoriť skupinu kariet</string>
   <!-- Text for the tab search bar placeholder -->
   <string name="tab_manager_search_bar_placeholder">Vyhľadávanie v kartách</string>
   <!-- Text shown in the menu to view recently closed tabs -->

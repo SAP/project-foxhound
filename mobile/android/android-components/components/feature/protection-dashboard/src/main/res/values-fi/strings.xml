@@ -16,7 +16,7 @@
       the translation.
     -->
     <item quantity="one">Seurain estetty tällä viikolla</item>
-    <item quantity="other">Seuraimia estetty tällä viikolla</item>
+    <item quantity="other">Seurainta estetty tällä viikolla</item>
   </plurals>
   <plurals name="mozac_protections_dashboard_data_saved">
     <!-- Label showing data saved in megabytes. %1$d is the number of MB saved -->
@@ -34,7 +34,7 @@
   <!-- Tracker category: Other trackers -->
   <string name="protections_dashboard_category_others">Muut</string>
   <!-- Title shown in the protection dashboard header next to the shield icon -->
-  <string name="mozac_protections_dashboard_trackers_blocked_this_week_title">Seuraimia estetty tällä viikolla</string>
+  <string name="mozac_protections_dashboard_trackers_blocked_this_week_title">seurainta estetty tällä viikolla</string>
   <!--
     Title shown when no trackers have been blocked yet
     %1$s will be replaced by the app name (e.g. Firefox Focus)

@@ -16,4 +16,9 @@
     %s is a placeholder that will be replaced by the change percent value
   -->
   <string name="mozac_browser_awesomebar_stock_suggestion_decrease">ຫຼຸດ %s ເປີເຊັນລົງ</string>
+  <!--
+    The description for the stock suggestion card when the stock is increasing.
+    %s is a placeholder that will be replaced by the change percent value
+  -->
+  <string name="mozac_browser_awesomebar_stock_suggestion_increase">ໄດ້ຮັບ %s ເປີເຊັນ</string>
 </resources>

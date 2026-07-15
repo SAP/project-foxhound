@@ -1543,6 +1543,8 @@
   <string name="add_tab">הוספת לשונית</string>
   <!-- Content description (not visible, for screen readers etc.): Add tab button. Adds a news tab when pressed -->
   <string name="add_private_tab">הוספת לשונית פרטית</string>
+  <!-- Content description (not visible, for screen readers etc.): Create tab group button. Opens the create tab group sheet when pressed -->
+  <string name="create_tab_group_content_description">יצירת קבוצת לשוניות</string>
   <!-- Text for the tab search bar placeholder -->
   <string name="tab_manager_search_bar_placeholder">חיפוש הלשוניות שלך</string>
   <!-- Text shown in the menu to view recently closed tabs -->
