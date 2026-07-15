@@ -32,7 +32,7 @@ add_task(async function test_internal_post_recovery() {
     await bs.createBackup({ profilePath: testBackupDirPath })
   ).archivePath;
 
-  await bs.loadBackupFileInfo(testBackupPath);
+  await bs.getBackupFileInfo(testBackupPath);
   const restoreID = bs.state.restoreID;
   const expectedRestoreAttributes = {
     is_restored: true,

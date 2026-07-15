@@ -210,7 +210,7 @@ async function createBackupAndRecover(
     !recoveryIsLegacy && !profilesDisabled
   );
 
-  await bs.loadBackupFileInfo(archivePath);
+  await bs.getBackupFileInfo(archivePath);
   const restoreID = bs.state.restoreID;
 
   let restoreStartedEvents;

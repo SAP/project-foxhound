@@ -163,7 +163,7 @@ export default class RestoreFromBackup extends MozLitElement {
 
   handleEvent(event) {
     if (event.type == "BackupUI:SelectNewFilepickerPath") {
-      let { iconURL } = event.detail;
+      let { path, iconURL } = event.detail;
       this._fileIconURL = iconURL;
 
       // Check the backup info again even if it was the same file.
@@ -197,7 +197,7 @@ export default class RestoreFromBackup extends MozLitElement {
         Services.obs.notifyObservers(null, "browser-backup-glean-sent");
       });
 
-      this.getBackupFileInfo();
+      this.getBackupFileInfo(path);
     } else if (event.type == "BackupUI:StateWasUpdated") {
       this.#initializedResolvers.resolve();
       if (this.#backupFileReadPromise) {
@@ -225,8 +225,8 @@ export default class RestoreFromBackup extends MozLitElement {
     );
   }
 
-  getBackupFileInfo() {
-    let backupFile = this.backupServiceState?.backupFileToRestore;
+  getBackupFileInfo(pathToFile = null) {
+    let backupFile = pathToFile || this.backupServiceState?.backupFileToRestore;
     if (!backupFile || this.#lastBackupInfoFilename === backupFile) {
       return;
     }
@@ -236,6 +236,9 @@ export default class RestoreFromBackup extends MozLitElement {
       new CustomEvent("BackupUI:GetBackupFileInfo", {
         bubbles: true,
         composed: true,
+        detail: {
+          backupFile,
+        },
       })
     );
   }

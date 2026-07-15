@@ -62,7 +62,7 @@ add_task(async function test_decompress_failure_step() {
         new BackupError("Decompression failed", ERRORS.DECOMPRESSION_FAILED)
       );
 
-    await bs.loadBackupFileInfo(testBackupPath);
+    await bs.getBackupFileInfo(testBackupPath);
     const restoreID = bs.state.restoreID;
 
     await Assert.rejects(
@@ -147,7 +147,7 @@ add_task(async function test_read_manifest_failure_step() {
       );
     });
 
-    await bs.loadBackupFileInfo(testBackupPath);
+    await bs.getBackupFileInfo(testBackupPath);
     const restoreID = bs.state.restoreID;
 
     await Assert.rejects(
@@ -228,7 +228,7 @@ add_task(async function test_profile_creation_failure_step() {
       .stub(bs, "recoverFromSnapshotFolderIntoSelectableProfile")
       .rejects(err);
 
-    await bs.loadBackupFileInfo(testBackupPath);
+    await bs.getBackupFileInfo(testBackupPath);
     const restoreID = bs.state.restoreID;
 
     await Assert.rejects(
@@ -290,7 +290,7 @@ add_task(async function test_non_backup_error_detail() {
       .stub(bs, "recoverFromSnapshotFolderIntoSelectableProfile")
       .rejects(genericError);
 
-    await bs.loadBackupFileInfo(testBackupPath);
+    await bs.getBackupFileInfo(testBackupPath);
 
     await Assert.rejects(
       bs.recoverFromBackupArchive(

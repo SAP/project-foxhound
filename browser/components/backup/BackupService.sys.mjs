@@ -5201,28 +5201,19 @@ export class BackupService extends EventTarget {
   }
 
   /**
-   * Sets the backup file path to restore from and updates state.
-   *
-   * @param {string} backupFilePath path to the backup file.
-   */
-  setBackupFileToRestore(backupFilePath) {
-    this.#_state.backupFileToRestore = backupFilePath;
-    this.stateUpdate();
-  }
-
-  /**
    * Gets a sample from a given backup file and sets a subset of that as
    * the backupFileInfo in the backup service state.
    *
-   * Called when loading info for an archive to potentially restore.
+   * Called when getting a info for an archive to potentially restore.
    *
    * @param {string} backupFilePath path to the backup file to sample.
    */
-  async loadBackupFileInfo(backupFilePath) {
+  async getBackupFileInfo(backupFilePath) {
     lazy.logConsole.debug(`Getting info from backup file at ${backupFilePath}`);
 
     this.#_state.restoreID = Services.uuid.generateUUID().toString();
     this.#_state.backupFileInfo = null;
+    this.#_state.backupFileToRestore = backupFilePath;
     this.#_state.backupFileCoarseLocation =
       this.classifyLocationForTelemetry(backupFilePath);
 
@@ -5404,7 +5395,7 @@ export class BackupService extends EventTarget {
       for (const file of maybeBackupFiles) {
         if (validateFile) {
           try {
-            await this.loadBackupFileInfo(file);
+            await this.getBackupFileInfo(file);
           } catch (e) {
             lazy.logConsole.log(
               "Not a valid backup file in the default folder",
