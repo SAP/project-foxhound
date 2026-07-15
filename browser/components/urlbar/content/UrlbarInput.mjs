@@ -3114,14 +3114,19 @@ ${
   }
 
   /**
-   * @param {{wrappedJSObject: SearchEngine}} subject
+   * @param {{wrappedJSObject: SearchEngine} | Window} subject
    * @param {"browser-search-engine-modified"|"ai-window-state-changed"} topic
    * @param {string} data
    */
   observe(subject, topic, data) {
     switch (topic) {
+      // nav-bar-visible event is unique to Smart Window and emits when the urlbar is shown on new tab.
+      // This ensures consistent height and padding around the urlbar
       case "ai-window-state-changed":
-        if (subject == this.window && data == "classic") {
+        if (
+          subject == this.window &&
+          (data == "classic" || data == "nav-bar-visible")
+        ) {
           this.#updateLayoutBreakout();
         }
         break;

@@ -372,6 +372,7 @@ export const AIWindow = {
     ) {
       return;
     }
+
     if (this.isAIWindowActive(win)) {
       // Window already opened as Smart via the BrowserContentHandler
       // startup gate, which uses ToS consentTime as a synchronous proxy for
@@ -467,6 +468,7 @@ export const AIWindow = {
     );
     if (willOpenImmersive) {
       propBag.setPropertyAsBool("aiwindow-immersive-view", true);
+      propBag.setPropertyAsBool("aiwindow-new-window", true);
     }
 
     return args;
@@ -941,6 +943,7 @@ export const AIWindow = {
     if (!this.isAIWindowActiveAndEnabled(win)) {
       root.toggleAttribute("hide-ai-sidebar", shouldHideSidebarForNewtab);
       root.removeAttribute("aiwindow-immersive-view");
+      root.removeAttribute("aiwindow-new-window");
       root.removeAttribute("aiwindow-has-nav-forward");
       return;
     }
@@ -956,14 +959,31 @@ export const AIWindow = {
 
     /* sets attr only for first run for css reasons */
     const isFirstRun = currentURI.equalsExceptRef(FIRSTRUN_URI);
+    // A new window has a single tab; once more tabs are open the window is no
+    // longer in dedicated new-window mode and the navbar reappears.
+    const isNewWindow = win.gBrowser.tabs.length === 1;
     root.toggleAttribute("aiwindow-first-run", isFirstRun && isImmersiveView);
     root.toggleAttribute("aiwindow-immersive-view", isImmersiveView);
+    const wasNewWindow = root.hasAttribute("aiwindow-new-window");
+    root.toggleAttribute("aiwindow-new-window", isImmersiveView && isNewWindow);
+    if (wasNewWindow && !root.hasAttribute("aiwindow-new-window")) {
+      Services.obs.notifyObservers(
+        win,
+        "ai-window-state-changed",
+        "nav-bar-visible"
+      );
+    }
 
     const canGoForward =
       isImmersiveView &&
       !isFirstRun &&
       (win.gBrowser.selectedBrowser?.webNavigation?.canGoForward ?? false);
     root.toggleAttribute("aiwindow-has-nav-forward", canGoForward);
+
+    const askButton = win.document.getElementById("smartwindow-ask-button");
+    if (askButton) {
+      askButton.hidden = isImmersiveView;
+    }
 
     // Set attr on the specific browser that has content to override color scheme
     win.gBrowser.selectedBrowser?.toggleAttribute(

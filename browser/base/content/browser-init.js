@@ -209,6 +209,9 @@ var gBrowserInit = {
       if (extraOptions.hasKey("aiwindow-immersive-view")) {
         document.documentElement.setAttribute("aiwindow-immersive-view", true);
       }
+      if (extraOptions.hasKey("aiwindow-new-window")) {
+        document.documentElement.setAttribute("aiwindow-new-window", true);
+      }
     }
 
     // Run menubar initialization first, to avoid CustomTitlebar code picking

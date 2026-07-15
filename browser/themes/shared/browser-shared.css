@@ -1666,8 +1666,9 @@ popupnotificationcontent {
   margin-inline-start: auto;
 }
 
-/* AI window immersive view (hidden nav bar and buttons) */
-:root[ai-window][aiwindow-immersive-view] {
+/* AI window: hide nav bar on new window or firstrun */
+:root[ai-window][aiwindow-new-window],
+:root[ai-window][aiwindow-first-run] {
   #nav-bar:not(.browser-titlebar) {
     height: 0;
     min-height: 0;
@@ -1676,48 +1677,45 @@ popupnotificationcontent {
 
   #urlbar-container,
   #nav-bar-customization-target > *:not(#sidebar-button),
-  #nav-bar-overflow-button,
-  #smartwindow-ask-button {
+  #nav-bar-overflow-button {
     visibility: hidden;
   }
+}
 
-  /* Show back/forward buttons when navigating back to the Smart Window from a page */
-  &[aiwindow-has-nav-forward] {
-    #nav-bar:not(.browser-titlebar) {
-      height: unset;
-      min-height: unset;
-      visibility: visible;
-    }
-
-    #sidebar-button {
-      display: none;
-    }
-
-    #nav-bar-customization-target > #back-button,
-    #nav-bar-customization-target > #forward-button {
-      visibility: visible;
-      -moz-user-focus: normal;
-    }
+/* Show back/forward buttons when navigating back to the Smart Window from a page */
+:root[ai-window][aiwindow-new-window][aiwindow-has-nav-forward] {
+  #nav-bar:not(.browser-titlebar) {
+    height: unset;
+    min-height: unset;
+    visibility: visible;
   }
 
-  /* immersive view styles exclusive for first run */
-  &[aiwindow-first-run] {
-    #PanelUI-button {
-      display: none;
-    }
+  #nav-bar-customization-target > #back-button,
+  #nav-bar-customization-target > #forward-button {
+    visibility: visible;
+    -moz-user-focus: normal;
+  }
+}
 
-    #TabsToolbar > .toolbar-items {
+/* immersive view styles exclusive for first run (nav-bar/urlbar hiding is
+   shared with new-window above) */
+:root[ai-window][aiwindow-first-run] {
+  #sidebar-button,
+  #PanelUI-button {
+    display: none;
+  }
+
+  #TabsToolbar > .toolbar-items {
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens -- to be addressed in 2033919 */
+    opacity: 0.2;
+    pointer-events: none;
+  }
+
+  @media -moz-pref("sidebar.verticalTabs") {
+    #sidebar-container {
       /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens -- to be addressed in 2033919 */
       opacity: 0.2;
       pointer-events: none;
-    }
-
-    @media -moz-pref("sidebar.verticalTabs") {
-      #sidebar-container {
-        /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens -- to be addressed in 2033919 */
-        opacity: 0.2;
-        pointer-events: none;
-      }
     }
   }
 }
