@@ -1198,6 +1198,7 @@ uint8_t* nsZipCursor::ReadOrCopy(uint32_t* aBytesRead, bool aCopy) {
       } else {
         *aBytesRead = mZs.avail_in > mBufSize ? mBufSize : mZs.avail_in;
         memcpy(mBuf, mZs.next_in, *aBytesRead);
+        buf = mBuf;
         mZs.avail_in -= *aBytesRead;
         mZs.next_in += *aBytesRead;
       }

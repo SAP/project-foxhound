@@ -8,6 +8,8 @@ with Files("**"):
 if CONFIG["MOZ_ZIPWRITER"]:
     DIRS += ["zipwriter"]
 
+TEST_DIRS += ["test/gtest"]
+
 MOCHITEST_MANIFESTS += ["test/mochitest/mochitest.toml"]
 
 XPCSHELL_TESTS_MANIFESTS += ["test/unit/xpcshell.toml"]
