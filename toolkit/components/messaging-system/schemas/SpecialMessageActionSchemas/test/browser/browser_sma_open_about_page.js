@@ -18,6 +18,25 @@ add_task(async function test_OPEN_ABOUT_PAGE() {
   BrowserTestUtils.removeTab(tab);
 });
 
+add_task(async function test_OPEN_ABOUT_PAGE_WITH_FRAGMENT() {
+  const tabPromise = BrowserTestUtils.waitForNewTab(
+    gBrowser,
+    "about:preferences#general-cfrfeatures"
+  );
+  await SMATestUtils.executeAndValidateAction({
+    type: "OPEN_ABOUT_PAGE",
+    data: {
+      args: "preferences#general-cfrfeatures",
+      entrypoint: "",
+      where: "tab",
+    },
+  });
+
+  const tab = await tabPromise;
+  ok(tab, "should open about page with a fragment in the args in a new tab");
+  BrowserTestUtils.removeTab(tab);
+});
+
 add_task(async function test_OPEN_ABOUT_PAGE_NEW_WINDOW() {
   const newWindowPromise = BrowserTestUtils.waitForNewWindow(
     gBrowser,
