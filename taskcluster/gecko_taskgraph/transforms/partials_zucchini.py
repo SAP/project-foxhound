@@ -7,12 +7,12 @@ Transform the partials task into an actual task description.
 
 import json
 
+from mozilla_taskgraph.util.attributes import release_level
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.dependencies import get_primary_dependency
 from taskgraph.util.schema import resolve_keyed_by
 from taskgraph.util.treeherder import inherit_treeherder_from_dep
 
-from gecko_taskgraph.util.attributes import release_level
 from gecko_taskgraph.util.partials import get_builds
 from gecko_taskgraph.util.platforms import architecture
 from gecko_taskgraph.util.scriptworker import (
@@ -127,7 +127,10 @@ def make_task_description(config, tasks):
                 f"--cert-path=/builds/worker/workspace/keys/{cert_type}.pubkey"
             )
 
-        if release_level(config.params) == "staging":
+        if (
+            release_level(config.graph_config["release-branches"], config.params)
+            == "staging"
+        ):
             extra_params.append("--allow-staging-urls")
 
         if config.kind == "partials-zucchini":

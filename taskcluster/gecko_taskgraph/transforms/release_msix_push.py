@@ -7,11 +7,11 @@ Transform the release-msix-push kind into an actual task description.
 
 from typing import Optional
 
+from mozilla_taskgraph.util.attributes import release_level
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.schema import Schema
 
 from gecko_taskgraph.transforms.task import TaskDescriptionSchema
-from gecko_taskgraph.util.attributes import release_level
 from gecko_taskgraph.util.scriptworker import add_scope_prefix
 
 
@@ -43,7 +43,10 @@ def make_task_description(config, jobs):
             job["dependencies"]
         )
 
-        if release_level(config.params) == "production":
+        if (
+            release_level(config.graph_config["release-branches"], config.params)
+            == "production"
+        ):
             job.setdefault("scopes", []).append(
                 add_scope_prefix(
                     config,

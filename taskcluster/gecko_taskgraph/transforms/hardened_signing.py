@@ -7,11 +7,10 @@ Transform the signing task into an actual task description.
 
 import copy
 
+from mozilla_taskgraph.util.attributes import release_level
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.dependencies import get_primary_dependency
 from taskgraph.util.keyed_by import evaluate_keyed_by
-
-from gecko_taskgraph.util.attributes import release_level
 
 transforms = TransformSequence()
 
@@ -34,7 +33,9 @@ def add_hardened_sign_config(config, jobs):
 
         dep_job = get_primary_dependency(config, job)
         assert dep_job
-        project_level = release_level(config.params)
+        project_level = release_level(
+            config.graph_config["release-branches"], config.params
+        )
         is_shippable = dep_job.attributes.get("shippable", False)
         hardened_signing_type = "developer"
 
@@ -96,7 +97,8 @@ def add_provisioning_profile_config(config, jobs):
             # Ensure macosx platform
             and "macosx" in job["attributes"]["build_platform"]
             # Ensure project is considered production
-            and release_level(config.params) == "production"
+            and release_level(config.graph_config["release-branches"], config.params)
+            == "production"
             # Ensure build is shippable
             and dep_job.attributes.get("shippable", False)
         ):

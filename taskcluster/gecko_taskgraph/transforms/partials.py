@@ -7,15 +7,13 @@ Transform the partials task into an actual task description.
 
 import logging
 
+from mozilla_taskgraph.util.attributes import release_level
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.dependencies import get_primary_dependency
 from taskgraph.util.taskcluster import get_artifact_prefix
 from taskgraph.util.treeherder import inherit_treeherder_from_dep
 
-from gecko_taskgraph.util.attributes import (
-    copy_attributes_from_dependent_job,
-    release_level,
-)
+from gecko_taskgraph.util.attributes import copy_attributes_from_dependent_job
 from gecko_taskgraph.util.partials import get_builds
 from gecko_taskgraph.util.platforms import architecture
 
@@ -146,7 +144,10 @@ def make_task_description(config, jobs):
                 "MAR_CHANNEL_ID": attributes["mar-channel-id"],
             },
         }
-        if release_level(config.params) == "staging":
+        if (
+            release_level(config.graph_config["release-branches"], config.params)
+            == "staging"
+        ):
             worker["env"]["FUNSIZE_ALLOW_STAGING_PREFIXES"] = "true"
 
         task = {

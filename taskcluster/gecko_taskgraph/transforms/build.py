@@ -9,11 +9,12 @@ kind.
 import logging
 
 from mozbuild.artifact_builds import JOB_CHOICES as ARTIFACT_JOBS
+from mozilla_taskgraph.util.attributes import release_level
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.schema import resolve_keyed_by
 from taskgraph.util.treeherder import add_suffix
 
-from gecko_taskgraph.util.attributes import RELEASE_PROJECTS, release_level
+from gecko_taskgraph.util.attributes import RELEASE_PROJECTS
 from gecko_taskgraph.util.workertypes import worker_type_implementation
 
 logger = logging.getLogger(__name__)
@@ -204,7 +205,11 @@ def resolve_keys(config, jobs):
             job,
             "use-sccache",
             item_name=job["name"],
-            **{"release-level": release_level(config.params)},
+            **{
+                "release-level": release_level(
+                    config.graph_config["release-branches"], config.params
+                )
+            },
         )
         yield job
 
@@ -251,7 +256,10 @@ def add_signing_artifacts(config, jobs):
     """
     Add signing artifacts to macOS build jobs.
     """
-    is_prod_project = release_level(config.params) == "production"
+    is_prod_project = (
+        release_level(config.graph_config["release-branches"], config.params)
+        == "production"
+    )
     for job in jobs:
         if "macosx" not in job["name"] or "searchfox" in job["name"]:
             # Not macosx build or no artifacts defined, so skip

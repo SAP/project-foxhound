@@ -5,11 +5,10 @@
 Transform mac notarization tasks
 """
 
+from mozilla_taskgraph.util.attributes import release_level
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.dependencies import get_primary_dependency
 from taskgraph.util.schema import resolve_keyed_by
-
-from gecko_taskgraph.util.attributes import release_level
 
 transforms = TransformSequence()
 
@@ -35,7 +34,9 @@ def repackage_set_upstream_mac_kind(config, tasks):
             item_name=config.kind,
             **{
                 "build-platform": primary_dep.attributes["build_platform"],
-                "release-level": release_level(config.params),
+                "release-level": release_level(
+                    config.graph_config["release-branches"], config.params
+                ),
             },
         )
         upstream_mac_kind = task.pop("upstream-mac-kind")

@@ -5,6 +5,33 @@
 trust-domain: gecko
 project-repo-param-prefix: ''
 product-dir: 'browser'
+# Mapping of project to the branches that should be considered "production"
+# releases. A value of `true` means all branches of the project are release
+# branches, while a list restricts releases to the named branches. Consumed by
+# mozilla_taskgraph.util.attributes:release_level.
+release-branches:
+    # https://github.com/mozilla-firefox/firefox
+    firefox:
+        - main
+        - beta
+        - release
+        - esr140
+        - esr153
+    mozilla-central: true
+    mozilla-beta: true
+    mozilla-release: true
+    mozilla-esr115: true
+    mozilla-esr140: true
+    mozilla-esr153: true
+    # bug 1845368: pine is a permanent project branch used for testing
+    # nightly updates
+    pine: true
+    # bug 1877483: larch has similar needs for nightlies
+    larch: true
+    # maple is also an L3 branch: https://phabricator.services.mozilla.com/D184833
+    maple: true
+    # bug 1988213: cypress project branch
+    cypress: true
 treeherder:
     group-names:
         'js-bench-sm': 'JavaScript shell benchmarks with Spidermonkey'
