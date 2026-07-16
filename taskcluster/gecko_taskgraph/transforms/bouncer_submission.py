@@ -9,10 +9,10 @@ import copy
 import logging
 
 import attr
+from mozilla_taskgraph.worker_types import get_release_config
 from taskgraph.transforms.base import TransformSequence
 
 from gecko_taskgraph.transforms.l10n import parse_locales_file
-from gecko_taskgraph.util.scriptworker import get_release_config
 
 logger = logging.getLogger(__name__)
 

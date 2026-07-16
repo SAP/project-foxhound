@@ -7,6 +7,7 @@ Add from parameters.yml into bouncer submission tasks.
 
 import logging
 
+from mozilla_taskgraph.worker_types import get_release_config
 from taskgraph.transforms.base import TransformSequence
 
 from gecko_taskgraph.transforms.bouncer_submission import craft_bouncer_product_name
@@ -14,7 +15,6 @@ from gecko_taskgraph.transforms.bouncer_submission_partners import (
     craft_partner_bouncer_product_name,
 )
 from gecko_taskgraph.util.partners import get_partners_to_be_published
-from gecko_taskgraph.util.scriptworker import get_release_config
 
 logger = logging.getLogger(__name__)
 

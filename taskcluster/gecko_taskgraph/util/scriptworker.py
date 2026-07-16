@@ -18,7 +18,6 @@ Additional configuration is found in the :ref:`graph config <taskgraph-graph-con
 
 import functools
 import itertools
-import json
 import os
 from datetime import datetime
 
@@ -428,44 +427,6 @@ get_balrog_server_scope = functools.partial(
 )
 
 cached_load_yaml = functools.cache(load_yaml)
-
-
-# release_config {{{1
-def get_release_config(config):
-    """Get the build number and version for a release task.
-
-    Currently only applies to beetmover tasks.
-
-    Args:
-        config (TransformConfig): The configuration for the kind being transformed.
-
-    Returns:
-        dict: containing both `build_number` and `version`.  This can be used to
-            update `task.payload`.
-    """
-    release_config = {}
-
-    partial_updates = os.environ.get("PARTIAL_UPDATES", "")
-    if partial_updates != "" and config.kind in (
-        "release-bouncer-sub",
-        "release-bouncer-check",
-        "release-update-verify-config",
-        "release-balrog-submit-toplevel",
-    ):
-        partial_updates = json.loads(partial_updates)
-        release_config["partial_versions"] = ", ".join([
-            "{}build{}".format(v, info["buildNumber"])
-            for v, info in partial_updates.items()
-        ])
-        if release_config["partial_versions"] == "{}":
-            del release_config["partial_versions"]
-
-    release_config["version"] = config.params["version"]
-    release_config["appVersion"] = config.params["app_version"]
-
-    release_config["next_version"] = config.params["next_version"]
-    release_config["build_number"] = config.params["build_number"]
-    return release_config
 
 
 def get_signing_type_per_platform(build_platform, is_shippable, config):

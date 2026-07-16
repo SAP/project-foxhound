@@ -5,6 +5,7 @@
 Transform the partner repack task into an actual task description.
 """
 
+from mozilla_taskgraph.worker_types import get_release_config
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.dependencies import get_dependencies
 
@@ -15,7 +16,6 @@ from gecko_taskgraph.util.partners import (
     get_partner_url_config,
     get_repack_ids_by_platform,
 )
-from gecko_taskgraph.util.scriptworker import get_release_config
 
 transforms = TransformSequence()
 transforms.add(check_if_partners_enabled)

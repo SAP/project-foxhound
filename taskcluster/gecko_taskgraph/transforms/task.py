@@ -24,6 +24,7 @@ import msgspec
 import taskgraph
 from mozilla_taskgraph.util.attributes import release_level
 from mozilla_taskgraph.util.signed_artifacts import get_signed_artifacts
+from mozilla_taskgraph.worker_types import get_release_config
 from taskcluster.utils import fromNow
 from taskgraph import MAX_DEPENDENCIES
 from taskgraph.transforms.base import TransformSequence
@@ -50,7 +51,7 @@ from gecko_taskgraph.util.attributes import TRUNK_PROJECTS
 from gecko_taskgraph.util.chunking import TEST_VARIANTS
 from gecko_taskgraph.util.hash import hash_path
 from gecko_taskgraph.util.partners import get_partners_to_be_published
-from gecko_taskgraph.util.scriptworker import BALROG_ACTIONS, get_release_config
+from gecko_taskgraph.util.scriptworker import BALROG_ACTIONS
 from gecko_taskgraph.util.workertypes import get_worker_type, worker_type_implementation
 
 RUN_TASK_HG = Path(GECKO, "taskcluster", "scripts", "run-task")
