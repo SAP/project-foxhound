@@ -1724,6 +1724,22 @@ class UpliftConfig(Schema):
     l10n_bump_info: Optional[list[L10nBumpInfo]] = None
 
 
+class MergeDayConfig(Schema):
+    to_branch: str
+    fetch_version_from: Optional[str] = None
+    version_files: Optional[list[VersionFile]] = None
+    replacements: Optional[list[list[str]]] = None
+    regex_replacements: Optional[list[list[str]]] = None
+    from_branch: Optional[str] = None
+    from_revision: Optional[str] = None
+    to_revision: Optional[str] = None
+    merge_old_head: Optional[bool] = None
+    update_clobber_file: Optional[bool] = None
+    incr_major_version: Optional[bool] = None
+    base_tag: Optional[str] = None
+    end_tag: Optional[str] = None
+
+
 class LandoAction(Schema, forbid_unknown_fields=False, kw_only=True):
     android_l10n_sync: Optional[AndroidL10nSyncConfig] = None
     android_l10n_import: Optional[AndroidL10nImportConfig] = None
@@ -1734,6 +1750,7 @@ class LandoAction(Schema, forbid_unknown_fields=False, kw_only=True):
     main_bump: Optional[MainBumpConfig] = None
     early_to_late_beta: Optional[EarlyToLateBetaConfig] = None
     uplift: Optional[UpliftConfig] = None
+    merge_day: Optional[MergeDayConfig] = None
 
 
 class ScriptworkerLandoSchema(Schema, forbid_unknown_fields=False, kw_only=True):
@@ -1850,6 +1867,15 @@ def build_lando_payload(config, task, task_def):
             if lbi := info.get("l10n-bump-info"):
                 merge_info["l10n_bump_info"] = process_l10n_bump_info(lbi)
 
+            task_def["payload"]["merge_info"] = merge_info
+            actions.append("merge_day")
+
+        if info := action.get("merge-day"):
+            merge_info = dash_to_underscore(info)
+            if version_files := info.get("version-files"):
+                merge_info["version_files"] = [
+                    dash_to_underscore(vf) for vf in version_files
+                ]
             task_def["payload"]["merge_info"] = merge_info
             actions.append("merge_day")
 

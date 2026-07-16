@@ -210,7 +210,7 @@ tasks:
                               from-branch: 'beta'
                               to-branch: 'release'
                     release-to-esr:
-                        - uplift:
+                        - merge-day:
                               fetch-version-from: "browser/config/version.txt"
                               version-files:
                                   - filename: "browser/config/version_display.txt"
