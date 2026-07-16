@@ -1621,43 +1621,274 @@ def build_treescript_payload(config, task, task_def):
         task_def["payload"]["ssh_user"] = worker["ssh-user"]
 
 
-class LandoscriptL10nBumpInfoSchema(Schema, forbid_unknown_fields=False, kw_only=True):
+# -- scriptworker-lando schemas --
+
+
+class TomlInfoSync(Schema):
+    toml_path: str
+
+
+class AndroidL10nSyncConfig(Schema):
+    from_branch: str
+    toml_info: list[TomlInfoSync]
+
+
+class TomlInfoImport(Schema):
+    toml_path: str
+    dest_path: str
+
+
+class AndroidL10nImportConfig(Schema):
+    from_repo_url: str
+    toml_info: list[TomlInfoImport]
+
+
+class PlatformConfig(Schema):
+    platforms: list[str]
+    path: str
+    format: Optional[str] = None
+
+
+class L10nBumpInfo(Schema):
     name: str
     path: str
-    l10n_repo_url: Optional[str] = None
-    l10n_repo_target_branch: Optional[str] = None
+    l10n_repo_url: str
+    l10n_repo_target_branch: str
+    platform_configs: list[PlatformConfig]
     ignore_config: Optional[object] = None
-    platform_configs: list[L10nBumpPlatformConfigSchema]
 
 
-class LandoscriptAndroidL10nImportInfoSchema(
-    Schema, forbid_unknown_fields=False, kw_only=True
-):
-    from_repo_url: str
-    toml_info: list[AndroidL10nTomlInfoSchema]
+class TagConfig(Schema):
+    types: list[Literal["buildN", "release"]]
+    hg_repo_url: str
 
 
-class LandoscriptAndroidL10nSyncInfoSchema(
-    Schema, forbid_unknown_fields=False, kw_only=True
-):
+class VersionBumpConfig(Schema):
+    bump_files: list[str]
+
+
+class VersionFileStrict(Schema):
+    filename: str
+    version_bump: str
+    new_suffix: Optional[str] = None
+
+
+class VersionFile(Schema):
+    filename: str
+    version_bump: Optional[str] = None
+    new_suffix: Optional[str] = None
+
+
+# the remaining action types all end up using the "merge_day"
+# landoscript action. however, these are quite varied tasks,
+# and separating them out allows us to have stronger schemas.
+
+
+class EsrBumpConfig(Schema):
+    to_branch: str
+    fetch_version_from: str
+    version_files: list[VersionFileStrict]
+    to_revision: str = ""
+
+
+class MainBumpConfig(Schema):
+    to_branch: str
+    fetch_version_from: str
+    version_files: list[VersionFileStrict]
+    to_revision: str = ""
+    replacements: Optional[list[list[str]]] = None
+    regex_replacements: Optional[list[list[str]]] = None
+    end_tag: Optional[str] = None
+
+
+class EarlyToLateBetaConfig(Schema):
+    to_branch: str
+    # technically not used, but passing it keeps landoscript
+    # code cleaner, so we may as well require a real value
+    # for it.
+    fetch_version_from: str
+    to_revision: str = ""
+    replacements: Optional[list[list[str]]] = None
+
+
+class UpliftConfig(Schema):
+    fetch_version_from: str
+    version_files: list[VersionFile]
     from_branch: str
-    toml_info: list[AndroidL10nSyncTomlInfoSchema]
+    to_branch: str
+    from_revision: str = ""
+    to_revision: str = ""
+    replacements: Optional[list[list[str]]] = None
+    base_tag: Optional[str] = None
+    end_tag: Optional[str] = None
+    l10n_bump_info: Optional[list[L10nBumpInfo]] = None
 
 
-class LandoscriptSchema(Schema, forbid_unknown_fields=False, kw_only=True):
+class LandoAction(Schema, forbid_unknown_fields=False, kw_only=True):
+    android_l10n_sync: Optional[AndroidL10nSyncConfig] = None
+    android_l10n_import: Optional[AndroidL10nImportConfig] = None
+    l10n_bump: Optional[list[L10nBumpInfo]] = None
+    tag: Optional[TagConfig] = None
+    version_bump: Optional[VersionBumpConfig] = None
+    esr_bump: Optional[EsrBumpConfig] = None
+    main_bump: Optional[MainBumpConfig] = None
+    early_to_late_beta: Optional[EarlyToLateBetaConfig] = None
+    uplift: Optional[UpliftConfig] = None
+
+
+class ScriptworkerLandoSchema(Schema, forbid_unknown_fields=False, kw_only=True):
     lando_repo: str
-    hg_repo_url: Optional[str] = None
+    actions: list[LandoAction]
     ignore_closed_tree: Optional[bool] = None
     dontbuild: Optional[bool] = None
-    tags: Optional[list[Optional[Literal["buildN", "release"]]]] = None
     force_dry_run: Optional[bool] = None
-    push: Optional[bool] = None
-    android_l10n_import_info: Optional[LandoscriptAndroidL10nImportInfoSchema] = None
-    android_l10n_sync_info: Optional[LandoscriptAndroidL10nSyncInfoSchema] = None
-    l10n_bump_info: Optional[list[LandoscriptL10nBumpInfoSchema]] = None
-    bump_files: Optional[list[str]] = None
-    merge_info: Optional[object] = None
+    matrix_rooms: Optional[list[str]] = None
 
+
+# We override mozilla-taskgraph's payload builder with our own modified version
+del payload_builders["scriptworker-lando"]
+
+
+@payload_builder(
+    "scriptworker-lando",
+    schema=ScriptworkerLandoSchema,
+)
+def build_lando_payload(config, task, task_def):
+    worker = task["worker"]
+    release_config = get_release_config(config)
+    task_def["payload"] = {"actions": [], "lando_repo": worker["lando-repo"]}
+    task_def["tags"]["worker-implementation"] = "scriptworker"
+    actions = task_def["payload"]["actions"]
+
+    if worker.get("ignore-closed-tree") is not None:
+        task_def["payload"]["ignore_closed_tree"] = worker["ignore-closed-tree"]
+
+    if worker.get("dontbuild"):
+        task_def["payload"]["dontbuild"] = True
+
+    if worker.get("force-dry-run"):
+        task_def["payload"]["dry_run"] = True
+
+    for action in worker["actions"]:
+        if info := action.get("android-l10n-import"):
+            android_l10n_import_info = dash_to_underscore(info)
+            android_l10n_import_info["toml_info"] = [
+                dash_to_underscore(ti) for ti in android_l10n_import_info["toml_info"]
+            ]
+            task_def["payload"]["android_l10n_import_info"] = android_l10n_import_info
+            actions.append("android_l10n_import")
+
+        if info := action.get("android-l10n-sync"):
+            android_l10n_sync_info = dash_to_underscore(info)
+            android_l10n_sync_info["toml_info"] = [
+                dash_to_underscore(ti) for ti in android_l10n_sync_info["toml_info"]
+            ]
+            task_def["payload"]["android_l10n_sync_info"] = android_l10n_sync_info
+            actions.append("android_l10n_sync")
+
+        if info := action.get("l10n-bump"):
+            task_def["payload"]["l10n_bump_info"] = process_l10n_bump_info(info)
+            actions.append("l10n_bump")
+
+        if info := action.get("tag"):
+            tag_types = info["types"]
+            tag_names = []
+            product = task["shipping-product"].upper()
+            version = release_config["version"].replace(".", "_")
+            buildnum = release_config["build_number"]
+            if "buildN" in tag_types:
+                tag_names.extend([
+                    f"{product}_{version}_BUILD{buildnum}",
+                ])
+            if "release" in tag_types:
+                tag_names.extend([f"{product}_{version}_RELEASE"])
+            tag_info = {
+                "tags": tag_names,
+                "hg_repo_url": info["hg-repo-url"],
+                "revision": config.params[
+                    "{}head_rev".format(worker.get("repo-param-prefix", ""))
+                ],
+            }
+            task_def["payload"]["tag_info"] = tag_info
+            actions.append("tag")
+
+        if info := action.get("version-bump"):
+            bump_info = {}
+            bump_info["next_version"] = release_config["next_version"]
+            bump_info["files"] = info["bump-files"]
+            task_def["payload"]["version_bump_info"] = bump_info
+            actions.append("version_bump")
+
+        if info := action.get("esr-bump"):
+            merge_info = dash_to_underscore(info)
+            merge_info["version_files"] = [
+                dash_to_underscore(vf) for vf in info["version-files"]
+            ]
+            task_def["payload"]["merge_info"] = merge_info
+            actions.append("merge_day")
+
+        if info := action.get("main-bump"):
+            merge_info = dash_to_underscore(info)
+
+            merge_info["version_files"] = [
+                dash_to_underscore(vf) for vf in info["version-files"]
+            ]
+            task_def["payload"]["merge_info"] = merge_info
+            actions.append("merge_day")
+
+        if info := action.get("early-to-late-beta"):
+            task_def["payload"]["merge_info"] = dash_to_underscore(info)
+            actions.append("merge_day")
+
+        if info := action.get("uplift"):
+            merge_info = dash_to_underscore(info)
+            merge_info["merge_old_head"] = True
+
+            merge_info["version_files"] = [
+                dash_to_underscore(vf) for vf in info["version-files"]
+            ]
+            if lbi := info.get("l10n-bump-info"):
+                merge_info["l10n_bump_info"] = process_l10n_bump_info(lbi)
+
+            task_def["payload"]["merge_info"] = merge_info
+            actions.append("merge_day")
+
+    scopes = set(task_def.get("scopes", []))
+    scopes.add(f"project:releng:lando:repo:{worker['lando-repo']}")
+    scopes.update([f"project:releng:lando:action:{action}" for action in actions])
+
+    for matrix_room in worker.get("matrix-rooms", []):
+        task_def.setdefault("routes", [])
+        task_def["routes"].append(f"notify.matrix-room.{matrix_room}.on-pending")
+        task_def["routes"].append(f"notify.matrix-room.{matrix_room}.on-resolved")
+        scopes.add("queue:route:notify.matrix-room.*")
+
+    task_def["scopes"] = sorted(scopes)
+
+
+def process_l10n_bump_info(info):
+    l10n_bump_info = []
+    l10n_repo_urls = set()
+    for lbi in info:
+        l10n_repo_urls.add(lbi["l10n-repo-url"])
+        l10n_bump_info.append(dash_to_underscore(lbi))
+
+    if len(l10n_repo_urls) > 1:
+        raise Exception(
+            "Must use the same l10n-repo-url for all files in the same task!"
+        )
+
+    return l10n_bump_info
+
+
+def dash_to_underscore(obj):
+    new_obj = {}
+    for k, v in obj.items():
+        new_obj[k.replace("-", "_")] = v
+    return new_obj
+
+
+# -- transforms --
 
 transforms = TransformSequence()
 
