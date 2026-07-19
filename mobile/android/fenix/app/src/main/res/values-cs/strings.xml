@@ -645,6 +645,19 @@
     %1$s is replaced by an active link, using nova_onboarding_marketing_body_link_text as text (“How we use the data”).
   -->
   <string name="nova_onboarding_marketing_body_6" tools:ignore="BrandUsage,UnusedResources">Pomozte nám oslovit více lidí. Dovolte Mozille informovat platformu, odkud jste přišli, že používáte Firefox. %1$s</string>
+  <!--
+    Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
+    “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
+    %1$s is replaced by an active link, using nova_onboarding_marketing_body_link_text_1 as text (“Learn More”).
+  -->
+  <string name="nova_onboarding_marketing_body_7" tools:ignore="BrandUsage">Můžete nám pomoci oslovit více lidí tím, že povolíte Mozille, aby platformě, ze které jste přišli, sdělila, že používáte Firefox. %1$s</string>
+  <!-- Marketing onboarding additional body text. 'Firefox' is intentionally hardcoded. -->
+  <string name="nova_onboarding_marketing_body_line_two" tools:ignore="BrandUsage">Firefox je hrdě nezávislý a zasazuje se o ochranu otevřeného webu před technologickými monopoly.</string>
+  <!--
+    Marketing onboarding additional body text. 'Firefox' is intentionally hardcoded.
+    “Allowing” refers to the main button “Allow and Continue”; the ask for the user is to allow communicating back to the platform.
+  -->
+  <string name="nova_onboarding_marketing_body_line_three" tools:ignore="BrandUsage">Zvažte prosím, zda byste mohli pomoci Firefoxu zvítězit.</string>
   <!-- Marketing onboarding body link text. -->
   <string name="nova_onboarding_marketing_body_link_text">Jak data používáme</string>
   <!-- Marketing onboarding body link text. -->
@@ -1532,6 +1545,8 @@
   <string name="add_tab">Přidat panel</string>
   <!-- Content description (not visible, for screen readers etc.): Add tab button. Adds a news tab when pressed -->
   <string name="add_private_tab">Přidat anonymní panel</string>
+  <!-- Content description (not visible, for screen readers etc.): Create tab group button. Opens the create tab group sheet when pressed -->
+  <string name="create_tab_group_content_description">Vytvořit skupinu panelů</string>
   <!-- Text for the tab search bar placeholder -->
   <string name="tab_manager_search_bar_placeholder">Vyhledávání v panelech</string>
   <!-- Text shown in the menu to view recently closed tabs -->
@@ -1711,8 +1726,6 @@
   <string name="tab_group_color_pink">Růžová</string>
   <!-- Tab group color: Purple -->
   <string name="tab_group_color_purple">Fialová</string>
-  <!-- Tab group color: Violet -->
-  <string name="tab_group_color_violet">Fialová</string>
   <!-- Tab group color: Blue -->
   <string name="tab_group_color_blue">Modrá</string>
   <!-- Tab group color: Cyan -->
@@ -1972,6 +1985,10 @@
   <string name="webcompat_reporter_label_whats_broken_3">Co nefunguje?</string>
   <!-- Content description for the icon button that clears the selected broken site reason in the WebCompat Reporter. -->
   <string name="webcompat_reporter_clear_reason_content_description">Vymazat vybraný důvod</string>
+  <!-- The error message of the description when the user selects "Something else" as the reason, but left the description empty or too short. -->
+  <string name="webcompat_reporter_description_error">Zadejte prosím alespoň 10 znaků</string>
+  <!-- The label/title of a mandatory field in the Web Compat Reporter feature for adding additional information. -->
+  <string name="webcompat_reporter_label_mandatory_description">Popište detailně problém, abyste nám pomohli problém prošetřit</string>
   <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_label_whats_broken_2">Co je nefunkční?</string>
   <!-- The placeholder text for the dropdown where a user selects a high-level reason why the site is broken. -->
@@ -1980,8 +1997,6 @@
   <string name="webcompat_reporter_choose_reason_error">Zvolte důvod</string>
   <!-- The label/title of an optional field in the Web Compat Reporter feature for adding additional information. -->
   <string name="webcompat_reporter_label_description_2">Popište detailně problém, abyste nám pomohli problém prošetřit (volitelné)</string>
-  <!-- The label/title of an optional field in the Web Compat Reporter feature for adding additional information. -->
-  <string name="webcompat_reporter_label_description">Popis problému (nepovinný)</string>
   <!-- The button text for navigating away from the feature to provide more information on the broken site's bug report. -->
   <string name="webcompat_reporter_add_more_info">Přidat další informace</string>
   <!-- The button text for the cancel button to leave the Web Compat Reporter feature. -->
@@ -1994,14 +2009,8 @@
   <string name="webcompat_reporter_success_snackbar_text_2">Hlášení odesláno</string>
   <!-- Placeholder text for the description field to prompt the user on what they should type. -->
   <string name="webcompat_reporter_problem_description_placeholder_text_2">Co se stalo? Co jste očekávali, že se stane? Uveďte prosím postup, jak problém reprodukovat.</string>
-  <!-- Placeholder text for the description field to prompt the user on what they should type. -->
-  <string name="webcompat_reporter_problem_description_placeholder_text">Co se stalo? Co se mělo stát?</string>
   <!-- Label of the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. -->
   <string name="webcompat_reporter_etp_checkbox_text_2">Odeslat seznam položek blokovaných ochranou proti sledování</string>
-  <!-- Label of the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. -->
-  <string name="webcompat_reporter_etp_checkbox_text">Odesílat adresy URL blokované ochranou proti sledování</string>
-  <!-- Description text for the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. It informs the user when checked, the report will include the list of URLs that were blocked by Enhanced Tracking Protection on the current page. -->
-  <string name="webcompat_reporter_etp_checkbox_description">Rozšířená ochrana proti sledování může blokovat sledovací prvky a skripty, které některé webové stránky potřebují pro správné fungování.</string>
   <!-- The button text for the preview report button to view a preview of the report. -->
   <string name="webcompat_reporter_preview_report">Náhled hlášení</string>
   <!-- The title shown at the top of the WebCompat Report preview panel. This appears after the user taps the “Preview” button before sending a report. -->
@@ -2456,6 +2465,8 @@
   <string name="preferences_take_survey">Vyplnit průzkum</string>
   <!-- Preference for not taking the short survey. -->
   <string name="preferences_not_take_survey">Ne, děkuji</string>
+  <!-- Error message shown in a Toast when the system fails to trigger the device uninstallation prompt. -->
+  <string name="uninstall_survey_error_failed">Nepodařilo se otevřít systémovou výzvu k odinstalaci, použijte prosím přímo systémovou akci.</string>
   <!--
     Snackbar
 
@@ -2617,17 +2628,6 @@
   <!-- Text displayed that links to website about enhanced tracking protection -->
   <string name="preference_enhanced_tracking_protection_explanation_learn_more">Zjistit více</string>
   <plurals name="trackers_blocked_count_2">
-    <!--
-      Trackers blocked card on homepage
-
-      Text shown on the trackers blocked card. %d is the number of trackers blocked.
-    -->
-    <item quantity="one">Zablokován %d sledovací prvek</item>
-    <item quantity="few">Zablokovány %d sledovací prvky</item>
-    <item quantity="many">Zablokováno %d sledovacích prvků</item>
-    <item quantity="other">Zablokováno %d sledovacích prvků</item>
-  </plurals>
-  <plurals name="trackers_blocked_count">
     <!--
       Trackers blocked card on homepage
 
@@ -3121,6 +3121,12 @@
   <string name="ip_protection_onboarding_body">%1$s skrytím vaší polohy, a to i ve veřejných Wi-Fi sítích. Získejte %2$d GB každý měsíc zdarma.</string>
   <!-- Used as text for a link in ip_protection_onboarding_body. Make sure to adapt capitalization if the link is in the middle of the sentence. -->
   <string name="ip_protection_onboarding_body_link">Prohlížejte s extra ochranou</string>
+  <!--
+    The body of the VPN onboarding card for a promotion that provides unlimited data bandwidth for a certain time.
+    %1$s is a localized date (for example "Jun 9") indicating the end of the promotional period.
+    %2$s is a link using ip_protection_onboarding_body_link_promo (“Learn more”) as text. It links to a support article about VPN on Firefox.
+  -->
+  <string name="ip_protection_onboarding_body_promo">Zapněte tuto funkci, aby vaše prohlížení bylo soukromější a hůře vysledovatelné. Vyzkoušejte to hned teď a získejte neomezenou šířku pásma až do %1$s. %2$s</string>
   <!-- Used as text for a link in ip_protection_onboarding_body. Make sure to adapt capitalization if the link is in the middle of the sentence. -->
   <string name="ip_protection_onboarding_body_link_promo">Zjistit více</string>
   <!-- Label for the dismiss button on the onboarding bottom sheet. -->
@@ -3286,8 +3292,6 @@
   <string name="addresses_save_button">Uložit</string>
   <!-- The text for the "Cancel" button for cancelling adding, updating or deleting an address -->
   <string name="addresses_cancel_button">Zrušit</string>
-  <!-- The text for the "Delete address" button for deleting an address -->
-  <string name="addressess_delete_address_button">Smazat adresu</string>
   <!-- The title for the "Delete address" confirmation dialog -->
   <string name="addressess_confirm_dialog_message_2">Smazat tuto adresu?</string>
   <!-- The text for the positive button on "Delete address" dialog -->
@@ -3844,8 +3848,6 @@
     and there are no trackers blocked.
   -->
   <string name="protection_panel_banner_protected_no_blocked_trackers_description">Jste chráněni.</string>
-  <!-- Description text for the protection panel banner when tracking protection is enabled. -->
-  <string name="protection_panel_banner_protected_description">Jste chráněni. Pokud něco zpozorujeme, dáme vám vědět.</string>
   <!-- Label text for the Enhanced Tracking Protection toggle. -->
   <string name="protection_panel_etp_toggle_label">Rozšířená ochrana proti sledování</string>
   <!-- Toggle if Enhanced Tracking Protection is turned on -->
@@ -3861,25 +3863,82 @@
     %d is a placeholder for the number of trackers blocked.
   -->
   <string name="protection_panel_num_trackers_blocked">Zablokováno sledovacích prvků: %d</string>
-  <!-- Text for when no trackers have been blocked. -->
-  <string name="protection_panel_no_trackers_blocked">Nebyly nalezeny žádné sledovací prvky</string>
   <!-- Text for when tracking protection is disabled and no trackers are blocked. -->
   <string name="protection_panel_etp_disabled_no_trackers_blocked">Sledovací prvky nejsou blokovány</string>
   <!-- Link text to navigate to privacy and security settings from the protection panel. -->
   <string name="protection_panel_privacy_and_security_settings_2">Nastavení soukromí</string>
   <!-- Title text for the protection panel permissions section. -->
   <string name="protection_panel_permissions_title">Oprávnění</string>
-  <!--
-    Text for displaying the total number of trackers blocked in the trackers blocked panel.
-    %d is a placeholder for the number of trackers blocked.
-  -->
-  <string name="trackers_blocked_panel_total_num_trackers_blocked">Zablokováno sledovacích prvků: %d</string>
-  <!--
-    Text for displaying the number of trackers blocked for a specific tracker category in the trackers blocked panel.
-    %s is a placeholder for the name of the tracker category.
-    %d is a placeholder for the number of trackers blocked.
-  -->
-  <string name="trackers_blocked_panel_categorical_num_trackers_blocked">%s: %d</string>
+  <plurals name="trackers_blocked_panel_total_num_trackers_blocked_2">
+    <!--
+      Text for displaying the total number of trackers blocked in the trackers blocked panel.
+      %1$d is a placeholder for the number of trackers blocked.
+    -->
+    <item quantity="one">Na této stránce byl zablokován %1$d sledovací prvek</item>
+    <item quantity="few">Na této stránce byly zablokovány %1$d sledovací prvky</item>
+    <item quantity="many">Na této stránce bylo zablokováno %1$d sledovacích prvků</item>
+    <item quantity="other">Na této stránce bylo zablokováno %1$d sledovacích prvků</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_social_media_trackers">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked social media trackers.
+      %1$d is a placeholder for the number of social media trackers blocked.
+    -->
+    <item quantity="one">%1$d sledovací prvek sociálních sítí</item>
+    <item quantity="few">%1$d sledovací prvky sociálních sítí</item>
+    <item quantity="many">%1$d sledovacích prvků sociálních sítí</item>
+    <item quantity="other">%1$d sledovacích prvků sociálních sítí</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_cross_site_cookies">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked cross-site tracking cookies.
+      %1$d is a placeholder for the number of cross-site tracking cookies blocked.
+    -->
+    <item quantity="one">%1$d sledovací cookie třetí strany</item>
+    <item quantity="few">%1$d sledovací cookies třetích stran</item>
+    <item quantity="many">%1$d sledovacích cookies třetích stran</item>
+    <item quantity="other">%1$d sledovacích cookies třetích stran</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_cryptominers">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked cryptomining scripts.
+      %1$d is a placeholder for the number of cryptominers blocked.
+    -->
+    <item quantity="one">%1$d těžba kryptoměn</item>
+    <item quantity="few">%1$d těžby kryptoměn</item>
+    <item quantity="many">%1$d těžeb kryptoměn</item>
+    <item quantity="other">%1$d těžeb kryptoměn</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_fingerprinters">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked fingerprinter scripts.
+      %1$d is a placeholder for the number of fingerprinters blocked.
+    -->
+    <item quantity="one">%1$d vytváření otisku prohlížeče</item>
+    <item quantity="few">%1$d vytváření otisku prohlížeče</item>
+    <item quantity="many">%1$d vytváření otisku prohlížeče</item>
+    <item quantity="other">%1$d vytváření otisku prohlížeče</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_trackers_2">
+    <!--
+      Text for displaying in the trackers blocked panel the total number of blocked generic tracking scripts.
+      %1$d is a placeholder for the number of trackers blocked.
+    -->
+    <item quantity="one">%1$d sledující obsah</item>
+    <item quantity="few">%1$d sledující obsahy</item>
+    <item quantity="many">%1$d sledujících obsahů</item>
+    <item quantity="other">%1$d sledujících obsahů</item>
+  </plurals>
+  <plurals name="trackers_blocked_panel_num_trackers_blocked_this_week_2">
+    <!--
+      Text for displaying the number of trackers blocked this week in the trackers blocked panel.
+      %1$d is a placeholder for the number of trackers blocked this week.
+    -->
+    <item quantity="one">Tento týden byl zablokován %1$d sledující prvek</item>
+    <item quantity="few">Tento týden byly zablokovány %1$d sledující prvky</item>
+    <item quantity="many">Tento týden bylo zablokováno %1$d sledujících prvků</item>
+    <item quantity="other">Tento týden bylo zablokováno %1$d sledujících prvků</item>
+  </plurals>
   <!--
     Description text for a dialog confirming whether the user wants to delete all data for current site.
     %s is a placeholder for the base domain of website.
@@ -3900,6 +3959,8 @@
     %s is a placeholder for the name of the certificate authority that issued the certificate.
   -->
   <string name="connection_security_panel_verified_by">Ověřilo %s</string>
+  <!-- Content description (not visible, for screen readers etc.) for the handle used to drag the protections dashboard to the bottom of the screen and close it. -->
+  <string name="tracker_protections_dashboard_close_handlebar_content_description">Zavřít nástěnku</string>
   <!--
     Text for the connection security panel when the site uses a QWAC.
     %s is a placeholder for the organization for which the certificate was issued.
@@ -4029,6 +4090,20 @@
     Title text for the uninstall survey dialog, asking the user for the reason they are removing the app
   -->
   <string name="microsurvey_uninstall_survey_title">Na vaší zpětné vazbě záleží. Proč provádíte odinstalaci?</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_1_v2">Je pomalý nebo nespolehlivý</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_2_v2">Webové stránky nefungují správně</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_3_v2">Chybějící funkce, které potřebuji</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_4_v2">Videa, stahování a multimédia nefungují</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_5_v2">Je těžko ovladatelný nebo špatně navržený</string>
+  <!-- Uninstall survey answer option -->
+  <string name="uninstall_survey_option_6_v2">Obavy o soukromí nebo bezpečnost</string>
+  <!-- Button label shown at the bottom of the uninstall survey -->
+  <string name="uninstall_survey_button_label">Odeslat zpětnou vazbu a odinstalovat</string>
   <!--
     Accessibility
 
@@ -4612,10 +4687,30 @@
   <string name="preferences_debug_settings_google_lens_integration">Povolit integraci Google Lens</string>
   <!-- Lens image search button content description -->
   <string name="lens_search_content_description">Vyhledat pomocí obrázku</string>
+  <!-- Content description for the gallery picker button in the Lens camera screen -->
+  <string name="content_description_gallery">Vybrat z galerie a odeslat do Google Lens</string>
+  <!-- Content description for the shutter button in the Lens camera screen -->
+  <string name="content_description_take_photo">Pořídit snímek a odeslat do Google Lens</string>
   <!-- Image context menu entry that sends the long-pressed image to Google Lens -->
   <string name="context_menu_open_image_with_google_lens">Vyhledávání pomocí Google Lens</string>
   <!-- Toast shown when the user denies the camera permission requested by the Lens camera screen -->
   <string name="lens_camera_permission_denied">Oprávnění odepřeno</string>
+  <!--
+    Title shown at the top of the camera screen, next to the close button, telling the
+    user that the photo they capture will be sent to Google Lens for a visual search.
+  -->
+  <string name="lens_camera_title_lens">Google Lens</string>
+  <!--
+    Title shown at the top of the camera screen, next to the close button, telling the
+    user that the camera is being used to scan a QR code.
+  -->
+  <string name="lens_camera_title_qr">QR kód</string>
+  <!-- Title for the Google Lens Search Settings page feature toggle -->
+  <string name="search_settings_google_lens_title">Povolit vyhledávání v Google Lens</string>
+  <!-- Description for the Google Lens Search Settings page feature toggle -->
+  <string name="search_settings_google_lens_description">Odešle obrázky a fotografie do Googlu k vizuálnímu vyhledání.</string>
+  <!-- Caption shown under the Google Lens toggle clarifying when the feature is available -->
+  <string name="preferences_google_lens_availability_caption">Dostupné pouze v případě, že je výše povolen Google a je vaším aktivním vyhledávačem pro prohlížení.</string>
   <!-- Title for the Google Lens AI feature toggle -->
   <string name="ai_controls_google_lens_title">Google Lens</string>
   <!-- Description for the Google Lens AI feature toggle -->

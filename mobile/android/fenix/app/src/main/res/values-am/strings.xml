@@ -1298,8 +1298,6 @@
   <string name="webcompat_reporter_label_whats_broken_2">ምኑ ተበላሽቷል?</string>
   <!-- The error message of the dropdown, prompting the user to select a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_choose_reason_error">እባክዎ ምክንያት ይምረጡ</string>
-  <!-- The label/title of an optional field in the Web Compat Reporter feature for adding additional information. -->
-  <string name="webcompat_reporter_label_description">ችግሩን ይግለጹ (አማራጭ)</string>
   <!-- The button text for the cancel button to leave the Web Compat Reporter feature. -->
   <string name="webcompat_reporter_cancel">ሰርዝ</string>
   <!-- The button text for the send button to submit the provided form data. -->
@@ -2265,8 +2263,6 @@
   <string name="addresses_save_button">አስቀምጥ</string>
   <!-- The text for the "Cancel" button for cancelling adding, updating or deleting an address -->
   <string name="addresses_cancel_button">ተወው</string>
-  <!-- The text for the "Delete address" button for deleting an address -->
-  <string name="addressess_delete_address_button">አድራሻ ሰርዝ</string>
   <!-- The title for the "Delete address" confirmation dialog -->
   <string name="addressess_confirm_dialog_message_2">ይህ አድራሻ ይጥፋ?</string>
   <!-- The text for the positive button on "Delete address" dialog -->
@@ -2765,8 +2761,6 @@
     %s is the name of the app (for example "Firefox").
   -->
   <string name="protection_panel_banner_protected_title">%s ጥበቃ ላይ ነው</string>
-  <!-- Description text for the protection panel banner when tracking protection is enabled. -->
-  <string name="protection_panel_banner_protected_description">እርስዎ ጥበቃ ይደረግልዎታል። የሆነ ነገር ካየን፣ እናሳውቅዎታለን።</string>
   <!-- Label text for the Enhanced Tracking Protection toggle. -->
   <string name="protection_panel_etp_toggle_label">የተሻሻለ የክትትል ጥበቃ</string>
   <!--
@@ -2774,21 +2768,8 @@
     %d is a placeholder for the number of trackers blocked.
   -->
   <string name="protection_panel_num_trackers_blocked">መከታተያዎች ታግደዋል፡ %d</string>
-  <!-- Text for when no trackers have been blocked. -->
-  <string name="protection_panel_no_trackers_blocked">ምንም መከታተያዎች አልተገኙም</string>
   <!-- Title text for the protection panel permissions section. -->
   <string name="protection_panel_permissions_title">ፈቃዶች</string>
-  <!--
-    Text for displaying the total number of trackers blocked in the trackers blocked panel.
-    %d is a placeholder for the number of trackers blocked.
-  -->
-  <string name="trackers_blocked_panel_total_num_trackers_blocked">መከታተያዎች ታግደዋል፡ %d</string>
-  <!--
-    Text for displaying the number of trackers blocked for a specific tracker category in the trackers blocked panel.
-    %s is a placeholder for the name of the tracker category.
-    %d is a placeholder for the number of trackers blocked.
-  -->
-  <string name="trackers_blocked_panel_categorical_num_trackers_blocked">%s፡ %d</string>
   <!--
     Description text for a dialog confirming whether the user wants to delete all data for current site.
     %s is a placeholder for the base domain of website.

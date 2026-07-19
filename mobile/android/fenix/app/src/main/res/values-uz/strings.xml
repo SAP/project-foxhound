@@ -1291,8 +1291,6 @@
   <string name="addresses_save_button">Saqlash</string>
   <!-- The text for the "Cancel" button for cancelling adding, updating or deleting an address -->
   <string name="addresses_cancel_button">Bekor qilish</string>
-  <!-- The text for the "Delete address" button for deleting an address -->
-  <string name="addressess_delete_address_button">Manzilni oʻchirish</string>
   <!-- The text for the positive button on "Delete address" dialog -->
   <string name="addressess_confirm_dialog_ok_button">Oʻchirish</string>
   <!-- The text for the negative button on "Delete address" dialog -->

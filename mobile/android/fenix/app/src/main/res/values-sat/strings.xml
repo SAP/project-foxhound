@@ -23,12 +23,16 @@
   <string name="content_description_normal_browsing">ᱥᱟᱫᱷᱟᱨᱚᱱ ᱵᱽᱨᱟᱣᱡᱤᱝ</string>
   <!-- Placeholder text shown in the search bar before a user enters text for the default engine -->
   <string name="search_hint">ᱥᱮᱸᱫᱽᱨᱟ ᱟᱨ ᱵᱟᱝ ᱴᱷᱤᱠᱬᱟᱹ ᱟᱫᱮᱨ ᱢᱮ</string>
+  <!-- Shorter placeholder text shown in the search bar when an additional action (voice search) is rendered alongside the hint. -->
+  <string name="search_hint_short">ᱥᱮᱸᱫᱽᱨᱟ</string>
   <!-- Placeholder text shown in the search bar before a user enters text for a general engine -->
   <string name="search_hint_general_engine">ᱣᱮᱵᱽ ᱨᱮ ᱥᱮᱸᱫᱽᱨᱟᱭ ᱢᱮ</string>
   <!-- Placeholder text shown in search bar when using history search -->
   <string name="history_search_hint">ᱱᱟᱜᱟᱢ ᱠᱚ ᱥᱮᱸᱫᱽᱨᱟᱭ ᱢᱮ</string>
   <!-- Placeholder text shown in search bar when using bookmarks search -->
   <string name="bookmark_search_hint">ᱵᱩᱠᱢᱟᱨᱠ ᱠᱚ ᱥᱮᱸᱫᱽᱨᱟᱭ ᱢᱮ</string>
+  <!-- Content description for the toolbar back button while searching bookmarks -->
+  <string name="bookmark_close_search_description">ᱨᱩᱣᱟᱹᱲᱚᱜ ᱢᱮ ᱟᱨ ᱥᱮᱸᱫᱽᱨᱟ ᱵᱚᱸᱫᱚᱭ ᱢᱮ</string>
   <!-- Placeholder text shown in search bar when using tabs search -->
   <string name="tab_search_hint">ᱴᱮᱵᱽ ᱠᱚ ᱥᱮᱸᱫᱽᱨᱟᱭ ᱢᱮ</string>
   <!-- Placeholder text shown in the search bar when using application search engines -->
@@ -147,6 +151,8 @@
   <string name="home_screen_shortcut_open_new_private_tab_2">ᱱᱟᱶᱟ ᱱᱤᱡᱮᱨᱟᱜ ᱴᱮᱵᱽ</string>
   <!-- Shortcut action to open Passwords screen -->
   <string name="home_screen_shortcut_passwords">ᱫᱟᱱᱟᱝ ᱥᱟᱵᱟᱫᱽ ᱠᱚ</string>
+  <!-- Shortcut action to open uninstall survey -->
+  <string name="home_screen_shortcut_uninstall_survey">ᱚᱪᱚᱜᱼᱟ, ᱪᱮᱫᱟᱜ?</string>
   <!--
     Recent Tabs
 
@@ -283,6 +289,8 @@
   <string name="browser_menu_edit_bookmark">ᱵᱩᱠᱢᱟᱨᱠ ᱥᱟᱯᱲᱟᱣ ᱢᱮ</string>
   <!-- Browser menu label that the saves the currently visited page as a PDF -->
   <string name="browser_menu_save_as_pdf_2">PDF ᱞᱮᱠᱷᱟ ᱥᱟᱺᱪᱟᱣ ᱢᱮ</string>
+  <!-- Browser menu label for moving the current private tab to a non-private tab -->
+  <string name="browser_menu_move_to_non_private_tab">ᱵᱤᱱ-ᱯᱨᱟᱭᱣᱮᱴ ᱴᱮᱵᱽ ᱛᱮ ᱩᱪᱟᱹᱲ ᱢᱮ</string>
   <!-- Browser menu label for navigating to the translation feature, which provides language translation options the current visited page -->
   <string name="browser_menu_translate_page_2">ᱥᱟᱦᱴᱟ ᱛᱚᱨᱡᱚᱢᱟᱭ ᱢᱮ</string>
   <!-- Browser menu label for navigating to the summarization feature, which provides site summarization for the current visited page -->
@@ -346,6 +354,56 @@
   <!-- Content description for the translate toolbar action that closes the translations toolbar. -->
   <string name="translation_toolbar_close_action">ᱠᱷᱚᱵᱚᱨ ᱵᱚᱸᱫᱚᱭ ᱢᱮ</string>
   <!--
+    Page summaries
+
+    Toolbar title for the Page summaries settings fragment
+  -->
+  <string name="preferences_page_summaries">ᱥᱟᱦᱴᱟ ᱥᱟᱨᱠᱟᱛᱷᱟ</string>
+  <!--
+    AI Controls settings
+
+    Title for the AI controls settings screen
+  -->
+  <string name="preferences_ai_controls">AI ᱠᱟᱵᱚᱡᱽ</string>
+  <!-- Headline text for the AI controls banner. %s is the name of the app (for example "Firefox"). -->
+  <string name="ai_controls_banner_headline">ᱟᱢ ᱴᱷᱮᱱ ᱥᱟᱨᱟ ᱜᱷᱟᱹᱲᱤᱡ %s ᱨᱮᱭᱟᱜ ᱵᱟᱪᱷᱟᱣ ᱛᱟᱦᱮᱱᱟ</string>
+  <!-- Supporting text for the AI controls banner. %s is a learn more link using ai_controls_learn_more as text. -->
+  <string name="ai_controls_banner_supporting_text_2">ᱚᱱᱟ ᱥᱟᱶᱛᱮ ᱥᱮᱞᱮᱫ ᱢᱮᱱᱟᱜᱼᱟ ᱡᱮ AI ᱥᱟᱶ ᱵᱟᱹᱲᱛᱤ ᱜᱩᱱ ᱠᱚ ᱵᱮᱵᱷᱟᱨ ᱦᱩᱭᱩᱜᱼᱟ ᱥᱮ ᱵᱟᱝᱟ ᱾ %s</string>
+  <!-- Link text for learning more about AI controls -->
+  <string name="ai_controls_learn_more">ᱰᱷᱮᱨ ᱥᱮᱬᱟᱭ ᱢᱮ</string>
+  <!-- Title for the block AI enhancements toggle -->
+  <string name="ai_controls_block_ai_title">AI ᱥᱩᱫᱷᱟᱨ ᱠᱚ ᱟᱠᱚᱴ ᱢᱮ</string>
+  <!-- Description for the block AI enhancements toggle. %s is the name of the app (for example "Firefox"). -->
+  <string name="ai_controls_block_ai_description">ᱟᱠᱚᱴ ᱨᱮᱭᱟᱜ ᱢᱮᱱᱮᱛ ᱫᱚ ᱟᱢ %s ᱨᱮ ᱱᱟᱶᱟ ᱥᱮ ᱱᱤᱛᱚᱜ AI ᱵᱚᱰᱷᱟᱣ ᱵᱟᱝ ᱧᱮᱞ ᱧᱟᱢᱟ, ᱵᱟᱝᱠᱷᱟᱱ ᱚᱱᱟ ᱵᱟᱨᱮᱛᱮ ᱯᱚᱯ-ᱟᱯ ᱵᱟᱝ ᱧᱮᱞᱚᱜᱼᱟ ᱾</string>
+  <!-- Link text to see what AI enhancements are and aren’t included -->
+  <string name="ai_controls_see_whats_included">ᱧᱮᱞ ᱢᱮ ᱪᱮᱫ ᱥᱮᱞᱮᱫ ᱢᱮᱱᱟᱜᱼᱟ ᱟᱨ ᱵᱟᱝ ᱥᱮᱞᱮᱫ ᱢᱮᱱᱟᱜᱼᱟ</string>
+  <!-- Banner text shown when AI enhancements are blocked -->
+  <string name="ai_controls_blocked_info_banner">ᱱᱟᱶᱟ ᱟᱨ ᱱᱤᱛᱚᱜ AI ᱵᱚᱰᱷᱟᱣ ᱫᱚ ᱰᱤᱯᱷᱚᱞᱴ ᱛᱮ ᱵᱚᱱᱫᱚ ᱟᱠᱟᱱᱟ ᱾ ᱞᱟᱛᱟᱨ ᱨᱮ ᱮᱢ ᱟᱠᱟᱱ ᱠᱷᱟᱥ ᱜᱩᱱ ᱠᱚ ᱟᱱᱵᱽᱞᱚᱠ ᱢᱮ᱾</string>
+  <!-- Section header for the AI-powered features list -->
+  <string name="ai_controls_ai_powered_features">AI-ᱫᱟᱲᱮ ᱯᱷᱤᱪᱟᱨᱥ</string>
+  <!-- Title for the translations AI feature toggle -->
+  <string name="ai_controls_translations_title">ᱛᱚᱨᱡᱚᱢᱟ ᱠᱚ</string>
+  <!-- Description for the translations AI feature toggle -->
+  <string name="ai_controls_translations_description">ᱟᱢᱟᱜ ᱥᱟᱫᱷᱚᱱ ᱨᱮ ᱥᱟᱱᱟᱢ ᱛᱚᱨᱡᱚᱢᱟ ᱟᱹᱯᱱᱟᱹᱛ ᱛᱟᱦᱮᱱᱟ ᱾</string>
+  <!-- Link text to navigate to more translations settings -->
+  <string name="ai_controls_more_translations_settings">ᱟᱨᱦᱚᱸ ᱛᱚᱨᱡᱚᱢᱟ ᱥᱟᱡᱟᱣ ᱠᱚ</string>
+  <!-- Link text to navigate to more page summary settings -->
+  <string name="ai_controls_more_page_summary_settings">ᱟᱨᱦᱚᱸ ᱥᱟᱦᱴᱟ ᱥᱟᱨᱠᱟᱛᱷᱟ ᱥᱟᱡᱟᱣ</string>
+  <!-- Title for the voice search AI feature toggle -->
+  <string name="ai_controls_voice_search_title">ᱨᱚᱲ ᱥᱮᱸᱫᱽᱨᱟ</string>
+  <!-- Description for the voice search AI feature toggle -->
+  <string name="ai_controls_voice_search_description">Google ᱟᱹᱲᱟᱝ ᱥᱮᱵᱟ ᱦᱚᱛᱮᱛᱮ ᱨᱚᱲᱠᱚᱫᱚ ᱚᱞ ᱨᱮ ᱵᱚᱫᱚᱞᱚᱜᱼᱟ ᱾</string>
+  <!-- Title for the block AI enhancements confirmation dialog -->
+  <string name="ai_controls_block_dialog_title">AI ᱥᱩᱫᱷᱟᱨ ᱠᱚ ᱟᱠᱚᱴ ᱢᱮ ?</string>
+  <!-- Body text for the block AI enhancements confirmation dialog. %1$s is the name of the app (for example "Firefox"). -->
+  <string name="ai_controls_block_dialog_body">ᱟᱢ %1$s ᱨᱮ ᱱᱟᱶᱟ ᱟᱨ ᱵᱟᱝ ᱱᱤᱛᱚᱜ AI ᱵᱚᱰᱷᱟᱣ ᱵᱟᱝ ᱧᱮᱞ ᱧᱟᱢᱟ, ᱟᱨ ᱵᱟᱝ ᱚᱱᱟ ᱵᱟᱨᱮᱛᱮ ᱯᱚᱯ-ᱟᱯᱥ ᱵᱟᱝ ᱧᱮᱞᱚᱜᱼᱟ ᱾ ᱚᱱᱟ ᱛᱟᱭᱚᱢ, ᱟᱢ ᱡᱟᱦᱟᱸᱱᱟᱜ ᱜᱮ ᱵᱮᱵᱷᱟᱨ ᱥᱟᱱᱟᱭᱮᱫ ᱢᱮᱭᱟ ᱚᱱᱟᱢ ᱟᱱᱵᱽᱞᱚᱠ ᱫᱟᱲᱮᱭᱟᱜᱼᱟ ᱾ ᱟᱠᱚᱴ ᱦᱚᱸ ᱮᱠᱥᱴᱮᱱᱥᱚᱱ ᱨᱮ ᱯᱨᱚᱵᱷᱟᱣ ᱮᱢᱟᱭᱟ ᱡᱟᱦᱟᱸ ᱫᱚ %1$s ᱦᱚᱛᱮᱛᱮ ᱮᱢ ᱟᱠᱟᱱ AI ᱵᱮᱵᱷᱟᱨ ᱮᱫᱟᱭ ᱾</string>
+  <!-- Label shown above the list of features that will be blocked in the block AI dialog -->
+  <string name="ai_controls_block_dialog_what_will_be_blocked">ᱪᱮᱫ ᱟᱠᱚᱴ ᱦᱩᱭᱩᱜᱼᱟ:</string>
+  <!-- Cancel button text in the block AI enhancements confirmation dialog -->
+  <string name="ai_controls_block_dialog_cancel">ᱵᱟᱹᱰᱨᱟᱹ</string>
+  <!-- Block button text in the block AI enhancements confirmation dialog -->
+  <string name="ai_controls_block_dialog_block">ᱟᱠᱚᱴ</string>
+  <!--
     Locale Settings Fragment
 
     Content description for tick mark on selected language
@@ -392,6 +450,8 @@
   <string name="search_suggestions_delete_history_item_snackbar">ᱟᱢᱟᱜ ᱱᱟᱜᱟᱢ ᱠᱷᱚᱱ %1$s ᱢᱮᱴᱟᱣ ᱮᱱᱟ</string>
   <!-- Content description (not visible, for screen readers etc.): Button shown near a history search result allowing to delete it from browsing history. -->
   <string name="mozac_browser_awesomebar_remove_suggestion" tools:ignore="UnusedResources">ᱱᱚᱣᱟ ᱱᱟᱜᱟᱢ ᱵᱚᱞᱚᱱ ᱢᱮᱴᱟᱣ ᱢᱮ</string>
+  <!-- Button in the app links prompt that keeps the user in the browser instead of opening the external app. %1$s is the name of the app (for example "Firefox"). -->
+  <string name="applinks_prompt_negative_button">%1$s ᱨᱮ ᱛᱟᱦᱮᱸᱱ ᱢᱮ</string>
   <!--
     Home onboarding
 
@@ -534,6 +594,8 @@
   <string name="nova_onboarding_tou_body_line_3_link_text">ᱥᱟᱡᱟᱣ ᱠᱚ ᱢᱮᱱᱮᱡᱽ ᱢᱮ</string>
   <!-- "Set to default" onboarding title. -->
   <string name="nova_onboarding_set_to_default_title" tools:ignore="UnusedResources">ᱵᱚᱛᱚᱨᱟᱱ ᱴᱨᱮᱠᱟᱨ ᱠᱚ ᱵᱤᱫᱟᱹ ᱢᱮᱱ ᱢᱮ</string>
+  <!-- "Set to default" onboarding title. -->
+  <string name="nova_onboarding_set_to_default_title_2">ᱛᱮᱭᱟᱨ ᱠᱟᱱ ᱯᱨᱟᱭᱣᱮᱥᱤ ᱥᱟᱶ ᱟᱢᱟᱜ ᱡᱚᱛᱚ ᱞᱤᱝᱠ ᱠᱚ ᱡᱷᱤᱡᱽ ᱢᱮ</string>
   <!-- "Set to default" onboarding subtitle. -->
   <string name="nova_onboarding_set_to_default_subtitle">ᱟᱞᱮ ᱟᱢᱟᱜ ᱰᱟᱴᱟ ᱞᱮ ᱨᱩᱠᱷᱤᱭᱟᱹᱭᱟ ᱟᱨ ᱟᱢᱟᱜ ᱠᱞᱤᱠ ᱨᱮ ᱡᱟᱹᱥᱛᱤ ᱠᱷᱚᱱ ᱠᱚᱢᱯᱟᱱᱤ ᱠᱚ ᱟᱡ ᱛᱮ ᱵᱚᱱ ᱵᱚᱱᱫᱚ ᱠᱚᱣᱟ᱾</string>
   <!-- "Set to default" onboarding button. -->
@@ -565,8 +627,53 @@
     %1$s is replaced by an active link, using nova_onboarding_marketing_body_link_text as text (“How we use the data”).
   -->
   <string name="nova_onboarding_marketing_body" tools:ignore="BrandUsage,UnusedResources">ᱟᱢ ᱪᱮᱫ ᱞᱮᱠᱟ Firefox ᱮᱢ ᱧᱟᱢ ᱠᱮᱫᱟ, ᱟᱨ ᱚᱱᱟ ᱮᱢ ᱵᱮᱵᱷᱟᱨ ᱮᱫᱟ, Mozilla ᱨᱮᱱ ᱢᱟᱨᱠᱮᱴᱤᱝ ᱵᱷᱟᱜᱫᱟᱨ ᱠᱚ ᱥᱟᱶ ᱦᱟᱹᱴᱤᱧ ᱢᱮ ᱾ ᱱᱚᱶᱟ ᱰᱟᱴᱟ ᱫᱚ ᱛᱤᱥ ᱦᱚᱸ ᱵᱟᱝ ᱟᱠᱷᱨᱤᱧ ᱟᱠᱟᱱᱟ ᱾%1$s</string>
+  <!-- Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded. -->
+  <string name="nova_onboarding_marketing_body_2" tools:ignore="BrandUsage">ᱟᱢ ᱪᱮᱫ ᱞᱮᱠᱟ Firefox ᱮᱢ ᱧᱟᱢ ᱠᱮᱫᱟ, ᱟᱨ ᱚᱱᱟ ᱮᱢ ᱵᱮᱵᱷᱟᱨ ᱮᱫᱟ, Mozilla ᱨᱮᱱ ᱢᱟᱨᱠᱮᱴᱤᱝ ᱵᱷᱟᱜᱫᱟᱨ ᱠᱚ ᱥᱟᱶ ᱦᱟᱹᱴᱤᱧ ᱢᱮ ᱾ ᱱᱚᱶᱟ ᱰᱟᱴᱟ ᱫᱚ ᱛᱤᱥ ᱦᱚᱸ ᱵᱟᱝ ᱟᱠᱷᱨᱤᱧ ᱟᱠᱟᱱᱟ ᱾</string>
+  <!-- Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded. -->
+  <string name="nova_onboarding_marketing_body_3" tools:ignore="BrandUsage,UnusedResources">ᱟᱢ ᱟᱞᱮ Firefox ᱵᱮᱵᱷᱟᱨᱤᱭᱟᱹ ᱠᱟᱱᱟᱢ ᱚᱱᱟ ᱪᱮᱱᱮᱞ ᱠᱚ ᱵᱟᱰᱟᱭ ᱚᱪᱚ ᱞᱟᱹᱜᱤᱫ Mozilla ᱟᱱᱩᱢᱟᱛ ᱮᱢ ᱠᱟᱛᱮ ᱟᱢ ᱵᱟᱹᱲᱛᱤ ᱦᱚᱲ ᱴᱷᱮᱱ ᱥᱮᱴᱮᱨᱚᱜ ᱞᱟᱹᱜᱤᱫ ᱜᱚᱲᱚ ᱮᱢ ᱫᱟᱲᱮᱭᱟᱜᱼᱟ ᱾</string>
+  <!--
+    Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
+    “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
+  -->
+  <string name="nova_onboarding_marketing_body_4" tools:ignore="BrandUsage,UnusedResources">ᱟᱢ ᱟᱢ Firefox ᱮᱢ ᱵᱮᱵᱷᱟᱨ ᱮᱫᱟ ᱚᱱᱟ ᱯᱞᱟᱴᱯᱷᱚᱨᱢ ᱵᱟᱰᱟᱭ ᱚᱪᱚ ᱞᱟᱹᱜᱤᱫ Mozilla ᱟᱹᱭᱫᱟᱹᱨ ᱮᱢ ᱠᱟᱛᱮ ᱟᱞᱮ ᱵᱟᱹᱲᱛᱤ ᱦᱚᱲ ᱴᱷᱮᱱ ᱥᱮᱴᱮᱨᱚᱜ ᱞᱟᱹᱜᱤᱫ ᱜᱚᱲᱚ ᱮᱢ ᱫᱟᱲᱮᱭᱟᱜᱼᱟ ᱾</string>
+  <!--
+    Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
+    “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
+  -->
+  <string name="nova_onboarding_marketing_body_5" tools:ignore="BrandUsage,UnusedResources">ᱟᱢ ᱟᱢ Firefox ᱮᱢ ᱵᱮᱵᱷᱟᱨ ᱮᱫᱟ ᱚᱱᱟ ᱯᱞᱟᱴᱯᱷᱚᱨᱢ ᱵᱟᱰᱟᱭ ᱚᱪᱚ ᱞᱟᱹᱜᱤᱫ Mozilla ᱟᱹᱭᱫᱟᱹᱨ ᱮᱢ ᱠᱟᱛᱮ ᱟᱞᱮ ᱜᱚᱲᱚ ᱮᱢ ᱫᱟᱲᱮᱭᱟᱜᱼᱟ ᱾</string>
+  <!--
+    Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
+    “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
+    %1$s is replaced by an active link, using nova_onboarding_marketing_body_link_text as text (“How we use the data”).
+  -->
+  <string name="nova_onboarding_marketing_body_6" tools:ignore="BrandUsage,UnusedResources">ᱟᱢ ᱟᱢ Firefox ᱮᱢ ᱵᱮᱵᱷᱟᱨ ᱮᱫᱟ ᱚᱱᱟ ᱯᱞᱟᱴᱯᱷᱚᱨᱢ ᱵᱟᱰᱟᱭ ᱚᱪᱚ ᱞᱟᱹᱜᱤᱫ Mozilla ᱟᱹᱭᱫᱟᱹᱨ ᱮᱢ ᱠᱟᱛᱮ ᱟᱞᱮ ᱜᱚᱲᱚ ᱮᱢ ᱫᱟᱲᱮᱭᱟᱜᱼᱟ ᱾ %1$s</string>
+  <!--
+    Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
+    “Platform you came from” refers to the external app, website, store, campaign, or other source that directed the user to Firefox.
+    %1$s is replaced by an active link, using nova_onboarding_marketing_body_link_text_1 as text (“Learn More”).
+  -->
+  <string name="nova_onboarding_marketing_body_7" tools:ignore="BrandUsage">ᱟᱢ ᱟᱢ Firefox ᱮᱢ ᱵᱮᱵᱷᱟᱨ ᱮᱫᱟ ᱚᱱᱟ ᱯᱞᱟᱴᱯᱷᱚᱨᱢ ᱵᱟᱰᱟᱭ ᱚᱪᱚ ᱞᱟᱹᱜᱤᱫ Mozilla ᱟᱹᱭᱫᱟᱹᱨ ᱮᱢ ᱠᱟᱛᱮ ᱟᱞᱮ ᱵᱟᱹᱲᱛᱤ ᱦᱚᱲ ᱴᱷᱮᱱ ᱥᱮᱴᱮᱨᱚᱜ ᱞᱟᱹᱜᱤᱫ ᱜᱚᱲᱚ ᱮᱢ ᱫᱟᱲᱮᱭᱟᱜᱼᱟ᱾ %1$s</string>
+  <!-- Marketing onboarding additional body text. 'Firefox' is intentionally hardcoded. -->
+  <string name="nova_onboarding_marketing_body_line_two" tools:ignore="BrandUsage">Firefox ᱫᱚ ᱜᱚᱨᱚᱵ ᱥᱟᱶᱛᱮ ᱯᱷᱩᱨᱜᱟᱹᱞ ᱟᱨ ᱛᱟᱠᱱᱤᱠᱤ ᱢᱚᱱᱚᱯᱚᱞᱤ ᱠᱚ ᱵᱤᱨᱩᱫᱷ ᱨᱮ ᱠᱷᱩᱞᱟᱹ ᱣᱮᱵᱽ ᱨᱩᱠᱷᱤᱭᱟᱹ ᱞᱟᱹᱜᱤᱫ ᱥᱩᱯᱨᱩᱛ ᱢᱮᱱᱟᱜ-ᱟ ᱾</string>
+  <!--
+    Marketing onboarding additional body text. 'Firefox' is intentionally hardcoded.
+    “Allowing” refers to the main button “Allow and Continue”; the ask for the user is to allow communicating back to the platform.
+  -->
+  <string name="nova_onboarding_marketing_body_line_three" tools:ignore="BrandUsage">ᱫᱟᱭᱟ ᱠᱟᱛᱮ Firefox ᱡᱤᱛᱠᱟᱹᱨ ᱞᱟᱹᱜᱤᱫ ᱜᱚᱲᱚ ᱮᱢ ᱞᱟᱹᱜᱤᱫ ᱵᱤᱪᱟᱹᱨ ᱢᱮ ᱾</string>
   <!-- Marketing onboarding body link text. -->
   <string name="nova_onboarding_marketing_body_link_text">ᱟᱵᱚ ᱰᱟᱴᱟ ᱪᱮᱫ ᱞᱮᱠᱟ ᱵᱚᱱ ᱵᱮᱵᱷᱟᱨᱮᱫᱟ</string>
+  <!-- Marketing onboarding body link text. -->
+  <string name="nova_onboarding_marketing_body_link_text_1">ᱰᱷᱮᱨ ᱥᱮᱬᱟᱭ ᱢᱮ</string>
+  <!-- Marketing onboarding primary button text. 'Firefox' is intentionally hardcoded. -->
+  <string name="nova_onboarding_marketing_primary_button_text" tools:ignore="BrandUsage,UnusedResources">Firefox ᱜᱮᱲᱚ ᱮᱢᱟᱭ ᱯᱮ</string>
+  <!-- Marketing onboarding primary button text. -->
+  <string name="nova_onboarding_marketing_primary_button_text_3">ᱦᱚᱭ</string>
+  <!-- Marketing onboarding primary button text. -->
+  <string name="nova_onboarding_marketing_primary_button_text_2">ᱟᱱᱫᱮᱥ ᱢᱮ ᱟᱨ ᱞᱟᱦᱟᱜ ᱢᱮ</string>
+  <!-- Marketing onboarding secondary button text. -->
+  <string name="nova_onboarding_marketing_secondary_button_text" tools:ignore="UnusedResources">ᱵᱟᱝᱟ ᱥᱟᱨᱦᱟᱣ</string>
+  <!-- Marketing onboarding secondary button text. -->
+  <string name="nova_onboarding_marketing_secondary_button_text_2">ᱵᱟᱝ</string>
   <!-- Notifications onboarding title. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_notifications_title" tools:ignore="BrandUsage,UnusedResources">Firefox ᱮᱛᱞᱟᱤᱭᱟᱹ ᱥᱟᱞᱟᱜ ᱟᱢ ᱴᱷᱤᱠ ᱨᱮ ᱫᱚᱦᱚᱢᱮ ᱞᱟᱹᱜᱤᱫ ᱜᱚᱲᱚ ᱮᱢᱚᱜᱼᱟᱭ</string>
   <!-- Notifications onboarding subtitle. 'Firefox' is intentionally hardcoded. -->
@@ -579,6 +686,26 @@
   <string name="nova_onboarding_add_search_widget_subtitle" tools:ignore="BrandUsage">ᱟᱢᱟᱜ ᱯᱷᱚᱱ ᱨᱮᱭᱟᱜ ᱦᱚᱢ ᱥᱠᱨᱤᱱ ᱠᱷᱚᱱ ᱥᱟᱱᱟᱢ ᱥᱮᱸᱫᱽᱨᱟ ᱮᱦᱚᱵ ᱢᱮ ᱟᱨ ᱵᱟᱲᱟᱭ ᱢᱮ Firefox ᱨᱮᱭᱟᱜ ᱟᱡ ᱛᱮ ᱨᱩᱠᱷᱤᱭᱟᱹ ᱟᱢᱟᱜ ᱫᱮᱭᱟ ᱨᱮ ᱢᱮᱱᱟᱜᱼᱟ ᱾</string>
   <!-- "Add search widget" onboarding button. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_add_search_widget_button" tools:ignore="BrandUsage">Firefox ᱣᱤᱡᱮᱴ ᱥᱮᱞᱮᱫ ᱢᱮ</string>
+  <!-- Customize prompt onboarding title. -->
+  <string name="nova_onboarding_customize_prompt_title" tools:ignore="UnusedResources">ᱥᱟᱱᱟᱢ ᱴᱮᱯ ᱥᱟᱶ ᱠᱟᱥᱴᱚᱢᱟᱭᱤᱡᱽ ᱞᱟᱹᱜᱤᱫ ᱟᱞᱜᱟ ᱟᱨ ᱵᱟᱹᱲᱛᱤ ᱯᱨᱟᱭᱣᱮᱴ</string>
+  <plurals name="nova_onboarding_customize_prompt_body" tools:ignore="UnusedResources">
+    <!--
+      Customize prompt onboarding body.
+      %1$s is replaced by the product name (for example "Firefox"),
+      %2$,d is replaced by the number of trackers blocked. The comma represents the thousand
+      separator (e.g. 1,000 in English), and it will automatically use the correct character
+      for your locale (don't change or remove it).
+    -->
+    <item quantity="one">%1$s ᱵᱞᱚᱠ ᱠᱮᱫᱟᱭ %2$,d ᱴᱨᱮᱠᱟᱨ ᱡᱚᱠᱷᱚᱱ ᱟᱢ ᱣᱮᱵᱽ ᱨᱮᱢ ᱫᱟᱬᱟᱱ ᱠᱟᱱ ᱛᱟᱦᱮᱸᱡ ᱾</item>
+    <item quantity="two">%1$s ᱠᱤᱱ ᱵᱞᱚᱠ ᱠᱮᱫᱟᱭ %2$,d ᱴᱨᱮᱠᱟᱨ ᱠᱤᱱ ᱡᱚᱠᱷᱚᱱ ᱟᱢ ᱣᱮᱵᱽ ᱨᱮᱢ ᱫᱟᱬᱟᱱ ᱠᱟᱱ ᱛᱟᱦᱮᱸᱡ ᱾</item>
+    <item quantity="other">%1$s ᱠᱚ ᱵᱞᱚᱠ ᱠᱮᱫᱟᱭ %2$,d ᱴᱨᱮᱠᱟᱨ ᱠᱚ ᱡᱚᱠᱷᱚᱱ ᱟᱢ ᱣᱮᱵᱽ ᱨᱮᱢ ᱫᱟᱬᱟᱱ ᱠᱟᱱ ᱛᱟᱦᱮᱸᱡ ᱾</item>
+  </plurals>
+  <!-- Customize prompt onboarding positive button. -->
+  <string name="nova_onboarding_customize_prompt_positive_button" tools:ignore="UnusedResources">ᱠᱟᱥᱴᱚᱢᱟᱭᱤᱡᱽ ᱮᱦᱚᱵ ᱢᱮ</string>
+  <!-- App icon onboarding title. -->
+  <string name="nova_onboarding_app_icon_prompt_title" tools:ignore="UnusedResources">ᱢᱤᱫ ᱠᱟᱥᱴᱚᱢ ᱮᱯ ᱪᱤᱱᱦᱟᱹ ᱵᱟᱪᱷᱟᱣ ᱢᱮ</string>
+  <!-- App icon onboarding body. -->
+  <string name="nova_onboarding_app_icon_prompt_body" tools:ignore="UnusedResources">ᱟᱢᱟᱜ ᱦᱚᱢ ᱥᱠᱨᱤᱱ ᱫᱚ ᱯᱚᱨᱥᱚᱱᱟᱞ ᱴᱟᱪ ᱮᱢᱚᱜ ᱢᱮ ᱾</string>
   <!-- ==== End of Project "Nova" onboarding strings ==== -->
 
   <!--
@@ -609,6 +736,12 @@
   <string name="preferences_category_general">ᱥᱟᱫᱷᱟᱨᱚᱬ</string>
   <!-- Preference category for all links about Fenix -->
   <string name="preferences_category_about">ᱵᱟᱵᱚᱛ</string>
+  <!-- Preference category for settings related to changing the default search engine -->
+  <string name="preferences_category_select_default_search_engine_2">ᱥᱟᱫᱷᱟᱨᱚᱱ ᱵᱽᱨᱟᱣᱩᱡᱤᱝ ᱰᱤᱯᱷᱚᱞᱴ ᱥᱮᱸᱫᱽᱨᱟ ᱤᱧᱡᱤᱱ</string>
+  <!-- Preference category for settings related to changing the private browsing search engine -->
+  <string name="preferences_category_select_private_search_engine">ᱯᱨᱟᱭᱣᱮᱴ ᱵᱽᱨᱟᱣᱩᱡᱤᱝ ᱰᱤᱯᱷᱚᱞᱴ ᱥᱮᱸᱫᱽᱨᱟ ᱤᱧᱡᱤᱱ</string>
+  <!-- Option to set the private browsing mode to use the normal default search engine -->
+  <string name="search_engine_use_default">ᱥᱟᱫᱷᱟᱨᱚᱱ ᱵᱽᱨᱟᱣᱩᱡᱤᱝ ᱞᱮᱠᱟ ᱥᱚᱢᱟᱱ ᱥᱮᱸᱫᱽᱨᱟ ᱤᱧᱡᱤᱱ ᱵᱮᱵᱷᱟᱨ ᱢᱮ</string>
   <!-- Preference for settings related to managing search shortcuts for the quick search menu -->
   <string name="preferences_manage_search_shortcuts_2">ᱥᱮᱸᱫᱽᱨᱟ ᱤᱧᱡᱤᱱ ᱵᱟᱪᱷᱱᱟᱣ ᱢᱮᱱᱮᱡᱽ ᱢᱮ</string>
   <!-- Summary for preference for settings related to managing search shortcuts for the quick search menu -->
@@ -621,6 +754,8 @@
   <string name="preferences_search">ᱥᱮᱸᱫᱽᱨᱟ</string>
   <!-- Preference for settings related to Search engines -->
   <string name="preferences_search_engines">ᱥᱮᱸᱫᱽᱨᱟ ᱤᱧᱡᱤᱱ</string>
+  <!-- Settings item to add a search widget on the device's homescreen. -->
+  <string name="preferences_add_search_widget_from_settings">ᱚᱲᱟᱜ ᱥᱠᱨᱤᱱ ᱣᱤᱡᱮᱴ</string>
   <!-- Preference for settings related to Search engines suggestions -->
   <string name="preferences_search_engines_suggestions">ᱥᱮᱸᱫᱽᱨᱟ ᱤᱧᱡᱤᱱ ᱠᱷᱚᱱ ᱵᱟᱛᱟᱣᱟᱜᱠᱚ</string>
   <!-- Preference Category for settings related to Search address bar -->
@@ -792,6 +927,8 @@
   <string name="preferences_show_nonsponsored_suggestions">%1$s ᱠᱷᱚᱱ ᱵᱟᱛᱟᱣᱟᱜ</string>
   <!-- Summary for preference to show Firefox Suggest search suggestions for web content -->
   <string name="preferences_show_nonsponsored_suggestions_summary">ᱣᱮᱵᱽ ᱠᱷᱚᱱ ᱟᱢᱟᱜ ᱥᱮᱸᱫᱽᱨᱟ ᱵᱟᱵᱚᱛ ᱵᱟᱛᱟᱣᱠᱚ ᱧᱟᱢ ᱢᱮ</string>
+  <!-- Preference title for switch preference to show search optimization cards -->
+  <string name="preferences_show_search_optimization_cards" tools:ignore="BrandUsage">ᱟᱢ ᱴᱟᱭᱤᱯ ᱞᱮᱠᱟ Mozilla ᱠᱷᱚᱱ ᱥᱚᱞᱦᱟ ᱫᱚᱦᱲᱟ ᱧᱟᱢ ᱢᱮ</string>
   <!-- Preference for link sharing -->
   <string name="preferences_link_sharing">ᱞᱤᱝᱠ ᱦᱟᱹᱴᱤᱧ</string>
   <!-- Title for the link sharing toggle. %1$s is replaced by the brand name (e.g. Firefox). -->
@@ -810,8 +947,26 @@
   <string name="preferences_open_links_in_apps_ask">ᱠᱷᱩᱞᱟᱹ ᱢᱟᱲᱟᱝ ᱨᱮ ᱠᱩᱠᱞᱤ ᱢᱮ</string>
   <!-- Preference for open links in third party apps never open in apps option -->
   <string name="preferences_open_links_in_apps_never">ᱛᱤᱥ ᱦᱚᱸ ᱵᱟᱝ</string>
+  <!-- Preference category for file storage. -->
+  <string name="preferences_category_file_storage">ᱨᱮᱫᱽ ᱫᱚᱦᱚ</string>
+  <!-- Preference title for downloads default location. -->
+  <string name="preferences_downloads_default_location_title">ᱢᱤᱞ ᱰᱟᱩᱱᱞᱳᱰ ᱴᱷᱟᱶ</string>
+  <!--
+    Message shown as the summary of the download location preference when the
+    app has lost the permission to access a previously selected custom folder.
+  -->
+  <string name="preference_downloads_folder_permission_lost" tools:ignore="UnusedResources">ᱱᱚᱣᱟ ᱯᱷᱚᱞᱰᱟᱨ ᱵᱮᱵᱷᱟᱨ ᱨᱮᱭᱟᱜ ᱟᱢ ᱴᱷᱮᱱ ᱟᱹᱭᱫᱟᱹᱨ ᱵᱟᱹᱱᱩᱜᱼᱟ ᱾ ᱮᱴᱟᱜ ᱵᱟᱪᱷᱟᱣ ᱨᱮᱭᱟᱜ ᱠᱩᱨᱩᱢᱩᱴᱩᱭ ᱢᱮ᱾</string>
   <!-- Preference title for choosing an app to handle downloads -->
   <string name="preferences_choose_app_for_downloads">ᱮᱴᱟᱜ ᱮᱯ ᱥᱟᱶ ᱰᱟᱣᱱᱞᱳᱰ ᱠᱚ ᱢᱮᱱᱮᱡᱽ ᱢᱮ</string>
+  <!-- Preference category for deleting or removing downloads -->
+  <string name="preferences_category_delete_or_remove_downloads">ᱰᱟᱩᱱᱞᱳᱰ ᱠᱚ ᱰᱤᱞᱤᱴ ᱢᱮ ᱟᱨᱵᱟᱝ ᱚᱪᱚᱜᱽ ᱢᱮ</string>
+  <string name="preferences_downloads_delete_from_device">ᱥᱟᱫᱷᱚᱱ ᱠᱷᱚᱱ ᱢᱮᱴᱟᱣ ᱢᱮ</string>
+  <string name="preferences_downloads_delete_from_device_description">ᱟᱢᱟᱜ ᱥᱟᱫᱷᱚᱱ ᱠᱷᱚᱱ ᱨᱮᱫᱽ ᱠᱚ ᱢᱮᱴᱟᱣ ᱮᱱᱟ ᱟᱨ ᱰᱟᱩᱱᱞᱳᱰ ᱱᱟᱜᱟᱢ ᱠᱷᱚᱱ ᱚᱪᱚᱜ ᱮᱱᱟ</string>
+  <string name="preferences_downloads_remove_from_download_history">ᱰᱟᱩᱱᱞᱳᱰ ᱱᱟᱜᱟᱢ ᱠᱷᱚᱱ ᱚᱪᱚᱜᱽ ᱢᱮ</string>
+  <string name="preferences_downloads_remove_from_download_history_description">ᱟᱢᱟᱜ ᱰᱟᱩᱱᱞᱳᱰ ᱱᱟᱜᱟᱢ ᱠᱷᱚᱱ ᱨᱮᱫ ᱚᱪᱚᱜ ᱮᱱᱟ, ᱢᱮᱱᱠᱷᱟᱱ ᱱᱤᱛ ᱦᱚᱸ ᱟᱢᱟᱜ ᱰᱤᱵᱷᱟᱭᱤᱥ ᱨᱮ ᱥᱟᱧᱪᱟᱣ ᱢᱮᱱᱟᱜᱼᱟ</string>
+  <string name="preferences_downloads_ask_when_to_delete_files">ᱠᱩᱞᱤᱠᱚᱢ ᱡᱚᱠᱷᱚᱱ ᱤᱧ ᱨᱮᱫᱽ ᱠᱚᱧ ᱰᱤᱞᱤᱴ ᱮᱫᱟ</string>
+  <!-- Preference for downloads -->
+  <string name="preferences_downloads_2">ᱥᱟᱡᱟᱣ ᱰᱟᱩᱱᱞᱳᱰ ᱢᱮ</string>
   <!-- Preference for enabling gecko engine logs -->
   <string name="preferences_enable_gecko_logs">Gecko ᱞᱚᱜᱽ ᱮᱢ ᱪᱷᱚᱭ ᱢᱮ</string>
   <!-- Message to indicate users that we are quitting the application to apply the changes -->
@@ -864,6 +1019,12 @@
   <string name="customize_addon_collection_user_hint">ᱛᱩᱢᱟᱹᱞ ᱢᱟᱞᱤᱠ (ᱵᱮᱵᱷᱟᱨᱤᱭᱟᱹ ID)</string>
   <!-- Toast shown after confirming the custom extension collection configuration -->
   <string name="toast_customize_extension_collection_done">ᱮᱠᱥᱴᱮᱱᱥᱚᱱ ᱛᱩᱢᱟᱹᱞ ᱵᱚᱫᱚᱞᱮᱱᱟ ᱾ ᱵᱚᱫᱚᱞ ᱠᱚ ᱫᱚᱦᱚ ᱞᱟᱹᱜᱤᱫ ᱮᱯᱞᱤᱠᱮᱥᱚᱱ ᱵᱚᱸᱫᱚᱜ ᱠᱟᱱᱟ…</string>
+  <!--
+    Customize Home
+
+    Title for the customize home screen section with privacy report.
+  -->
+  <string name="customize_toggle_privacy_report">ᱱᱤᱥᱚᱱ ᱠᱷᱚᱵᱚᱨ</string>
   <!-- Header text for jumping back into the recent tab in customize the home screen -->
   <string name="customize_toggle_jump_back_in">ᱦᱮᱡ ᱨᱩᱣᱟᱹᱲᱚᱜ ᱢᱮ</string>
   <!-- Title for the customize home screen section with bookmarks. -->
@@ -879,8 +1040,12 @@
   <string name="customize_toggle_pocket_sponsored">ᱜᱟᱲᱚ ᱠᱟᱱ ᱠᱟᱹᱦᱱᱤ ᱠᱚ</string>
   <!-- Title for the opening wallpaper settings screen -->
   <string name="customize_wallpapers">ᱠᱟᱸᱛᱷᱪᱤᱛᱟᱹᱨ</string>
+  <!-- Label for the menu item that opens the wallpaper settings screen. -->
+  <string name="browser_menu_change_wallpaper">ᱠᱟᱸᱛᱪᱷᱟᱯᱟ ᱵᱚᱫᱚᱞ ᱢᱮ</string>
   <!-- Title for the customize home screen section with sponsored shortcuts. -->
   <string name="customize_toggle_contile">ᱠᱟᱹᱢᱤᱼᱤᱡ ᱠᱷᱟᱴᱚ ᱢᱟᱪᱷᱟ ᱠᱚ</string>
+  <!-- Title for the customize home screen section that toggles the Homepage sports widget. -->
+  <string name="customize_toggle_world_cup">ᱡᱮᱜᱮᱛ ᱠᱚᱯ</string>
   <!--
     Wallpapers
 
@@ -1162,6 +1327,8 @@
   <string name="toolbar_customize_shortcut_homepage">ᱚᱲᱟᱜ ᱥᱟᱦᱴᱟ</string>
   <!-- Back shortcut in toolbar customization -->
   <string name="toolbar_customize_shortcut_back">ᱛᱟᱭᱚᱢ</string>
+  <!-- Label for choosing in toolbar customization settings to not use any custom shortcut button. -->
+  <string name="toolbar_customize_shortcut_none">ᱵᱟᱹᱱᱩᱜᱼᱟ</string>
   <!--
     App icon Preferences
 
@@ -1194,8 +1361,12 @@
   <string name="preference_gestures_website_pull_to_refresh">ᱱᱟᱶᱟ ᱟᱹᱨᱩ ᱞᱟᱹᱜᱤᱫ ᱛᱮ ᱚᱨ ᱢᱮ</string>
   <!-- Preference for using the dynamic toolbar -->
   <string name="preference_gestures_dynamic_toolbar">ᱴᱩᱞᱵᱟᱨ ᱩᱠᱩ ᱞᱟᱹᱜᱤᱫᱛᱮ ᱛᱚᱛᱨᱚᱭ ᱢᱮ</string>
+  <!-- Preference for showing the opened tabs by swiping up on the toolbar -->
+  <string name="preference_gestures_swipe_toolbar_show_tabs_2">ᱡᱷᱤᱡ ᱴᱮᱵᱽ ᱠᱚ ᱧᱮᱞ ᱞᱟᱹᱜᱤᱫ ᱴᱩᱞᱵᱟᱨ ᱫᱚ ᱪᱮᱛᱟᱱ ᱞᱮᱠᱟᱛᱮ ᱥᱣᱟᱭᱤᱯ ᱢᱮ</string>
   <!-- Preference for switching tabs by swiping horizontally on the addressbar -->
   <string name="preference_gestures_swipe_toolbar_switch_tabs_2">ᱴᱮᱵᱽ ᱠᱚ ᱵᱚᱫᱚᱞ‌ ᱞᱟᱹᱜᱤᱫ ᱥᱟᱭᱤᱰ ᱴᱷᱤᱠᱬᱟᱹᱵᱟᱨ ᱠᱷᱚᱥᱨᱚᱫ ᱢᱮ</string>
+  <!-- Preference for switching for the shake to summarize toggle in page summaries and customize settings -->
+  <string name="preferences_shake_to_summarize">ᱥᱟᱨᱛᱮᱫ ᱞᱟᱹᱜᱤᱫ ᱦᱤᱞᱟᱹᱣ ᱢᱮ</string>
   <!--
     Library
 
@@ -1326,8 +1497,24 @@
   <string name="studies_remove">ᱚᱪᱚᱜ ᱢᱮ</string>
   <!-- Title of the active section on the studies list -->
   <string name="studies_active">ᱩᱥᱨᱟᱹᱣ</string>
+  <!-- Description for studies. Note: The word "Firefox" should NOT be translated -->
+  <string name="studies_description_4" tools:ignore="BrandUsage">Firefox ᱡᱟᱸᱦᱟᱸᱴᱟᱜᱜᱮ ᱛᱮ ᱵᱮᱵᱷᱟᱨᱤᱭᱟᱹ ᱠᱚ ᱜᱩᱱ ᱠᱚ ᱵᱤᱱᱤᱰ ᱞᱟᱹᱜᱤᱫ ᱵᱟᱪᱷᱟᱣ ᱠᱚᱣᱟᱭ, ᱡᱟᱦᱟᱸ ᱫᱚ ᱡᱷᱚᱛᱚ ᱦᱚᱲ ᱞᱟᱹᱜᱤᱫ ᱜᱩᱱ ᱨᱮ ᱥᱩᱫᱷᱟᱹᱨ ᱮᱢᱚᱜ ᱠᱟᱱᱟ ᱾</string>
+  <!-- Title of the Studies data preference -->
+  <string name="studies_title_2">ᱯᱷᱤᱪᱟᱨ ᱯᱟᱲᱦᱟᱣ ᱨᱮᱭᱟᱜ ᱪᱷᱟᱹᱲ ᱮᱢᱚᱜ ᱢᱮ</string>
   <!-- Learn more link for studies, links to an article for more information about studies. -->
   <string name="studies_learn_more">ᱰᱷᱮᱨ ᱥᱮᱬᱟᱭ ᱢᱮ</string>
+  <!--
+    Remote Improvements (Rollouts)
+
+    Title of the Remote Improvements (rollouts) data preference
+  -->
+  <string name="remote_improvements_title">ᱨᱤᱢᱚᱴ ᱥᱩᱫᱷᱨᱟᱹᱣ ᱨᱮᱭᱟᱜ ᱫᱟᱣ ᱮᱢᱚᱜ ᱢᱮ</string>
+  <!-- Description for remote improvements. Note: The word "Firefox" should NOT be translated -->
+  <string name="remote_improvements_description" tools:ignore="BrandUsage">Firefox ᱫᱚ ᱟᱯᱰᱮᱴ ᱠᱚ ᱛᱟᱞᱟ ᱨᱮ ᱜᱩᱱᱠᱚ, ᱠᱟᱹᱢᱤᱦᱚᱨᱟ ᱟᱨ ᱥᱴᱮᱵᱤᱞᱤᱴᱤ ᱨᱮ ᱥᱩᱫᱷᱨᱟᱹᱣ ᱟᱭ ᱾ ᱵᱚᱫᱚᱞ ᱠᱚ ᱫᱚ ᱥᱟᱝᱜᱤᱧ ᱠᱷᱚᱱ ᱞᱟᱹᱜᱩ ᱟᱠᱟᱱᱟ ᱾</string>
+  <!-- Learn more link for remote improvements, links to an article for more information about rollouts. -->
+  <string name="remote_improvements_learn_more">ᱰᱷᱮᱨ ᱥᱮᱬᱟᱭ ᱢᱮ</string>
+  <!-- Title for remote improvements preference in Advanced settings -->
+  <string name="preferences_remote_improvements">ᱥᱟᱝᱜᱤᱧ ᱥᱩᱫᱷᱨᱟᱹᱣ</string>
   <!--
     Sessions
 
@@ -1340,6 +1527,15 @@
     The %1$s will be replaced by the number of opened private tabs
   -->
   <string name="tabs_header_private_tabs_counter_title">ᱯᱨᱟᱭᱣᱮᱴ ᱴᱮᱵᱽ ᱠᱚ ᱡᱷᱤᱡᱽ ᱢᱮ: %1$s᱾ ᱴᱮᱵᱽ ᱵᱚᱫᱚᱞ ᱞᱟᱹᱜᱤᱫ ᱴᱤᱯᱟᱹᱣ ᱢᱮ ᱾</string>
+  <plurals name="tabs_header_tab_group_counter_title">
+    <!--
+      Title for the list of tab groups used by a11y services
+      The %1$d will be replaced by the number of opened tab groups
+    -->
+    <item quantity="one">%1$d ᱜᱟᱫᱮᱞ ᱴᱮᱵᱽ ᱡᱷᱤᱡ ᱮᱱᱟ ᱾ ᱴᱮᱵᱽ ᱵᱚᱫᱚᱞ ᱞᱟᱹᱜᱤᱫ ᱴᱤᱯᱟᱹᱣ ᱢᱮ ᱾</item>
+    <item quantity="two">%1$d ᱜᱟᱫᱮᱞ ᱴᱮᱵᱽ ᱠᱤᱱ ᱡᱷᱤᱡ ᱮᱱᱟ ᱾ ᱴᱮᱵᱽ ᱵᱚᱫᱚᱞ ᱞᱟᱹᱜᱤᱫ ᱴᱤᱯᱟᱹᱣ ᱢᱮ ᱾</item>
+    <item quantity="other">%1$d ᱜᱟᱫᱮᱞ ᱴᱮᱵᱽ ᱠᱚ ᱡᱷᱤᱡ ᱮᱱᱟ ᱾ ᱴᱮᱵᱽ ᱵᱚᱫᱚᱞ ᱞᱟᱹᱜᱤᱫ ᱴᱤᱯᱟᱹᱣ ᱢᱮ ᱾</item>
+  </plurals>
   <!--
     Title for the list of tabs in the synced tabs used by a11y services
     The %1$s will be replaced by the number of opened synced tabs
@@ -1349,10 +1545,14 @@
   <string name="add_tab">ᱴᱮᱵᱽ ᱥᱮᱞᱮᱫᱽ ᱢᱮ</string>
   <!-- Content description (not visible, for screen readers etc.): Add tab button. Adds a news tab when pressed -->
   <string name="add_private_tab">ᱱᱤᱡᱮᱨᱟᱜ ᱴᱮᱵᱽ ᱥᱮᱞᱮᱫᱽ ᱢᱮ</string>
+  <!-- Content description (not visible, for screen readers etc.): Create tab group button. Opens the create tab group sheet when pressed -->
+  <string name="create_tab_group_content_description">ᱴᱮᱵᱽ ᱜᱟᱫᱮᱞ ᱵᱮᱱᱟᱣ ᱢᱮ</string>
   <!-- Text for the tab search bar placeholder -->
   <string name="tab_manager_search_bar_placeholder">ᱟᱢᱟᱜ ᱴᱮᱵᱽ ᱠᱚ ᱥᱮᱸᱫᱽᱨᱟᱭ ᱢᱮ</string>
   <!-- Text shown in the menu to view recently closed tabs -->
   <string name="tab_tray_menu_recently_closed">ᱱᱤᱛᱚᱜᱽᱼᱟᱜ ᱵᱚᱸᱫᱚᱼᱟᱜ ᱴᱮᱵᱽ ᱠᱚ</string>
+  <!-- Text shown in the menu to select all tabs. -->
+  <string name="tab_tray_menu_select_all_tabs">ᱡᱚᱛᱚ ᱵᱟᱪᱷᱟᱣ</string>
   <!-- Text shown in the menu to view account settings -->
   <string name="tab_tray_menu_account_settings">ᱠᱷᱟᱛᱟ ᱨᱮᱭᱟᱜ ᱥᱟᱡᱟᱣ ᱠᱚ</string>
   <!-- Text shown in the menu to view tab settings -->
@@ -1375,6 +1575,8 @@
   <string name="tab_manager_multiselect_menu_item_share">ᱦᱟᱹᱴᱤᱧ ᱢᱮ</string>
   <!-- Text shown in the multiselect menu for adding selected tabs to collections. -->
   <string name="tab_manager_multiselect_menu_item_add_to_collection">ᱱᱟᱶᱟ ᱛᱩᱢᱟᱹᱞ ᱨᱮ ᱥᱮᱞᱮᱫᱽ ᱢᱮ</string>
+  <!-- Text shown in the multiselect menu for adding selected tabs to a tab group. -->
+  <string name="tab_manager_multiselect_menu_item_add_to_tab_group">ᱜᱟᱫᱮᱞ ᱨᱮ ᱥᱮᱞᱮᱫ ᱢᱮ</string>
   <!-- Content description for tabs tray multiselect menu -->
   <string name="tab_tray_multiselect_menu_content_description">ᱵᱟᱪᱷᱟᱣ ᱟᱠᱟᱱ ᱴᱮᱵᱽ ᱢᱮᱱᱭᱩ ᱠᱚ</string>
   <!-- Title text displayed for a homepage tab in the tabs tray. -->
@@ -1413,6 +1615,66 @@
   <string name="pwa_site_controls_title_private">%1$s (ᱯᱨᱭᱣᱮᱴ ᱢᱳᱰ)</string>
   <!-- Content description (not visible, for screen readers etc.) for the button to open the Tab Search feature to search through tabs. -->
   <string name="tab_manager_open_tab_search">ᱴᱮᱵᱽ ᱥᱮᱸᱫᱽᱨᱟ ᱡᱷᱤᱡᱽ ᱢᱮ</string>
+  <!-- Title for introducing tab groups via an onboarding card shown in the tab manager. -->
+  <string name="tab_group_onboarding_item_title">ᱱᱚᱶᱟ ᱴᱮᱵᱽ ᱫᱳᱞ ᱛᱮᱭᱟᱨ ᱢᱮ</string>
+  <!-- Description for tab groups onboarding shown in the tab manager when in grid view. -->
+  <string name="tab_group_onboarding_grid_item_description">ᱩᱱᱠᱩ ᱜᱟᱫᱮᱞ ᱨᱮ ᱫᱚᱦᱚ ᱞᱟᱹᱜᱤᱫ ᱢᱤᱫ ᱴᱮᱵᱽ ᱮᱴᱟᱜ ᱴᱮᱵᱽ ᱨᱮ ᱚᱨ ᱢᱮ ᱾</string>
+  <!-- Description for tab groups onboarding shown in the tab manager when in list view. -->
+  <string name="tab_group_onboarding_list_item_description">ᱢᱤᱫ ᱜᱟᱫᱮᱞ ᱵᱮᱱᱟᱣ ᱞᱟᱹᱜᱤᱫ ᱟᱭᱢᱟ ᱴᱮᱵᱽ ᱵᱟᱪᱷᱟᱣ ᱢᱮ᱾</string>
+  <!-- Content description (accessibility label) for button to dismiss the tab group onboarding item. -->
+  <string name="tab_group_onboarding_item_dismiss_content_description">ᱴᱮᱵᱽ ᱜᱟᱫᱮᱞ ᱚᱱᱵᱚᱨᱰᱤᱝ ᱠᱷᱟᱨᱚᱪ ᱢᱮ</string>
+  <!--
+    Tab Group
+
+    Title for the create tab group bottom sheet
+  -->
+  <string name="create_tab_group_title">ᱴᱮᱵᱽ ᱜᱟᱫᱮᱞ ᱵᱮᱱᱟᱣ ᱢᱮ</string>
+  <!-- Title for the edit tab group bottom sheet -->
+  <string name="edit_tab_group_title">ᱜᱟᱫᱮᱞ ᱥᱟᱥᱟᱯᱲᱟᱣ ᱢᱮ</string>
+  <string name="create_tab_group_save_button">ᱥᱟᱧᱪᱟᱣ ᱢᱮ</string>
+  <!-- Description for the handle at the top of a bottom sheet, used to drag the sheet up or down. -->
+  <string name="edit_tab_group_bottom_sheet_grabber_content_description">ᱱᱟᱶᱟ ᱜᱟᱫᱮᱞ, ᱰᱨᱮᱜᱽ ᱦᱮᱱᱰᱮᱞ ᱨᱟᱹᱯᱩᱫ ᱢᱮ</string>
+  <!--
+    Default tab group name when creating a tab group
+    %d is the number of existing tab groups + 1.
+  -->
+  <string name="create_tab_group_form_default_name">ᱫᱚᱞ %d</string>
+  <!-- Label for the tab group name field in the bottom sheet to create or edit a tab group. -->
+  <string name="create_tab_group_name_label">ᱧᱩᱛᱩᱢ</string>
+  <!-- Title for adding more tabs to a tab group. -->
+  <string name="add_to_tab_group_title">ᱛᱮ ᱥᱮᱞᱮᱫ ᱢᱮ</string>
+  <!-- Content Description for closing the "Add to Tab Group" panel. -->
+  <string name="add_to_tab_group_bottom_sheet_grabber_content_description">ᱢᱤᱫ ᱴᱮᱵᱽ ᱜᱟᱫᱮᱞ ᱨᱮ ᱥᱮᱞᱮᱫ ᱢᱮ, ᱰᱨᱮᱜᱽ ᱦᱮᱱᱰᱮᱞ ᱨᱟᱹᱯᱩᱫ ᱢᱮ</string>
+  <!-- Content Description for "New tab group" panel. -->
+  <string name="add_to_new_tab_group_content_description">ᱱᱟᱶᱟ ᱴᱮᱵᱽ ᱜᱟᱫᱮᱞ ᱨᱮ ᱥᱮᱞᱮᱫ ᱢᱮ</string>
+  <!-- Label for adding to a new tab group. -->
+  <string name="add_to_new_tab_group_title">ᱱᱟᱶᱟ ᱴᱮᱵᱽ ᱜᱟᱫᱮᱞ</string>
+  <plurals name="tab_group_tabs_count_subtitle">
+    <!--
+      Subtitle for the number of tabs in a tab group.
+      %1$d is the number of tabs in a tab group.
+    -->
+    <item quantity="one">%1$d ᱴᱮᱵᱽ</item>
+    <item quantity="two">%1$d ᱴᱮᱵᱽ ᱠᱤᱱ</item>
+    <item quantity="other">%1$d ᱴᱮᱵᱽ ᱠᱚ</item>
+  </plurals>
+  <plurals name="add_to_exiting_tab_group_content_description">
+    <!--
+      Accessibility description for add to existing tab group.
+      %1$s is the group name, %2$d is the number of tabs, %3$s is the color name.
+    -->
+    <item quantity="one">%1$s ᱴᱮᱵᱽ ᱜᱟᱫᱮᱞ ᱨᱮ ᱥᱮᱞᱮᱫ ᱢᱮ, %2$d ᱴᱮᱵᱽ, ᱨᱚᱝ %3$s</item>
+    <item quantity="two">%1$s ᱴᱮᱵᱽ ᱜᱟᱫᱮᱞ ᱨᱮ ᱥᱮᱞᱮᱫ ᱢᱮ, %2$d ᱴᱮᱵᱽ ᱠᱤᱱ, ᱨᱚᱝ %3$s</item>
+    <item quantity="other">%1$s ᱴᱮᱵᱽ ᱜᱟᱫᱮᱞ ᱨᱮ ᱥᱮᱞᱮᱫ ᱢᱮ, %2$d ᱴᱮᱵᱽ ᱠᱚ, ᱨᱚᱝ %3$s</item>
+  </plurals>
+  <!-- Title for the Delete tab group confirmation dialog. -->
+  <string name="delete_tab_group_confirmation_dialog_title">ᱴᱮᱵᱽ ᱜᱟᱫᱮᱞ ᱢᱮᱴᱟᱣ ᱟᱢ ?</string>
+  <!-- Text shown in the body of the Delete tab group confirmation dialog. -->
+  <string name="delete_tab_group_confirmation_dialog_body">ᱱᱚᱣᱟ ᱫᱚ ᱜᱟᱫᱮᱞ ᱥᱟᱹᱢᱩᱫᱽ ᱞᱟᱹᱜᱤᱫ ᱢᱮᱴᱟᱣ ᱠᱮᱜᱼᱟᱭ ᱾</string>
+  <!-- Text shown on the confirm button in the Delete tab group confirmation dialog. -->
+  <string name="delete_tab_group_confirmation_dialog_confirm">ᱜᱟᱫᱮᱞ ᱢᱮᱴᱟᱣ ᱢᱮ</string>
+  <!-- Text shown on the cancel button in the Delete tab group confirmation dialog. -->
+  <string name="delete_tab_group_confirmation_dialog_cancel">ᱵᱟᱹᱰᱨᱟᱹ</string>
   <!--
     History
 
@@ -1495,6 +1757,8 @@
   <string name="download_delete_item">ᱢᱮᱴᱟᱣ ᱢᱮ</string>
   <!-- Content description for the toolbar "Navigate back" button -->
   <string name="download_navigate_back_description">ᱯᱟᱹᱪᱷᱞᱟᱹᱥᱮᱱ ᱪᱟᱞᱟᱜ ᱢᱮ</string>
+  <!-- Content description for the toolbar "Navigate to Downloads Settings" button -->
+  <string name="download_navigate_settings_description">ᱰᱟᱩᱱᱞᱳᱰ ᱥᱮᱴᱤᱝ ᱨᱮ ᱪᱟᱞᱟᱜ ᱢᱮ</string>
   <!-- Content description for the toolbar back button while searching the downloads -->
   <string name="download_close_search_description">ᱨᱩᱣᱟᱹᱲ ᱟᱨ ᱥᱮᱸᱫᱽᱨᱟ ᱵᱚᱸᱫᱚᱭ ᱢᱮ</string>
   <!--
@@ -1512,12 +1776,20 @@
   <string name="download_share_url">URL ᱦᱟᱹᱴᱤᱧ ᱢᱮ</string>
   <!-- Text for the button to share the download file -->
   <string name="download_share_file">ᱨᱮᱫᱽ ᱦᱟᱹᱴᱤᱧ ᱢᱮ</string>
+  <!-- Text for the button to rename the download file -->
+  <string name="download_rename_file">ᱨᱮᱫᱽ ᱫᱩᱦᱲᱟᱹ ᱧᱩᱛᱩᱢ ᱢᱮ</string>
   <!-- Alert dialog confirmation before deleting multiple download items, this is the title. -->
   <string name="download_delete_multi_select_dialog_confirmation">ᱪᱮᱫ ᱟᱢ ᱴᱷᱟᱹᱣᱠᱟᱹ ᱜᱮᱭᱟᱢ ᱟᱢ ᱵᱟᱪᱷᱟᱣ ᱟᱠᱟᱱ ᱡᱤᱱᱤᱥ ᱠᱚ ᱢᱮᱴᱟᱣ ᱥᱟᱱᱟᱭᱮᱫ ᱢᱮᱭᱟ ?</string>
   <!-- Alert dialog confirmation before deleting multiple download items, this is the positive action. -->
   <string name="download_delete_multi_select_dialog_confirm">ᱢᱮᱴᱟᱣ ᱢᱮ</string>
   <!-- Alert dialog confirmation before deleting multiple download items, this is the negative action. -->
   <string name="download_delete_multi_select_dialog_cancel">ᱵᱟᱹᱰᱨᱟᱹ</string>
+  <!-- Title for the alert dialog confirmation before renaming a download item. -->
+  <string name="download_rename_dialog_title">ᱨᱮᱫᱽ ᱫᱩᱦᱲᱟᱹ ᱧᱩᱛᱩᱢ ᱢᱮ</string>
+  <!-- Label for the name field in the alert dialog confirmation before renaming a download item. -->
+  <string name="download_rename_dialog_label">ᱧᱩᱛᱩᱢ</string>
+  <string name="download_rename_dialog_confirm_button">ᱥᱟᱺᱪᱟᱣ ᱢᱮ</string>
+  <string name="download_rename_dialog_cancel_button">ᱵᱟᱹᱰᱨᱟᱹ</string>
   <!-- Text for the header of in progress downloads -->
   <string name="download_header_in_progress">ᱨᱮ ᱞᱟᱦᱟᱜ ᱠᱟᱱᱟ</string>
   <!--
@@ -1609,8 +1881,6 @@
   <string name="webcompat_reporter_choose_reason_2">ᱢᱤᱫ ᱠᱟᱨᱚᱱ ᱵᱟᱪᱷᱟᱣ ᱢᱮ</string>
   <!-- The error message of the dropdown, prompting the user to select a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_choose_reason_error">ᱫᱟᱭᱟ ᱠᱟᱛᱮ ᱢᱤᱫ ᱠᱟᱨᱚᱱ ᱵᱟᱪᱷᱟᱣ ᱢᱮ</string>
-  <!-- The label/title of an optional field in the Web Compat Reporter feature for adding additional information. -->
-  <string name="webcompat_reporter_label_description">ᱮᱴᱠᱮᱴᱚᱬᱮ ᱵᱟᱛᱟᱣ ᱢᱮ (ᱩᱱᱟᱹᱜ ᱵᱟᱝ ᱞᱟᱹᱠᱛᱤ)</string>
   <!-- The button text for navigating away from the feature to provide more information on the broken site's bug report. -->
   <string name="webcompat_reporter_add_more_info">ᱵᱟᱹᱲᱛᱤ ᱵᱟᱰᱟᱭ ᱥᱮᱞᱮᱫ ᱢᱮ</string>
   <!-- The button text for the cancel button to leave the Web Compat Reporter feature. -->
@@ -1619,12 +1889,6 @@
   <string name="webcompat_reporter_send">ᱠᱩᱞ ᱢᱮ</string>
   <!-- Text for a snackbar to confirm the successful submission of a WebCompat report. -->
   <string name="webcompat_reporter_success_snackbar_text_2">ᱨᱤᱯᱚᱨᱴ ᱵᱷᱮᱡᱟ ᱦᱩᱭ ᱮᱱᱟ</string>
-  <!-- Placeholder text for the description field to prompt the user on what they should type. -->
-  <string name="webcompat_reporter_problem_description_placeholder_text">ᱪᱮᱫ ᱦᱩᱭ ᱟᱠᱟᱱᱟ? ᱪᱮᱫ ᱦᱩᱭ ᱞᱟᱹᱠᱛᱤ ᱛᱟᱦᱮᱸ ᱠᱟᱱᱟ?</string>
-  <!-- Label of the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. -->
-  <string name="webcompat_reporter_etp_checkbox_text">ᱴᱨᱮᱠᱤᱝ ᱨᱩᱠᱷᱤᱭᱟᱹ ᱦᱚᱛᱮᱛᱮ ᱵᱞᱚᱠ ᱟᱠᱟᱱ URL ᱠᱚ ᱵᱷᱮᱡᱟᱭ ᱢᱮ</string>
-  <!-- Description text for the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. It informs the user when checked, the report will include the list of URLs that were blocked by Enhanced Tracking Protection on the current page. -->
-  <string name="webcompat_reporter_etp_checkbox_description">ᱵᱟᱹᱲᱛᱤ ᱴᱨᱮᱠᱤᱝ ᱨᱚᱠᱷᱟ ᱴᱨᱮᱠᱟᱨ ᱠᱚ ᱟᱨ ᱥᱠᱨᱤᱯᱴ ᱠᱚ ᱵᱞᱚᱠ ᱫᱟᱲᱮᱭᱟᱜᱼᱟ ᱡᱟᱦᱟᱸ ᱫᱚ ᱛᱤᱱᱟᱹᱜ ᱜᱟᱱ ᱣᱮᱵᱽᱥᱟᱭᱤᱴ ᱠᱚ ᱵᱮᱥ ᱞᱮᱠᱟ ᱠᱟᱹᱢᱤ ᱞᱟᱹᱠᱛᱤᱭᱟ᱾</string>
   <!-- The button text for the preview report button to view a preview of the report. -->
   <string name="webcompat_reporter_preview_report">ᱠᱷᱚᱵᱚᱨ ᱧᱮᱞ ᱫᱩᱦᱲᱟᱹ</string>
   <!-- The title shown at the top of the WebCompat Report preview panel. This appears after the user taps the “Preview” button before sending a report. -->
@@ -2573,6 +2837,24 @@
   <string name="saved_logins_sort_strategy_last_used">ᱢᱟᱲᱟᱝ ᱵᱮᱵᱷᱟᱨᱟᱜ</string>
   <!-- Content description (not visible, for screen readers etc.) -->
   <string name="saved_logins_menu_dropdown_chevron_icon_content_description_2">ᱫᱟᱱᱟᱝ ᱥᱟᱵᱟᱫᱽ ᱢᱮᱱᱩ ᱥᱮᱴ ᱢᱮ</string>
+  <!-- Label for the browser VPN toggle on the settings screen -->
+  <string name="ip_protection_toggle_label">VPN</string>
+  <!-- Headline for the browser VPN promo card. %s is the name of the app (for example "Firefox"). -->
+  <string name="ip_protection_promo_headline">%s ᱨᱮᱭᱟᱜ ᱵᱤᱞᱴ-ᱤᱱ VPN</string>
+  <!-- Link text that opens additional information about the browser VPN -->
+  <string name="ip_protection_learn_more">ᱰᱷᱮᱨ ᱥᱮᱬᱟᱭ ᱢᱮ</string>
+  <!-- Label for the monthly data allowance section on the browser VPN settings screen -->
+  <string name="ip_protection_data_limit_label">ᱪᱟᱸᱫᱚ ᱰᱟᱴᱟ ᱥᱤᱢᱟᱹ</string>
+  <!-- Description shown on the browser VPN settings screen prompting the user to turn the VPN on. -->
+  <string name="ip_protection_settings_description" tools:ignore="UnusedResources">ᱟᱢᱟᱜ ᱵᱽᱨᱟᱣᱩᱡᱤᱝ ᱟᱨᱦᱚᱸ ᱯᱨᱟᱭᱣᱮᱴ ᱟᱨ ᱴᱨᱮᱥ ᱞᱟᱹᱜᱤᱫ ᱟᱸᱴ ᱞᱟᱹᱜᱤᱫ ᱣᱤ ᱯᱤ ᱮᱱ ᱪᱟᱹᱞᱩᱭ ᱢᱮ ᱾</string>
+  <!-- Title shown on the browser VPN settings screen for location selection section. -->
+  <string name="ip_protection_location_title" tools:ignore="UnusedResources">ᱡᱟᱭᱜᱟ</string>
+  <!-- Label for the Recommended server location option which is automatically selected by the browser. -->
+  <string name="ip_protection_recommended_location" tools:ignore="UnusedResources">ᱵᱟᱛᱟᱣᱟᱜ</string>
+  <!-- Headline for the card that promotes the standalone Mozilla VPN product. -->
+  <string name="ip_protection_mozilla_vpn_upsell_headline" tools:ignore="UnusedResources,BrandUsage">Mozilla VPN ᱥᱟᱶ ᱟᱨᱦᱚᱸ ᱨᱩᱠᱷᱤᱭᱟᱹ ᱢᱮ</string>
+  <!-- Body for the card that promotes the standalone Mozilla VPN product. -->
+  <string name="ip_protection_mozilla_vpn_upsell_body" tools:ignore="UnusedResources">᱓᱐᱐+ ᱴᱷᱟᱶ ᱠᱷᱚᱱ ᱵᱟᱪᱷᱟᱣ ᱢᱮ ᱟᱨ ᱟᱢᱟᱜ ᱡᱚᱛᱚ ᱮᱯᱥ ᱠᱚ ᱕ ᱰᱤᱵᱷᱟᱭᱤᱥ ᱦᱟᱹᱵᱤᱡ ᱨᱟᱠᱷᱟ ᱫᱚᱦᱚᱭ ᱢᱮ ᱾</string>
   <!--
     Autofill
 
@@ -2725,8 +3007,6 @@
   <string name="addresses_save_button">ᱥᱟᱧᱪᱟᱣ</string>
   <!-- The text for the "Cancel" button for cancelling adding, updating or deleting an address -->
   <string name="addresses_cancel_button">ᱵᱟᱹᱰᱨᱟᱹ</string>
-  <!-- The text for the "Delete address" button for deleting an address -->
-  <string name="addressess_delete_address_button">ᱴᱷᱤᱠᱬᱟᱹ ᱢᱮᱴᱟᱣ ᱢᱮ</string>
   <!-- The title for the "Delete address" confirmation dialog -->
   <string name="addressess_confirm_dialog_message_2">ᱱᱚᱶᱟ ᱴᱷᱤᱠᱬᱟᱹ ᱢᱮᱴᱟᱣᱟ ᱥᱮ ?</string>
   <!-- The text for the positive button on "Delete address" dialog -->
@@ -3248,8 +3528,6 @@
     %s is the name of the app (for example "Firefox").
   -->
   <string name="protection_panel_banner_protected_title">%s ᱨᱩᱠᱷᱤᱭᱟᱹ ᱨᱮ ᱢᱮᱱᱟᱜ ᱠᱟᱹᱫᱮᱭᱟ</string>
-  <!-- Description text for the protection panel banner when tracking protection is enabled. -->
-  <string name="protection_panel_banner_protected_description">ᱟᱢ ᱨᱩᱠᱷᱤᱭᱟᱹ ᱜᱮᱭᱟᱢ ᱾ \u0020ᱡᱩᱫᱤ ᱟᱞᱮ ᱡᱟᱦᱟᱱᱟᱜ ᱞᱮ ᱧᱮᱞ ᱧᱟᱢ ᱠᱮᱫᱟ, ᱟᱞᱮ ᱟᱢ ᱞᱮ ᱵᱟᱰᱟᱭ ᱚᱪᱚ ᱢᱮᱭᱟ ᱾</string>
   <!-- Label text for the Enhanced Tracking Protection toggle. -->
   <string name="protection_panel_etp_toggle_label">ᱵᱟᱲᱦᱟᱣᱟᱠᱟᱱ ᱯᱟᱸᱡᱟ ᱨᱚᱯᱷᱟ</string>
   <!-- Toggle if Enhanced Tracking Protection is turned on -->
@@ -3265,25 +3543,12 @@
     %d is a placeholder for the number of trackers blocked.
   -->
   <string name="protection_panel_num_trackers_blocked">ᱴᱨᱮᱠᱟᱨ ᱠᱚ ᱵᱞᱚᱠ ᱮᱱᱟ: %d</string>
-  <!-- Text for when no trackers have been blocked. -->
-  <string name="protection_panel_no_trackers_blocked">ᱯᱟᱧᱡᱟᱠᱩᱜ ᱵᱟᱠᱚ ᱧᱟᱢ ᱞᱮᱱᱟ</string>
   <!-- Text for when tracking protection is disabled and no trackers are blocked. -->
   <string name="protection_panel_etp_disabled_no_trackers_blocked">ᱴᱨᱮᱠᱟᱨ ᱠᱚ ᱵᱟᱠᱚ ᱮᱥᱮᱫ ᱟᱠᱟᱱᱟ</string>
   <!-- Link text to navigate to privacy and security settings from the protection panel. -->
   <string name="protection_panel_privacy_and_security_settings_2">ᱯᱨᱟᱭᱣᱮᱥᱤ ᱥᱮᱴᱤᱝ</string>
   <!-- Title text for the protection panel permissions section. -->
   <string name="protection_panel_permissions_title">ᱪᱷᱟᱹᱰ ᱠᱚ</string>
-  <!--
-    Text for displaying the total number of trackers blocked in the trackers blocked panel.
-    %d is a placeholder for the number of trackers blocked.
-  -->
-  <string name="trackers_blocked_panel_total_num_trackers_blocked">ᱴᱨᱮᱠᱟᱨ ᱠᱚ ᱵᱞᱚᱠ ᱮᱱᱟ: %d</string>
-  <!--
-    Text for displaying the number of trackers blocked for a specific tracker category in the trackers blocked panel.
-    %s is a placeholder for the name of the tracker category.
-    %d is a placeholder for the number of trackers blocked.
-  -->
-  <string name="trackers_blocked_panel_categorical_num_trackers_blocked">%s: %d</string>
   <!--
     Description text for a dialog confirming whether the user wants to delete all data for current site.
     %s is a placeholder for the base domain of website.

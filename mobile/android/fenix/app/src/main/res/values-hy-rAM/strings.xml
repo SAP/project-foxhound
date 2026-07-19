@@ -31,6 +31,8 @@
   <string name="history_search_hint">Որոնման պատմություն</string>
   <!-- Placeholder text shown in search bar when using bookmarks search -->
   <string name="bookmark_search_hint">Որոնել էջանիշեր</string>
+  <!-- Content description for the toolbar back button while searching bookmarks -->
+  <string name="bookmark_close_search_description">Վերադառնալ և փակել որոնումը</string>
   <!-- Placeholder text shown in search bar when using tabs search -->
   <string name="tab_search_hint">Որոնել ներդիրներ</string>
   <!-- Placeholder text shown in the search bar when using application search engines -->
@@ -1541,6 +1543,8 @@
   <string name="add_tab">Ավելացնել ներդիր</string>
   <!-- Content description (not visible, for screen readers etc.): Add tab button. Adds a news tab when pressed -->
   <string name="add_private_tab">Հավելել գաղտնի ներդիր</string>
+  <!-- Content description (not visible, for screen readers etc.): Create tab group button. Opens the create tab group sheet when pressed -->
+  <string name="create_tab_group_content_description">Ստեղծել ներդիրների խումբ</string>
   <!-- Text for the tab search bar placeholder -->
   <string name="tab_manager_search_bar_placeholder">Որոնեք ձեր ներդիրներում</string>
   <!-- Text shown in the menu to view recently closed tabs -->
@@ -1712,8 +1716,6 @@
   <string name="tab_group_color_pink">Վարդագույն</string>
   <!-- Tab group color: Purple -->
   <string name="tab_group_color_purple">Մանուշակագույն</string>
-  <!-- Tab group color: Violet -->
-  <string name="tab_group_color_violet">Մանուշակագույն</string>
   <!-- Tab group color: Blue -->
   <string name="tab_group_color_blue">Կապույտ</string>
   <!-- Tab group color: Cyan -->
@@ -1983,8 +1985,6 @@
   <string name="webcompat_reporter_choose_reason_error">Ընտրեք պատճառ</string>
   <!-- The label/title of an optional field in the Web Compat Reporter feature for adding additional information. -->
   <string name="webcompat_reporter_label_description_2">Մանրամասն նկարագրեք խնդիրը, որպեսզի մենք կարողանանք այն ուսումնասիրել (լրացուցիչ):</string>
-  <!-- The label/title of an optional field in the Web Compat Reporter feature for adding additional information. -->
-  <string name="webcompat_reporter_label_description">Նկարագրեք խնդիրը (ըստ ցանկության)</string>
   <!-- The button text for navigating away from the feature to provide more information on the broken site's bug report. -->
   <string name="webcompat_reporter_add_more_info">Ավելացնել ավելի շատ տեղեկություններ</string>
   <!-- The button text for the cancel button to leave the Web Compat Reporter feature. -->
@@ -1997,14 +1997,8 @@
   <string name="webcompat_reporter_success_snackbar_text_2">Զեկույցն ուղարկվեց</string>
   <!-- Placeholder text for the description field to prompt the user on what they should type. -->
   <string name="webcompat_reporter_problem_description_placeholder_text_2">Ի՞նչ պատահեց։ Ի՞նչ էիք սպասում, որ պատահի։ Խնդրում եմ, նշեք խնդիրը վերարտադրելու քայլերը։</string>
-  <!-- Placeholder text for the description field to prompt the user on what they should type. -->
-  <string name="webcompat_reporter_problem_description_placeholder_text">Ի՞նչ պատահեց։ Ի՞նչ պետք է պատահեր։</string>
   <!-- Label of the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. -->
   <string name="webcompat_reporter_etp_checkbox_text_2">Ուղարկել հետագծման պաշտպանության կողմից արգելափակված տարրերի ցանկը</string>
-  <!-- Label of the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. -->
-  <string name="webcompat_reporter_etp_checkbox_text">Ուղարկել URL-ներն արգելափակված են հետագծման պաշտպանության կողմից</string>
-  <!-- Description text for the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. It informs the user when checked, the report will include the list of URLs that were blocked by Enhanced Tracking Protection on the current page. -->
-  <string name="webcompat_reporter_etp_checkbox_description">Բարելավված հետագծման պաշտպանությունը կարող է արգելափակել հետագծիչներն ու սկրիպտները, որոնք որոշ կայքերի համար անհրաժեշտ են ճիշտ աշխատանքի համար։</string>
   <!-- The button text for the preview report button to view a preview of the report. -->
   <string name="webcompat_reporter_preview_report">Նախադիտել հաշվետվությունը</string>
   <!-- The title shown at the top of the WebCompat Report preview panel. This appears after the user taps the “Preview” button before sending a report. -->
@@ -2202,6 +2196,10 @@
   <string name="bookmark_select_folder_new_folder_button_title">Նոր պանակ</string>
   <!-- Bookmark snackbar message for moving a single item. %1$s is the title of the item being moved and %2$s is the new parent folder of the bookmark -->
   <string name="bookmark_moved_single_item">%1$s-ը տեղափոխվեց %2$s</string>
+  <!-- Text for bookmark search page when there are no results. -->
+  <string name="bookmark_no_search_results">Համընկնումներ չեն գտնվել։</string>
+  <!-- Additional text for bookmark search page when there are no results. -->
+  <string name="bookmark_no_search_results_additional_text">Փորձեք մեկ այլ որոնում։</string>
   <!--
     Site Permissions
 
@@ -2629,15 +2627,6 @@
     -->
     <item quantity="one">%d հետագծիչն արգելափակված է</item>
     <item quantity="other">%d հետագծիչներն արգելափակված են</item>
-  </plurals>
-  <plurals name="trackers_blocked_count">
-    <!--
-      Trackers blocked card on homepage
-
-      Text shown on the trackers blocked card. %d is the number of trackers blocked.
-    -->
-    <item quantity="one">%d հետագծող արգելափակված են</item>
-    <item quantity="other">%d հետագծողներ արգելափակված են</item>
   </plurals>
   <!-- Text shown on the trackers blocked card when no trackers have been blocked yet -->
   <string name="trackers_blocked_empty">Դուք պաշտպանված եք</string>
@@ -3141,6 +3130,30 @@
   <string name="ip_protection_data_limit_reached_snackbar">Օգտագործվել է %1$d ԳԲ VPN տվյալներ։ Հասանելիությունը կվերակայվի հաջորդ ամիս։</string>
   <!-- Snackbar (in-app pop-up notification) action button text that takes the user to the VPN settings screen. -->
   <string name="ip_protection_data_limit_reached_snackbar_action">Կարգավորումներ</string>
+  <!-- Description shown on the browser VPN settings screen prompting the user to turn the VPN on. -->
+  <string name="ip_protection_settings_description" tools:ignore="UnusedResources">Միացրեք VPN-ը՝ ձեր դիտարկիչն ավելի գաղտնի և դժվար հետագծվող դարձնելու համար։</string>
+  <!-- Title shown on the browser VPN settings screen for location selection section. -->
+  <string name="ip_protection_location_title" tools:ignore="UnusedResources">Տեղադրություն</string>
+  <!-- Label for the Recommended server location option which is automatically selected by the browser. -->
+  <string name="ip_protection_recommended_location" tools:ignore="UnusedResources">Խորհուրդ է տրվում՝</string>
+  <!-- Headline for the card that promotes the standalone Mozilla VPN product. -->
+  <string name="ip_protection_mozilla_vpn_upsell_headline" tools:ignore="UnusedResources,BrandUsage">Ավելի շատ պաշտպանեք Mozilla VPN-ով</string>
+  <!-- Body for the card that promotes the standalone Mozilla VPN product. -->
+  <string name="ip_protection_mozilla_vpn_upsell_body" tools:ignore="UnusedResources">Ընտրեք 300+ վայրերից և պաշտպանեք ձեր բոլոր հավելվածները մինչև 5 սարքի վրա։</string>
+  <!-- Label for the button that takes the user to get the standalone Mozilla VPN product. -->
+  <string name="ip_protection_mozilla_vpn_upsell_button" tools:ignore="UnusedResources,BrandUsage">Ստացեք Mozilla VPN-ը</string>
+  <!-- Title for the browser VPN location picker screen. -->
+  <string name="ip_protection_location_picker_title" tools:ignore="UnusedResources">Ընտրել VPN-ի տեղադրությունը</string>
+  <!-- Description for what it means to use the Recommended setting and let the app automatically pick the best server location. -->
+  <string name="ip_protection_location_fastest_description" tools:ignore="UnusedResources, BrandUsage">Firefox-ը գտնում է ամենաարագ տեղադրությունը</string>
+  <!-- Error message shown when the selected browser VPN location is unavailable. -->
+  <string name="ip_protection_location_unavailable" tools:ignore="UnusedResources">Տեղադրությունը հասանելի չէ։ Ընտրեք մեկ այլ տեղադրություն։</string>
+  <!-- Snackbar (in-app pop-up notification) text shown when the previously selected browser VPN location is unavailable and the recommended location was used instead. -->
+  <string name="ip_protection_location_unavailable_recommended_snackbar" tools:ignore="UnusedResources">Ընտրված VPN տեղադրությունը հասանելի չէ։ Միացված է առաջարկվող տեղադրությանը։</string>
+  <!-- Title for the card shown to the user when we are unable to fetch server locations -->
+  <string name="ip_protection_location_unavailable_title" tools:ignore="UnusedResources">Նախորդ տեղադրությունը հասանելի չէ</string>
+  <!-- Description for the card shown to the user when we are unable to fetch server locations -->
+  <string name="ip_protection_location_unavailable_recommended_description" tools:ignore="UnusedResources">Կապակցված է առաջարկվող տեղադրությանը։</string>
   <!--
     Autofill
 
@@ -3293,8 +3306,6 @@
   <string name="addresses_save_button">Պահպանել</string>
   <!-- The text for the "Cancel" button for cancelling adding, updating or deleting an address -->
   <string name="addresses_cancel_button">Չեղարկել</string>
-  <!-- The text for the "Delete address" button for deleting an address -->
-  <string name="addressess_delete_address_button">Ջնջել հասցեն</string>
   <!-- The title for the "Delete address" confirmation dialog -->
   <string name="addressess_confirm_dialog_message_2">Ջնջե՞լ այս հասցեն:</string>
   <!-- The text for the positive button on "Delete address" dialog -->
@@ -3849,8 +3860,6 @@
     and there are no trackers blocked.
   -->
   <string name="protection_panel_banner_protected_no_blocked_trackers_description">Դուք պաշտպանված եք։</string>
-  <!-- Description text for the protection panel banner when tracking protection is enabled. -->
-  <string name="protection_panel_banner_protected_description">Դուք պաշտպանված եք: Եթե ինչ-որ բան նկատենք, ձեզ կտեղեկացնենք։</string>
   <!-- Label text for the Enhanced Tracking Protection toggle. -->
   <string name="protection_panel_etp_toggle_label">Ուժեղացված հետագծման պաշտպանություն</string>
   <!-- Toggle if Enhanced Tracking Protection is turned on -->
@@ -3866,8 +3875,6 @@
     %d is a placeholder for the number of trackers blocked.
   -->
   <string name="protection_panel_num_trackers_blocked">Հետագծողներ են արգելափակված՝ %d</string>
-  <!-- Text for when no trackers have been blocked. -->
-  <string name="protection_panel_no_trackers_blocked">Հետագծողներ չեն գտնվել</string>
   <!-- Text for when tracking protection is disabled and no trackers are blocked. -->
   <string name="protection_panel_etp_disabled_no_trackers_blocked">Հետագծիչներն արգելափակված չեն</string>
   <!-- Link text to navigate to privacy and security settings from the protection panel. -->
@@ -3930,17 +3937,6 @@
     <item quantity="one">%1$d հետագծող արգելափակված է այս շաբաթ</item>
     <item quantity="other">%1$d հետագծողներ արգելափակված է այս շաբաթ</item>
   </plurals>
-  <!--
-    Text for displaying the total number of trackers blocked in the trackers blocked panel.
-    %d is a placeholder for the number of trackers blocked.
-  -->
-  <string name="trackers_blocked_panel_total_num_trackers_blocked">Հետագծողներ են արգելափակված՝ %d</string>
-  <!--
-    Text for displaying the number of trackers blocked for a specific tracker category in the trackers blocked panel.
-    %s is a placeholder for the name of the tracker category.
-    %d is a placeholder for the number of trackers blocked.
-  -->
-  <string name="trackers_blocked_panel_categorical_num_trackers_blocked">%s՝ %d</string>
   <!--
     Description text for a dialog confirming whether the user wants to delete all data for current site.
     %s is a placeholder for the base domain of website.

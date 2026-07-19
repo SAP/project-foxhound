@@ -7,34 +7,6 @@
 -->
 
 <resources>
-  <!-- Title shown in the protection dashboard indicating the user is protected -->
-  <string name="mozac_protections_dashboard_youre_protected">אתה מוגן</string>
-  <plurals name="mozac_protections_dashboard_trackers_blocked_this_week">
-    <!--
-      Label shown below the tracker count in the dashboard. The count is displayed separately
-      above this string and is used to select the correct plural form. Do not include the number in
-      the translation.
-    -->
-    <item quantity="one">רכיב מעקב נחסם השבוע</item>
-    <item quantity="two">רכיבי מעקב נחסמו השבוע</item>
-    <item quantity="other">רכיבי מעקב נחסמו השבוע</item>
-  </plurals>
-  <plurals name="mozac_protections_dashboard_data_saved">
-    <!-- Label showing data saved in megabytes. %1$d is the number of MB saved -->
-    <item quantity="one">נחסך %1$d מ״ב</item>
-    <item quantity="two">נחסכו %1$d מ״ב</item>
-    <item quantity="other">נחסכו %1$d מ״ב</item>
-  </plurals>
-  <!-- Section header for tracker category breakdown -->
-  <string name="protections_dashboard_where_they_came_from">מאיפה הם הגיעו</string>
-  <!-- Tracker category: Advertising trackers -->
-  <string name="protections_dashboard_category_ads">פרסומות</string>
-  <!-- Tracker category: Analytics trackers -->
-  <string name="protections_dashboard_category_analytics">ניתוח</string>
-  <!-- Tracker category: Social media trackers -->
-  <string name="protections_dashboard_category_social">רשתות חברתיות</string>
-  <!-- Tracker category: Other trackers -->
-  <string name="protections_dashboard_category_others">אחרים</string>
   <!-- Title shown in the protection dashboard header next to the shield icon -->
   <string name="mozac_protections_dashboard_trackers_blocked_this_week_title">רכיבי מעקב נחסמו השבוע</string>
   <!--

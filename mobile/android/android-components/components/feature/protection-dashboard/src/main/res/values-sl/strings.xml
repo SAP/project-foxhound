@@ -7,36 +7,6 @@
 -->
 
 <resources>
-  <!-- Title shown in the protection dashboard indicating the user is protected -->
-  <string name="mozac_protections_dashboard_youre_protected">Zaščiteni ste</string>
-  <plurals name="mozac_protections_dashboard_trackers_blocked_this_week">
-    <!--
-      Label shown below the tracker count in the dashboard. The count is displayed separately
-      above this string and is used to select the correct plural form. Do not include the number in
-      the translation.
-    -->
-    <item quantity="one">En sledilec je bil blokiran ta teden.</item>
-    <item quantity="two">Dva sledilca sta bila blokirana ta teden.</item>
-    <item quantity="few">Trije sledilci so bili blokirani ta teden.</item>
-    <item quantity="other">Več sledilcev je bilo blokiranih ta teden.</item>
-  </plurals>
-  <plurals name="mozac_protections_dashboard_data_saved">
-    <!-- Label showing data saved in megabytes. %1$d is the number of MB saved -->
-    <item quantity="one">Prihranek %1$d MB</item>
-    <item quantity="two">Prihranek %1$d MB</item>
-    <item quantity="few">Prihranek %1$d MB</item>
-    <item quantity="other">Prihranek %1$d MB</item>
-  </plurals>
-  <!-- Section header for tracker category breakdown -->
-  <string name="protections_dashboard_where_they_came_from">Od kod so prišli</string>
-  <!-- Tracker category: Advertising trackers -->
-  <string name="protections_dashboard_category_ads">Oglasi</string>
-  <!-- Tracker category: Analytics trackers -->
-  <string name="protections_dashboard_category_analytics">Analitika</string>
-  <!-- Tracker category: Social media trackers -->
-  <string name="protections_dashboard_category_social">Družbena omrežja</string>
-  <!-- Tracker category: Other trackers -->
-  <string name="protections_dashboard_category_others">Drugo</string>
   <!-- Title shown in the protection dashboard header next to the shield icon -->
   <string name="mozac_protections_dashboard_trackers_blocked_this_week_title">Sledilci, blokirani ta teden</string>
   <!--

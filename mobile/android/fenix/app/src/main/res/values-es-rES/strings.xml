@@ -1712,8 +1712,6 @@
   <string name="tab_group_color_pink">Rosa</string>
   <!-- Tab group color: Purple -->
   <string name="tab_group_color_purple">Púrpura</string>
-  <!-- Tab group color: Violet -->
-  <string name="tab_group_color_violet">Violeta</string>
   <!-- Tab group color: Blue -->
   <string name="tab_group_color_blue">Azul</string>
   <!-- Tab group color: Cyan -->
@@ -1983,8 +1981,6 @@
   <string name="webcompat_reporter_choose_reason_error">Por favor, elige un motivo</string>
   <!-- The label/title of an optional field in the Web Compat Reporter feature for adding additional information. -->
   <string name="webcompat_reporter_label_description_2">Describe el problema en detalle para ayudarnos a investigarlo (opcional)</string>
-  <!-- The label/title of an optional field in the Web Compat Reporter feature for adding additional information. -->
-  <string name="webcompat_reporter_label_description">Describir el problema (opcional)</string>
   <!-- The button text for navigating away from the feature to provide more information on the broken site's bug report. -->
   <string name="webcompat_reporter_add_more_info">Añadir más información</string>
   <!-- The button text for the cancel button to leave the Web Compat Reporter feature. -->
@@ -1997,14 +1993,8 @@
   <string name="webcompat_reporter_success_snackbar_text_2">Informe enviado</string>
   <!-- Placeholder text for the description field to prompt the user on what they should type. -->
   <string name="webcompat_reporter_problem_description_placeholder_text_2">¿Qué ha sucedido? ¿Qué esperabas que sucediera? Por favor, proporciona los pasos para reproducir el problema.</string>
-  <!-- Placeholder text for the description field to prompt the user on what they should type. -->
-  <string name="webcompat_reporter_problem_description_placeholder_text">¿Qué ha sucedido? ¿Qué debería haber pasado?</string>
   <!-- Label of the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. -->
   <string name="webcompat_reporter_etp_checkbox_text_2">Enviar una lista de elementos bloqueados por la protección contra el rastreo</string>
-  <!-- Label of the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. -->
-  <string name="webcompat_reporter_etp_checkbox_text">Enviar URLs bloqueadas por la protección contra el rastreo</string>
-  <!-- Description text for the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. It informs the user when checked, the report will include the list of URLs that were blocked by Enhanced Tracking Protection on the current page. -->
-  <string name="webcompat_reporter_etp_checkbox_description">La protección mejorada contra el rastreo puede bloquear rastreadores y scripts que algunos sitios web necesitan para funcionar correctamente.</string>
   <!-- The button text for the preview report button to view a preview of the report. -->
   <string name="webcompat_reporter_preview_report">Vista previa del informe</string>
   <!-- The title shown at the top of the WebCompat Report preview panel. This appears after the user taps the “Preview” button before sending a report. -->
@@ -2622,15 +2612,6 @@
   <!-- Text displayed that links to website about enhanced tracking protection -->
   <string name="preference_enhanced_tracking_protection_explanation_learn_more">Leer más</string>
   <plurals name="trackers_blocked_count_2">
-    <!--
-      Trackers blocked card on homepage
-
-      Text shown on the trackers blocked card. %d is the number of trackers blocked.
-    -->
-    <item quantity="one">%d rastreador bloqueado</item>
-    <item quantity="other">%d rastreadores bloqueados</item>
-  </plurals>
-  <plurals name="trackers_blocked_count">
     <!--
       Trackers blocked card on homepage
 
@@ -3293,8 +3274,6 @@
   <string name="addresses_save_button">Guardar</string>
   <!-- The text for the "Cancel" button for cancelling adding, updating or deleting an address -->
   <string name="addresses_cancel_button">Cancelar</string>
-  <!-- The text for the "Delete address" button for deleting an address -->
-  <string name="addressess_delete_address_button">Eliminar dirección</string>
   <!-- The title for the "Delete address" confirmation dialog -->
   <string name="addressess_confirm_dialog_message_2">¿Eliminar esta dirección?</string>
   <!-- The text for the positive button on "Delete address" dialog -->
@@ -3849,8 +3828,6 @@
     and there are no trackers blocked.
   -->
   <string name="protection_panel_banner_protected_no_blocked_trackers_description">Estás protegido.</string>
-  <!-- Description text for the protection panel banner when tracking protection is enabled. -->
-  <string name="protection_panel_banner_protected_description">Estás protegido. Si detectamos algo, te lo haremos saber.</string>
   <!-- Label text for the Enhanced Tracking Protection toggle. -->
   <string name="protection_panel_etp_toggle_label">Protección mejorada contra el rastreo</string>
   <!-- Toggle if Enhanced Tracking Protection is turned on -->
@@ -3866,8 +3843,6 @@
     %d is a placeholder for the number of trackers blocked.
   -->
   <string name="protection_panel_num_trackers_blocked">Rastreadores bloqueados: %d</string>
-  <!-- Text for when no trackers have been blocked. -->
-  <string name="protection_panel_no_trackers_blocked">No se han encontrado rastreadores</string>
   <!-- Text for when tracking protection is disabled and no trackers are blocked. -->
   <string name="protection_panel_etp_disabled_no_trackers_blocked">Los rastreadores no están bloqueados</string>
   <!-- Link text to navigate to privacy and security settings from the protection panel. -->
@@ -3930,17 +3905,6 @@
     <item quantity="one">%1$d rastreador bloqueado esta semana</item>
     <item quantity="other">%1$d rastreadores bloqueados esta semana</item>
   </plurals>
-  <!--
-    Text for displaying the total number of trackers blocked in the trackers blocked panel.
-    %d is a placeholder for the number of trackers blocked.
-  -->
-  <string name="trackers_blocked_panel_total_num_trackers_blocked">Rastreadores bloqueados: %d</string>
-  <!--
-    Text for displaying the number of trackers blocked for a specific tracker category in the trackers blocked panel.
-    %s is a placeholder for the name of the tracker category.
-    %d is a placeholder for the number of trackers blocked.
-  -->
-  <string name="trackers_blocked_panel_categorical_num_trackers_blocked">%s: %d</string>
   <!--
     Description text for a dialog confirming whether the user wants to delete all data for current site.
     %s is a placeholder for the base domain of website.

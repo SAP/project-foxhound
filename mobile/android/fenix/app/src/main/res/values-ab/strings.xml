@@ -1741,8 +1741,6 @@
   <string name="addresses_save_button">Ахьчара</string>
   <!-- The text for the "Cancel" button for cancelling adding, updating or deleting an address -->
   <string name="addresses_cancel_button">Аԥыхра</string>
-  <!-- The text for the "Delete address" button for deleting an address -->
-  <string name="addressess_delete_address_button">Ианыхтәуп адрес</string>
   <!-- The title for the "Delete address" confirmation dialog -->
   <string name="addressess_confirm_dialog_message_2">Ари адрес аныхтәума?</string>
   <!-- The text for the positive button on "Delete address" dialog -->

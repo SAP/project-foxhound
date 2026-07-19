@@ -31,6 +31,8 @@
   <string name="history_search_hint">Поиск в журнале</string>
   <!-- Placeholder text shown in search bar when using bookmarks search -->
   <string name="bookmark_search_hint">Поиск в закладках</string>
+  <!-- Content description for the toolbar back button while searching bookmarks -->
+  <string name="bookmark_close_search_description">Вернуться и закрыть поиск</string>
   <!-- Placeholder text shown in search bar when using tabs search -->
   <string name="tab_search_hint">Поиск во вкладках</string>
   <!-- Placeholder text shown in the search bar when using application search engines -->
@@ -1720,8 +1722,6 @@
   <string name="tab_group_color_pink">Розовый</string>
   <!-- Tab group color: Purple -->
   <string name="tab_group_color_purple">Пурпурный</string>
-  <!-- Tab group color: Violet -->
-  <string name="tab_group_color_violet">Фиолетовый</string>
   <!-- Tab group color: Blue -->
   <string name="tab_group_color_blue">Синий</string>
   <!-- Tab group color: Cyan -->
@@ -1992,8 +1992,6 @@
   <string name="webcompat_reporter_choose_reason_error">Пожалуйста, выберите причину</string>
   <!-- The label/title of an optional field in the Web Compat Reporter feature for adding additional information. -->
   <string name="webcompat_reporter_label_description_2">Подробно опишите проблему, чтобы помочь нам исследовать её (необязательно)</string>
-  <!-- The label/title of an optional field in the Web Compat Reporter feature for adding additional information. -->
-  <string name="webcompat_reporter_label_description">Опишите проблему (необязательно)</string>
   <!-- The button text for navigating away from the feature to provide more information on the broken site's bug report. -->
   <string name="webcompat_reporter_add_more_info">Добавить больше информации</string>
   <!-- The button text for the cancel button to leave the Web Compat Reporter feature. -->
@@ -2006,14 +2004,8 @@
   <string name="webcompat_reporter_success_snackbar_text_2">Сообщение отправлено</string>
   <!-- Placeholder text for the description field to prompt the user on what they should type. -->
   <string name="webcompat_reporter_problem_description_placeholder_text_2">Что произошло? Что вы ожидали сделать? Пожалуйста, опишите шаги для воспроизведения проблемы.</string>
-  <!-- Placeholder text for the description field to prompt the user on what they should type. -->
-  <string name="webcompat_reporter_problem_description_placeholder_text">Что произошло? Что должно было произойти?</string>
   <!-- Label of the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. -->
   <string name="webcompat_reporter_etp_checkbox_text_2">Отправить список элементов, заблокированных защитой от отслеживания</string>
-  <!-- Label of the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. -->
-  <string name="webcompat_reporter_etp_checkbox_text">URL отправки, заблокированные защитой от отслеживания</string>
-  <!-- Description text for the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. It informs the user when checked, the report will include the list of URLs that were blocked by Enhanced Tracking Protection on the current page. -->
-  <string name="webcompat_reporter_etp_checkbox_description">Улучшенная защита от отслеживания может блокировать трекеры и скрипты, которые необходимы для корректной работы некоторых веб-сайтов.</string>
   <!-- The button text for the preview report button to view a preview of the report. -->
   <string name="webcompat_reporter_preview_report">Предпросмотр отчёта</string>
   <!-- The title shown at the top of the WebCompat Report preview panel. This appears after the user taps the “Preview” button before sending a report. -->
@@ -2211,6 +2203,10 @@
   <string name="bookmark_select_folder_new_folder_button_title">Новая папка</string>
   <!-- Bookmark snackbar message for moving a single item. %1$s is the title of the item being moved and %2$s is the new parent folder of the bookmark -->
   <string name="bookmark_moved_single_item">Перемещено %1$s в %2$s</string>
+  <!-- Text for bookmark search page when there are no results. -->
+  <string name="bookmark_no_search_results">Ничего не найдено.</string>
+  <!-- Additional text for bookmark search page when there are no results. -->
+  <string name="bookmark_no_search_results_additional_text">Попробуйте другой поиск!</string>
   <!--
     Site Permissions
 
@@ -2639,16 +2635,6 @@
     <item quantity="one">Заблокирован %d трекер</item>
     <item quantity="few">Заблокировано %d трекера</item>
     <item quantity="other">Заблокировано %d трекеров</item>
-  </plurals>
-  <plurals name="trackers_blocked_count">
-    <!--
-      Trackers blocked card on homepage
-
-      Text shown on the trackers blocked card. %d is the number of trackers blocked.
-    -->
-    <item quantity="one">%d трекер заблокирован</item>
-    <item quantity="few">%d трекера заблокировано</item>
-    <item quantity="other">%d трекеров заблокированы</item>
   </plurals>
   <!-- Text shown on the trackers blocked card when no trackers have been blocked yet -->
   <string name="trackers_blocked_empty">Вы защищены</string>
@@ -3152,6 +3138,30 @@
   <string name="ip_protection_data_limit_reached_snackbar">%1$d ГБ данных VPN использовано. Доступ будет сброшен в следующем месяце.</string>
   <!-- Snackbar (in-app pop-up notification) action button text that takes the user to the VPN settings screen. -->
   <string name="ip_protection_data_limit_reached_snackbar_action">Настройки</string>
+  <!-- Description shown on the browser VPN settings screen prompting the user to turn the VPN on. -->
+  <string name="ip_protection_settings_description" tools:ignore="UnusedResources">Включите VPN, чтобы сделать ваш веб-сёрфинг более приватным и сложным в отслеживании.</string>
+  <!-- Title shown on the browser VPN settings screen for location selection section. -->
+  <string name="ip_protection_location_title" tools:ignore="UnusedResources">Расположение</string>
+  <!-- Label for the Recommended server location option which is automatically selected by the browser. -->
+  <string name="ip_protection_recommended_location" tools:ignore="UnusedResources">Рекомендуемые</string>
+  <!-- Headline for the card that promotes the standalone Mozilla VPN product. -->
+  <string name="ip_protection_mozilla_vpn_upsell_headline" tools:ignore="UnusedResources,BrandUsage">Защищайтесь лучше с Mozilla VPN</string>
+  <!-- Body for the card that promotes the standalone Mozilla VPN product. -->
+  <string name="ip_protection_mozilla_vpn_upsell_body" tools:ignore="UnusedResources">Выберите одно из более чем 300 местоположений и защитите все свои приложения на 5 устройствах.</string>
+  <!-- Label for the button that takes the user to get the standalone Mozilla VPN product. -->
+  <string name="ip_protection_mozilla_vpn_upsell_button" tools:ignore="UnusedResources,BrandUsage">Получить Mozilla VPN</string>
+  <!-- Title for the browser VPN location picker screen. -->
+  <string name="ip_protection_location_picker_title" tools:ignore="UnusedResources">Выберите местоположение VPN</string>
+  <!-- Description for what it means to use the Recommended setting and let the app automatically pick the best server location. -->
+  <string name="ip_protection_location_fastest_description" tools:ignore="UnusedResources, BrandUsage">Firefox находит самое быстрое местоположение</string>
+  <!-- Error message shown when the selected browser VPN location is unavailable. -->
+  <string name="ip_protection_location_unavailable" tools:ignore="UnusedResources">Местоположение недоступно. Выберите другое местоположение.</string>
+  <!-- Snackbar (in-app pop-up notification) text shown when the previously selected browser VPN location is unavailable and the recommended location was used instead. -->
+  <string name="ip_protection_location_unavailable_recommended_snackbar" tools:ignore="UnusedResources">Выбранное местоположение VPN недоступно. Подключено к рекомендуемому местоположению.</string>
+  <!-- Title for the card shown to the user when we are unable to fetch server locations -->
+  <string name="ip_protection_location_unavailable_title" tools:ignore="UnusedResources">Предыдущее местоположение недоступно</string>
+  <!-- Description for the card shown to the user when we are unable to fetch server locations -->
+  <string name="ip_protection_location_unavailable_recommended_description" tools:ignore="UnusedResources">Подключено к рекомендуемому местоположению.</string>
   <!--
     Autofill
 
@@ -3304,8 +3314,6 @@
   <string name="addresses_save_button">Сохранить</string>
   <!-- The text for the "Cancel" button for cancelling adding, updating or deleting an address -->
   <string name="addresses_cancel_button">Отмена</string>
-  <!-- The text for the "Delete address" button for deleting an address -->
-  <string name="addressess_delete_address_button">Удалить адрес</string>
   <!-- The title for the "Delete address" confirmation dialog -->
   <string name="addressess_confirm_dialog_message_2">Удалить этот адрес?</string>
   <!-- The text for the positive button on "Delete address" dialog -->
@@ -3861,8 +3869,6 @@
     and there are no trackers blocked.
   -->
   <string name="protection_panel_banner_protected_no_blocked_trackers_description">Вы защищены.</string>
-  <!-- Description text for the protection panel banner when tracking protection is enabled. -->
-  <string name="protection_panel_banner_protected_description">Вы защищены. Если мы что-то заметим, мы сообщим вам.</string>
   <!-- Label text for the Enhanced Tracking Protection toggle. -->
   <string name="protection_panel_etp_toggle_label">Улучшенная защита от отслеживания</string>
   <!-- Toggle if Enhanced Tracking Protection is turned on -->
@@ -3878,8 +3884,6 @@
     %d is a placeholder for the number of trackers blocked.
   -->
   <string name="protection_panel_num_trackers_blocked">Заблокировано трекеров: %d</string>
-  <!-- Text for when no trackers have been blocked. -->
-  <string name="protection_panel_no_trackers_blocked">Трекеров не найдено</string>
   <!-- Text for when tracking protection is disabled and no trackers are blocked. -->
   <string name="protection_panel_etp_disabled_no_trackers_blocked">Трекеры не блокируются</string>
   <!-- Link text to navigate to privacy and security settings from the protection panel. -->
@@ -3949,17 +3953,6 @@
     <item quantity="few">На этой неделе заблокировано %1$d трекера</item>
     <item quantity="other">На этой неделе заблокировано %1$d трекеров</item>
   </plurals>
-  <!--
-    Text for displaying the total number of trackers blocked in the trackers blocked panel.
-    %d is a placeholder for the number of trackers blocked.
-  -->
-  <string name="trackers_blocked_panel_total_num_trackers_blocked">Заблокировано трекеров: %d</string>
-  <!--
-    Text for displaying the number of trackers blocked for a specific tracker category in the trackers blocked panel.
-    %s is a placeholder for the name of the tracker category.
-    %d is a placeholder for the number of trackers blocked.
-  -->
-  <string name="trackers_blocked_panel_categorical_num_trackers_blocked">%s: %d</string>
   <!--
     Description text for a dialog confirming whether the user wants to delete all data for current site.
     %s is a placeholder for the base domain of website.

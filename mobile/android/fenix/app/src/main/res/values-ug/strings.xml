@@ -1677,8 +1677,6 @@
   <string name="tab_group_color_pink">ھالرەڭ</string>
   <!-- Tab group color: Purple -->
   <string name="tab_group_color_purple">بىنەپشە</string>
-  <!-- Tab group color: Violet -->
-  <string name="tab_group_color_violet">كۆكۈچ سۆسۈن</string>
   <!-- Tab group color: Blue -->
   <string name="tab_group_color_blue">كۆك</string>
   <!-- Tab group color: Cyan -->
@@ -1944,8 +1942,6 @@
   <string name="webcompat_reporter_choose_reason_2">سەۋەب تاللىنىدۇ</string>
   <!-- The error message of the dropdown, prompting the user to select a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_choose_reason_error">سەۋەبىنى تاللاڭ</string>
-  <!-- The label/title of an optional field in the Web Compat Reporter feature for adding additional information. -->
-  <string name="webcompat_reporter_label_description">مەسىلە بايانى (تاللاشچان)</string>
   <!-- The button text for navigating away from the feature to provide more information on the broken site's bug report. -->
   <string name="webcompat_reporter_add_more_info">تېخىمۇ كۆپ ئۇچۇر قوش</string>
   <!-- The button text for the cancel button to leave the Web Compat Reporter feature. -->
@@ -1956,18 +1952,18 @@
   <string name="webcompat_reporter_send">يوللا</string>
   <!-- Text for a snackbar to confirm the successful submission of a WebCompat report. -->
   <string name="webcompat_reporter_success_snackbar_text_2">دوكلات يوللاندى</string>
-  <!-- Placeholder text for the description field to prompt the user on what they should type. -->
-  <string name="webcompat_reporter_problem_description_placeholder_text">نېمە ئىش بولدى؟ نېمە ئىش بولۇشى كېرەك ئىدى؟</string>
-  <!-- Label of the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. -->
-  <string name="webcompat_reporter_etp_checkbox_text">ئىزلاشتىن قوغداشتا توسۇلغان تور ئادرېسىنى يوللايدۇ</string>
-  <!-- Description text for the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. It informs the user when checked, the report will include the list of URLs that were blocked by Enhanced Tracking Protection on the current page. -->
-  <string name="webcompat_reporter_etp_checkbox_description">كۈچەيتىلگەن ئىزلاشتىن قوغداش ئىقتىدارى بەزى تور بېكەتنىڭ ئادەتتىكىدەك ئىجرا قىلىنىشىغا زۆرۈر بولغان ئىزلىغۇچ ۋە قوليازما كودىنىمۇ توسىدۇ.</string>
   <!-- The button text for the preview report button to view a preview of the report. -->
   <string name="webcompat_reporter_preview_report">دوكلاتنى ئالدىن كۆزەت</string>
   <!-- The title shown at the top of the WebCompat Report preview panel. This appears after the user taps the “Preview” button before sending a report. -->
   <string name="webcompat_reporter_preview_bottom_sheet_header">دوكلاتنى ئالدىن كۆزىتىش</string>
   <!-- Label for the “Send” button shown in the WebCompat Report preview panel, which the user taps to submit the report. -->
   <string name="webcompat_reporter_preview_bottom_sheet_send">يوللا</string>
+  <!-- Title for the Edit URL confirmation dialog in the WebCompatReporter -->
+  <string name="webcompat_reporter_edit_url_dialog_title">تور بېكەت ئادرېس تەھرىر</string>
+  <!-- Text shown on the save button for the Edit URL confirmation dialog in the WebCompatReporter. -->
+  <string name="webcompat_reporter_edit_url_dialog_save">ساقلا</string>
+  <!-- Text shown on the dismiss button for the Edit URL confirmation dialog in the WebCompatReporter. -->
+  <string name="webcompat_reporter_edit_url_dialog_dismiss">بولدىلا</string>
   <!--
     These reason strings are dropdown options on a WebCompat reporter form, indicating what is broken on the site.
 
@@ -1986,6 +1982,10 @@
   <string name="webcompat_reporter_reason_account2">تىزىمغا كىرەلمەيدۇ ياكى تىزىملىتالمايدۇ</string>
   <!-- Broken site reason text for site asked to turn off ad blocker -->
   <string name="webcompat_reporter_reason_turn_off_adblocker">تور بېكەت ئېلان توسقۇچنى تاقاشنى تەلەپ قىلدى</string>
+  <!-- Broken site reason text for browser isn’t supported or blocked -->
+  <string name="webcompat_reporter_reason_notsupported_2">توركۆرگۈ توسۇلغان ياكى قوللىمايدۇ</string>
+  <!-- Broken site reason text for the site being deceptive -->
+  <string name="webcompat_reporter_reason_site_is_deceptive">بۇ تور بېكەت ئالدامچى</string>
   <!-- Broken site reason text for browser isn’t supported or blocked -->
   <string name="webcompat_reporter_reason_notsupported">توركۆرگۈنى قوللىمايدۇ ياكى توسۇلغان</string>
   <!-- Broken site reason text for something else -->
@@ -2149,6 +2149,10 @@
   <string name="bookmark_select_folder_new_folder_button_title">يېڭى قىسقۇچ</string>
   <!-- Bookmark snackbar message for moving a single item. %1$s is the title of the item being moved and %2$s is the new parent folder of the bookmark -->
   <string name="bookmark_moved_single_item">%1$s دىن %2$s غا يۆتكەلدى</string>
+  <!-- Text for bookmark search page when there are no results. -->
+  <string name="bookmark_no_search_results">ماس كەلگىنى تېپىلمىدى.</string>
+  <!-- Additional text for bookmark search page when there are no results. -->
+  <string name="bookmark_no_search_results_additional_text">باشقىسىنى ئىزدەپ بېقىڭ!</string>
   <!--
     Site Permissions
 
@@ -2330,8 +2334,14 @@
   <string name="qr_code_display_close">ياپ</string>
   <!-- Heading on the QR code display screen -->
   <string name="qr_code_display_share_nearby">ئۇلانمىنى يېقىن ئەتراپقا ھەمبەھىرلە</string>
+  <!-- Body text on the QR code display screen instructing the user to have others scan the code -->
+  <string name="qr_code_display_instructions">بۇ ئۇلانمىنى يېقىن ئەتراپتىكى كىشىلەرگە ھەمبەھىرلەشتە، ئۇلار تۆۋەندىكى QR كودىنى تارىشى كېرەك.</string>
   <!-- Label for the download button on the QR code display screen -->
   <string name="qr_code_display_download">چۈشۈر</string>
+  <!-- Toast shown when the QR code is successfully saved to Downloads -->
+  <string name="qr_code_download_success">QR كودى چۈشۈرۈلمىگە ساقلاندى</string>
+  <!-- Toast shown when saving the QR code to Downloads fails -->
+  <string name="qr_code_download_failure">QR كودىنى ساقلىيالمىدى</string>
   <!-- Sub-header in the dialog to share a link to an app from the full list -->
   <string name="share_link_all_apps_subheader">بارلىق مەشغۇلات</string>
   <!-- Sub-header in the dialog to share a link to an app from the most-recent sorted list -->
@@ -2400,6 +2410,8 @@
   <string name="preferences_take_survey">تەكشۈرۈشكە قاتنىشىڭ</string>
   <!-- Preference for not taking the short survey. -->
   <string name="preferences_not_take_survey">ياق رەھمەت</string>
+  <!-- Error message shown in a Toast when the system fails to trigger the device uninstallation prompt. -->
+  <string name="uninstall_survey_error_failed">سىستېما سۆكۈش ئەسكەرتىشىنى ئاچالمىدى، بىۋاسىتە سىستېما سۆكۈش مەشغۇلاتىنى ئىشلىتىڭ.</string>
   <!--
     Snackbar
 
@@ -2560,17 +2572,19 @@
   <string name="preference_enhanced_tracking_protection_explanation_2">%s سىزنى توردىكى ئىشلىرىڭىزغا ئەگىشىدىغان كۆپ ئۇچرايدىغان ئىزچىلاردىن قوغدايدۇ.</string>
   <!-- Text displayed that links to website about enhanced tracking protection -->
   <string name="preference_enhanced_tracking_protection_explanation_learn_more">تەپسىلاتى</string>
-  <plurals name="trackers_blocked_count">
+  <plurals name="trackers_blocked_count_2">
     <!--
       Trackers blocked card on homepage
 
       Text shown on the trackers blocked card. %d is the number of trackers blocked.
     -->
-    <item quantity="one">%d ئىزلىغۇچ توسۇلدى</item>
-    <item quantity="other">%d ئىزلىغۇچ توسۇلدى</item>
+    <item quantity="one">%d ئىزلىغۇچى توسۇلدى</item>
+    <item quantity="other">%d ئىزلىغۇچى توسۇلدى</item>
   </plurals>
   <!-- Text shown on the trackers blocked card when no trackers have been blocked yet -->
   <string name="trackers_blocked_empty">قوغدالدىڭىز</string>
+  <!-- Text shown below the trackers blocked card with typing animation -->
+  <string name="help_catch_trackers">ئىزلىغۇچىنى تۇتۇشقا ياردەم قىلىڭ</string>
   <!-- Preference for enhanced tracking protection for the standard protection settings -->
   <string name="preference_enhanced_tracking_protection_standard_default_1">ئۆلچەملىك (كۆڭۈلدىكى)</string>
   <!-- Preference description for enhanced tracking protection for the standard protection settings -->
@@ -2949,6 +2963,8 @@
   <string name="saved_logins_sort_strategy_last_used">ئاخىرقى قېتىم ئىشلىتىلگەن</string>
   <!-- Content description (not visible, for screen readers etc.) -->
   <string name="saved_logins_menu_dropdown_chevron_icon_content_description_2">ئىم تىزىملىكىنى تەرتىپلە</string>
+  <!-- Label for button to import passwords from file. -->
+  <string name="passwords_import_menu_button">ھۆججەتتىن ئەكىر</string>
   <!--
     Email Masks
 
@@ -2967,14 +2983,28 @@
   <string name="email_masks_max_free_tier_reached">سىز 5 ھەقسىز ئېلخەت نىقابىنى ئىشلەتتىڭىز شۇڭا قايتا ئىشلىتىشىڭىز ئۈچۈن بىرنى تاللىدۇق.</string>
   <!-- The message displayed when there was an error with the email mask or Firefox Account services. -->
   <string name="email_masks_error_retrieving_masks">ھازىر ئىلخەت نىقابىنى ئىشلەتكىلى بولمايدۇ. بىر قانچە مىنۇتتىن كېيىن قايتا سىناڭ.</string>
+  <!--
+    Firefox browser VPN (a browser-only proxy, distinct from the Mozilla VPN service)
+
+    Title for the browser VPN entry in the settings list
+  -->
+  <string name="preferences_ip_protection_title_2">ئىچىدىكى VPN</string>
   <!-- Label for the BETA badge for the browser VPN entry in the settings list -->
   <string name="preferences_ip_protection_beta_badge_label">سىناق نەشرى</string>
   <!-- Title for the browser VPN settings screen (displayed in the app bar) -->
   <string name="ip_protection_title">VPN</string>
   <!-- Label for the browser VPN toggle on the settings screen -->
   <string name="ip_protection_toggle_label">VPN</string>
+  <!-- Content description for the browser VPN settings screen top bar back button -->
+  <string name="ip_protection_navigate_back_button_content_description">كەينىگە قايت</string>
+  <!-- Headline for the browser VPN promo card. %s is the name of the app (for example "Firefox"). -->
+  <string name="ip_protection_promo_headline">%s نىڭ ئىچىدىكى VPN</string>
+  <!-- Body text for the browser VPN promo card . %s is a learn more link using ip_protection_learn_more as text. -->
+  <string name="ip_protection_promo_body_2">ھەتتا ئاممىۋى Wi-Fi بولغان تەقدىردىمۇ ئورنىڭىزنى يوشۇرۇپ تور زىيارىتىدە قوشۇمچە قوغداشقا ئېرىشىڭ. %s</string>
   <!-- Link text that opens additional information about the browser VPN -->
   <string name="ip_protection_learn_more">تەپسىلاتى</string>
+  <!-- Label for the monthly data allowance section on the browser VPN settings screen -->
+  <string name="ip_protection_data_limit_label">ئايلىق سانلىق مەلۇمات چەكلىمىسى</string>
   <!-- Header for the browser VPN `location` section -->
   <string name="ip_protection_location_section">ئورنى</string>
   <!-- Label for the recommended automatic location option on the browser VPN settings screen -->
@@ -2991,6 +3021,14 @@
   <string name="ip_protection_onboarding_body_link_promo">تەپسىلاتى</string>
   <!-- Label for the dismiss button on the onboarding bottom sheet. -->
   <string name="ip_protection_onboarding_not_now_button">ھازىر ئەمەس</string>
+  <!-- Description shown on the browser VPN settings screen prompting the user to turn the VPN on. -->
+  <string name="ip_protection_settings_description" tools:ignore="UnusedResources">ئىزلاشنى قىيىنلاشتۇرۇپ ۋە تور زىيارىتىنى تېخىمۇ مەخپىي قىلىش ئۈچۈن VPN نى ئېچىڭ.</string>
+  <!-- Title shown on the browser VPN settings screen for location selection section. -->
+  <string name="ip_protection_location_title" tools:ignore="UnusedResources">ئورنى</string>
+  <!-- Label for the Recommended server location option which is automatically selected by the browser. -->
+  <string name="ip_protection_recommended_location" tools:ignore="UnusedResources">تەۋسىيەلەندى</string>
+  <!-- Headline for the card that promotes the standalone Mozilla VPN product. -->
+  <string name="ip_protection_mozilla_vpn_upsell_headline" tools:ignore="UnusedResources,BrandUsage">Mozilla VPN بىلەن تېخىمۇ كۆپ قوغدايدۇ</string>
   <!--
     Autofill
 
@@ -3143,8 +3181,6 @@
   <string name="addresses_save_button">ساقلا</string>
   <!-- The text for the "Cancel" button for cancelling adding, updating or deleting an address -->
   <string name="addresses_cancel_button">ۋاز كەچ</string>
-  <!-- The text for the "Delete address" button for deleting an address -->
-  <string name="addressess_delete_address_button">ئادرېس ئۆچۈر</string>
   <!-- The title for the "Delete address" confirmation dialog -->
   <string name="addressess_confirm_dialog_message_2">بۇ ئادرېسنى ئۆچۈرەمدۇ؟</string>
   <!-- The text for the positive button on "Delete address" dialog -->
@@ -3699,8 +3735,6 @@
     and there are no trackers blocked.
   -->
   <string name="protection_panel_banner_protected_no_blocked_trackers_description">قوغدالدىڭىز.</string>
-  <!-- Description text for the protection panel banner when tracking protection is enabled. -->
-  <string name="protection_panel_banner_protected_description">قوغدالدىڭىز. ئەگەر بىرەر نەرسە بايقىساق، سىزگە بىلدۈرىمىز.</string>
   <!-- Label text for the Enhanced Tracking Protection toggle. -->
   <string name="protection_panel_etp_toggle_label">كۈچەيتىلگەن ئىزلاشتىن قوغداش</string>
   <!-- Toggle if Enhanced Tracking Protection is turned on -->
@@ -3716,25 +3750,12 @@
     %d is a placeholder for the number of trackers blocked.
   -->
   <string name="protection_panel_num_trackers_blocked">ئىزلىغۇچى توسۇلدى: %d</string>
-  <!-- Text for when no trackers have been blocked. -->
-  <string name="protection_panel_no_trackers_blocked">ھېچقانداق ئىزلىغۇچى تېپىلمىدى</string>
   <!-- Text for when tracking protection is disabled and no trackers are blocked. -->
   <string name="protection_panel_etp_disabled_no_trackers_blocked">ئىزلىغۇچ توسۇلمىدى</string>
   <!-- Link text to navigate to privacy and security settings from the protection panel. -->
   <string name="protection_panel_privacy_and_security_settings_2">شەخسىيەت تەڭشىكى</string>
   <!-- Title text for the protection panel permissions section. -->
   <string name="protection_panel_permissions_title">ئىجازەت</string>
-  <!--
-    Text for displaying the total number of trackers blocked in the trackers blocked panel.
-    %d is a placeholder for the number of trackers blocked.
-  -->
-  <string name="trackers_blocked_panel_total_num_trackers_blocked">ئىزلىغۇچى توسۇلدى: %d</string>
-  <!--
-    Text for displaying the number of trackers blocked for a specific tracker category in the trackers blocked panel.
-    %s is a placeholder for the name of the tracker category.
-    %d is a placeholder for the number of trackers blocked.
-  -->
-  <string name="trackers_blocked_panel_categorical_num_trackers_blocked">%s: %d</string>
   <!--
     Description text for a dialog confirming whether the user wants to delete all data for current site.
     %s is a placeholder for the base domain of website.

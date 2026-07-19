@@ -7,16 +7,6 @@
 -->
 
 <resources>
-  <!-- Title shown in the protection dashboard indicating the user is protected -->
-  <string name="mozac_protections_dashboard_youre_protected">Tá tú faoi chosaint</string>
-  <!-- Tracker category: Advertising trackers -->
-  <string name="protections_dashboard_category_ads">Fógraí</string>
-  <!-- Tracker category: Analytics trackers -->
-  <string name="protections_dashboard_category_analytics">Anailísíocht</string>
-  <!-- Tracker category: Social media trackers -->
-  <string name="protections_dashboard_category_social">Sóisialta</string>
-  <!-- Tracker category: Other trackers -->
-  <string name="protections_dashboard_category_others">Cinn Eile</string>
   <plurals name="mozac_protections_dashboard_total_blocked_since_2">
     <!--
       Footer line shown in the dashboard summarizing total trackers blocked

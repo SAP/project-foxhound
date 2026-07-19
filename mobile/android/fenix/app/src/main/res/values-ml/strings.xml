@@ -1469,8 +1469,6 @@
   <string name="tab_group_color_pink">പാടല</string>
   <!-- Tab group color: Purple -->
   <string name="tab_group_color_purple">ഊതന്നിറം</string>
-  <!-- Tab group color: Violet -->
-  <string name="tab_group_color_violet">മാന്തളിർ</string>
   <!-- Tab group color: Blue -->
   <string name="tab_group_color_blue">നീല</string>
   <!-- Tab group color: Cyan -->
@@ -1723,8 +1721,6 @@
   <string name="webcompat_reporter_choose_reason_2">കാരണം നല്കുക</string>
   <!-- The error message of the dropdown, prompting the user to select a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_choose_reason_error">ഒരു കാരണം തിരഞ്ഞെടുക്കുക</string>
-  <!-- The label/title of an optional field in the Web Compat Reporter feature for adding additional information. -->
-  <string name="webcompat_reporter_label_description">പ്രശ്നം വിവരിക്കുക (ഇതു് നല്കാൻ ആവശ്യമല്ല)</string>
   <!-- The button text for navigating away from the feature to provide more information on the broken site's bug report. -->
   <string name="webcompat_reporter_add_more_info">ഇനിയും വിവരം ചേൎക്കുക</string>
   <!-- The button text for the cancel button to leave the Web Compat Reporter feature. -->
@@ -1733,8 +1729,6 @@
   <string name="webcompat_reporter_send">അയയ്ക്കുക</string>
   <!-- Text for a snackbar to confirm the successful submission of a WebCompat report. -->
   <string name="webcompat_reporter_success_snackbar_text_2">അറിയിപ്പയച്ചു</string>
-  <!-- Placeholder text for the description field to prompt the user on what they should type. -->
-  <string name="webcompat_reporter_problem_description_placeholder_text">എന്താണു പറ്റിയതു്. പറ്റേണ്ടതെന്തായിരുന്നു?</string>
   <!-- The title shown at the top of the WebCompat Report preview panel. This appears after the user taps the “Preview” button before sending a report. -->
   <string name="webcompat_reporter_preview_bottom_sheet_header">റിപ്പോർട്ട് മുൻകാഴ്ച</string>
   <!-- Label for the “Send” button shown in the WebCompat Report preview panel, which the user taps to submit the report. -->
@@ -2334,15 +2328,6 @@
     <item quantity="one">%d പിന്തുടൎച്ചയന്ത്രം തടഞ്ഞു</item>
     <item quantity="other">%d പിന്തുടൎച്ചയന്ത്രങ്ങൾ തടഞ്ഞു</item>
   </plurals>
-  <plurals name="trackers_blocked_count">
-    <!--
-      Trackers blocked card on homepage
-
-      Text shown on the trackers blocked card. %d is the number of trackers blocked.
-    -->
-    <item quantity="one">%d പിന്തുടൎച്ചയന്ത്രങ്ങൾ തടഞ്ഞു</item>
-    <item quantity="other">%d പിന്തുടൎച്ചയന്ത്രങ്ങൾ തടഞ്ഞു</item>
-  </plurals>
   <!-- Text shown on the trackers blocked card when no trackers have been blocked yet -->
   <string name="trackers_blocked_empty">നിങ്ങൾക്കു പരിരക്ഷയുണ്ടു്</string>
   <!-- Text shown below the trackers blocked card with typing animation -->
@@ -2935,8 +2920,6 @@
   <string name="addresses_save_button">കരുതിവയ്ക്കുക</string>
   <!-- The text for the "Cancel" button for cancelling adding, updating or deleting an address -->
   <string name="addresses_cancel_button">റദ്ദാക്കുക</string>
-  <!-- The text for the "Delete address" button for deleting an address -->
-  <string name="addressess_delete_address_button">വിലാസം മായ്ക്കുക</string>
   <!-- The title for the "Delete address" confirmation dialog -->
   <string name="addressess_confirm_dialog_message_2">ഈ വിലാസം മായ്ക്കട്ടെ?</string>
   <!-- The text for the positive button on "Delete address" dialog -->
@@ -3470,8 +3453,6 @@
     and there are no trackers blocked.
   -->
   <string name="protection_panel_banner_protected_no_blocked_trackers_description">നിങ്ങൾക്കു പരിരക്ഷയുണ്ടു്.</string>
-  <!-- Description text for the protection panel banner when tracking protection is enabled. -->
-  <string name="protection_panel_banner_protected_description">താങ്ങൾ സംരക്ഷിക്കപ്പെട്ടിരിക്കുന്നു. ഞങ്ങൾ എന്തെങ്കിലും കണ്ടെത്തിയാൽ താങ്ങളെ അറിയിക്കാം.</string>
   <!-- Label text for the Enhanced Tracking Protection toggle. -->
   <string name="protection_panel_etp_toggle_label">മെച്ചപ്പെടുത്തിയ പിന്തുടർച്ച സംരക്ഷണം</string>
   <!-- Toggle if Enhanced Tracking Protection is turned on -->
@@ -3487,8 +3468,6 @@
     %d is a placeholder for the number of trackers blocked.
   -->
   <string name="protection_panel_num_trackers_blocked">തടഞ്ഞിരിക്കുന്ന പിന്തുടർച്ചായന്ത്രങ്ങൾ: %d</string>
-  <!-- Text for when no trackers have been blocked. -->
-  <string name="protection_panel_no_trackers_blocked">പിന്തുടർച്ചയന്ത്രങ്ങൾ കണ്ടെത്താൻ കഴിഞ്ഞില്ല</string>
   <!-- Text for when tracking protection is disabled and no trackers are blocked. -->
   <string name="protection_panel_etp_disabled_no_trackers_blocked">പിന്തുൎച്ചയന്ത്രങ്ങൾ തടഞ്ഞിട്ടില്ല</string>
   <!-- Link text to navigate to privacy and security settings from the protection panel. -->
@@ -3543,17 +3522,6 @@
     <item quantity="one">ഈ ആഴ്ച %1$d പിന്തുടൎച്ചയന്ത്രങ്ങളെ തടഞ്ഞു</item>
     <item quantity="other">ഈ ആഴ്ച %1$d പിന്തുടൎച്ചയന്ത്രങ്ങളെ തടഞ്ഞു</item>
   </plurals>
-  <!--
-    Text for displaying the total number of trackers blocked in the trackers blocked panel.
-    %d is a placeholder for the number of trackers blocked.
-  -->
-  <string name="trackers_blocked_panel_total_num_trackers_blocked">തടഞ്ഞിരിക്കുന്ന പിന്തുടർച്ചായന്ത്രങ്ങൾ: %d</string>
-  <!--
-    Text for displaying the number of trackers blocked for a specific tracker category in the trackers blocked panel.
-    %s is a placeholder for the name of the tracker category.
-    %d is a placeholder for the number of trackers blocked.
-  -->
-  <string name="trackers_blocked_panel_categorical_num_trackers_blocked">%s: %d</string>
   <!-- Button text on the clear site data dialog to allow users to confirm they wish to clear the site data. -->
   <string name="clear_site_data_dialog_positive_button_text">മായ്ക്കുക</string>
   <!-- Button text on the clear site data dialog to allow users to cancel the action and not clear the site data. -->

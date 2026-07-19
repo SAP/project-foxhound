@@ -939,8 +939,6 @@
   <string name="webcompat_reporter_label_url">ඒ.ස.නි.</string>
   <!-- The error message of the URL text field when an invalid URL has been entered. -->
   <string name="webcompat_reporter_url_error_invalid">වලංගු ඒ.ස.නි. ලියන්න</string>
-  <!-- The label/title of an optional field in the Web Compat Reporter feature for adding additional information. -->
-  <string name="webcompat_reporter_label_description">ගැටලුව විස්තර කරන්න (විකල්පයකි)</string>
   <!-- The button text for the cancel button to leave the Web Compat Reporter feature. -->
   <string name="webcompat_reporter_cancel">අවලංගු</string>
   <!-- The button text for the send button to submit the provided form data. -->
@@ -1732,8 +1730,6 @@
   <string name="addresses_save_button">සුරකින්න</string>
   <!-- The text for the "Cancel" button for cancelling adding, updating or deleting an address -->
   <string name="addresses_cancel_button">අවලංගු</string>
-  <!-- The text for the "Delete address" button for deleting an address -->
-  <string name="addressess_delete_address_button">ලිපිනය මකන්න</string>
   <!-- The title for the "Delete address" confirmation dialog -->
   <string name="addressess_confirm_dialog_message_2">මෙම ලිපිනය මකන්නද?</string>
   <!-- The text for the positive button on "Delete address" dialog -->

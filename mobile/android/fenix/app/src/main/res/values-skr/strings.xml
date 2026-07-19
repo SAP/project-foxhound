@@ -945,8 +945,6 @@
   <string name="webcompat_reporter_label_url">یوآرایل</string>
   <!-- The error message of the URL text field when an invalid URL has been entered. -->
   <string name="webcompat_reporter_url_error_invalid">براہ مہربانی ٹھیک URL درج کرو۔</string>
-  <!-- The label/title of an optional field in the Web Compat Reporter feature for adding additional information. -->
-  <string name="webcompat_reporter_label_description">مسئلہ دی وضاحت کرو (اختیاری)</string>
   <!-- The button text for the cancel button to leave the Web Compat Reporter feature. -->
   <string name="webcompat_reporter_cancel">منسوخ</string>
   <!-- The button text for the send button to submit the provided form data. -->
@@ -1760,8 +1758,6 @@
   <string name="addresses_save_button">محفوظ</string>
   <!-- The text for the "Cancel" button for cancelling adding, updating or deleting an address -->
   <string name="addresses_cancel_button">منسوخ</string>
-  <!-- The text for the "Delete address" button for deleting an address -->
-  <string name="addressess_delete_address_button">پتہ مٹاؤ</string>
   <!-- The title for the "Delete address" confirmation dialog -->
   <string name="addressess_confirm_dialog_message_2">ایہ پتہ مٹاؤں؟</string>
   <!-- The text for the positive button on "Delete address" dialog -->

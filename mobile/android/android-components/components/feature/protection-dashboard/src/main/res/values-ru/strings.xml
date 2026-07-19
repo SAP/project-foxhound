@@ -7,34 +7,6 @@
 -->
 
 <resources>
-  <!-- Title shown in the protection dashboard indicating the user is protected -->
-  <string name="mozac_protections_dashboard_youre_protected">Вы защищены</string>
-  <plurals name="mozac_protections_dashboard_trackers_blocked_this_week">
-    <!--
-      Label shown below the tracker count in the dashboard. The count is displayed separately
-      above this string and is used to select the correct plural form. Do not include the number in
-      the translation.
-    -->
-    <item quantity="one">На этой неделе заблокирован трекер</item>
-    <item quantity="few">На этой неделе заблокированы трекеры</item>
-    <item quantity="other">На этой неделе заблокированы трекеры</item>
-  </plurals>
-  <plurals name="mozac_protections_dashboard_data_saved">
-    <!-- Label showing data saved in megabytes. %1$d is the number of MB saved -->
-    <item quantity="one">Сэкономлен %1$d МБ</item>
-    <item quantity="few">Сэкономлено %1$d МБ</item>
-    <item quantity="other">Сэкономлено %1$d МБ</item>
-  </plurals>
-  <!-- Section header for tracker category breakdown -->
-  <string name="protections_dashboard_where_they_came_from">Откуда они появились</string>
-  <!-- Tracker category: Advertising trackers -->
-  <string name="protections_dashboard_category_ads">Реклама</string>
-  <!-- Tracker category: Analytics trackers -->
-  <string name="protections_dashboard_category_analytics">Аналитика</string>
-  <!-- Tracker category: Social media trackers -->
-  <string name="protections_dashboard_category_social">Соцсети</string>
-  <!-- Tracker category: Other trackers -->
-  <string name="protections_dashboard_category_others">Другое</string>
   <!-- Title shown in the protection dashboard header next to the shield icon -->
   <string name="mozac_protections_dashboard_trackers_blocked_this_week_title">На этой неделе заблокированы трекеры</string>
   <!--

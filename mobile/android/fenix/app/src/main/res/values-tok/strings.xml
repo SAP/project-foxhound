@@ -1320,8 +1320,6 @@
   <string name="addresses_save_button">o awen</string>
   <!-- The text for the "Cancel" button for cancelling adding, updating or deleting an address -->
   <string name="addresses_cancel_button">ala</string>
-  <!-- The text for the "Delete address" button for deleting an address -->
-  <string name="addressess_delete_address_button">o weka e nimi ma</string>
   <!-- The title for the "Delete address" confirmation dialog -->
   <string name="addressess_confirm_dialog_message_2">sina wile ala wile weka e nimi ma?</string>
   <!-- The text for the positive button on "Delete address" dialog -->

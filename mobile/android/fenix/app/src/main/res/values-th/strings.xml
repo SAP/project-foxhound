@@ -1706,8 +1706,6 @@
   <string name="tab_group_color_pink">ชมพู</string>
   <!-- Tab group color: Purple -->
   <string name="tab_group_color_purple">ม่วง</string>
-  <!-- Tab group color: Violet -->
-  <string name="tab_group_color_violet">ม่วงเย็น</string>
   <!-- Tab group color: Blue -->
   <string name="tab_group_color_blue">น้ำเงิน</string>
   <!-- Tab group color: Cyan -->
@@ -1974,26 +1972,20 @@
   <string name="webcompat_reporter_choose_reason_error">โปรดเลือกเหตุผล</string>
   <!-- The label/title of an optional field in the Web Compat Reporter feature for adding additional information. -->
   <string name="webcompat_reporter_label_description_2">อธิบายปัญหาโดยละเอียดเพื่อช่วยเราตรวจสอบปัญหา (ไม่บังคับ)</string>
-  <!-- The label/title of an optional field in the Web Compat Reporter feature for adding additional information. -->
-  <string name="webcompat_reporter_label_description">อธิบายปัญหา (เพิ่มเติม)</string>
   <!-- The button text for navigating away from the feature to provide more information on the broken site's bug report. -->
   <string name="webcompat_reporter_add_more_info">เพิ่มข้อมูลเพิ่มเติม</string>
   <!-- The button text for the cancel button to leave the Web Compat Reporter feature. -->
   <string name="webcompat_reporter_cancel">ยกเลิก</string>
+  <!-- The button text for the send button to submit the provided form data. -->
+  <string name="webcompat_reporter_send_report">ส่งรายงาน</string>
   <!-- The button text for the send button to submit the provided form data. -->
   <string name="webcompat_reporter_send">ส่ง</string>
   <!-- Text for a snackbar to confirm the successful submission of a WebCompat report. -->
   <string name="webcompat_reporter_success_snackbar_text_2">ส่งรายงานแล้ว</string>
   <!-- Placeholder text for the description field to prompt the user on what they should type. -->
   <string name="webcompat_reporter_problem_description_placeholder_text_2">เกิดปัญหาอะไรขึ้น? สิ่งที่ควรจะเป็นคืออะไร? โปรดระบุขั้นตอนที่ทำให้เกิดปัญหานี้</string>
-  <!-- Placeholder text for the description field to prompt the user on what they should type. -->
-  <string name="webcompat_reporter_problem_description_placeholder_text">เกิดอะไรขึ้น? แล้วควรจะเป็นอย่างไร?</string>
   <!-- Label of the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. -->
   <string name="webcompat_reporter_etp_checkbox_text_2">ส่งรายการที่ถูกปิดกั้นโดยระบบป้องกันการติดตาม</string>
-  <!-- Label of the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. -->
-  <string name="webcompat_reporter_etp_checkbox_text">ส่ง URL ที่ปิดกั้นโดยการป้องกันการติดตาม</string>
-  <!-- Description text for the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. It informs the user when checked, the report will include the list of URLs that were blocked by Enhanced Tracking Protection on the current page. -->
-  <string name="webcompat_reporter_etp_checkbox_description">การป้องกันการติดตามแบบพิเศษอาจปิดกั้นตัวติดตามและสคริปต์ที่บางเว็บไซต์ต้องใช้เพื่อทำงานได้ถูกต้อง</string>
   <!-- The button text for the preview report button to view a preview of the report. -->
   <string name="webcompat_reporter_preview_report">ดูตัวอย่างรายงาน</string>
   <!-- The title shown at the top of the WebCompat Report preview panel. This appears after the user taps the “Preview” button before sending a report. -->
@@ -2191,6 +2183,10 @@
   <string name="bookmark_select_folder_new_folder_button_title">โฟลเดอร์ใหม่</string>
   <!-- Bookmark snackbar message for moving a single item. %1$s is the title of the item being moved and %2$s is the new parent folder of the bookmark -->
   <string name="bookmark_moved_single_item">ย้าย %1$s ไปยัง %2$s แล้ว</string>
+  <!-- Text for bookmark search page when there are no results. -->
+  <string name="bookmark_no_search_results">ไม่พบที่ตรงกัน</string>
+  <!-- Additional text for bookmark search page when there are no results. -->
+  <string name="bookmark_no_search_results_additional_text">ลองค้นหาแบบอื่นดู!</string>
   <!--
     Site Permissions
 
@@ -2615,14 +2611,6 @@
       Text shown on the trackers blocked card. %d is the number of trackers blocked.
     -->
     <item quantity="other">ปิดกั้นตัวติดตามไป %d ตัว</item>
-  </plurals>
-  <plurals name="trackers_blocked_count">
-    <!--
-      Trackers blocked card on homepage
-
-      Text shown on the trackers blocked card. %d is the number of trackers blocked.
-    -->
-    <item quantity="other">%d ตัวติดตามถูกปิดกั้น</item>
   </plurals>
   <!-- Text shown on the trackers blocked card when no trackers have been blocked yet -->
   <string name="trackers_blocked_empty">คุณได้รับการปกป้อง</string>
@@ -3272,8 +3260,6 @@
   <string name="addresses_save_button">บันทึก</string>
   <!-- The text for the "Cancel" button for cancelling adding, updating or deleting an address -->
   <string name="addresses_cancel_button">ยกเลิก</string>
-  <!-- The text for the "Delete address" button for deleting an address -->
-  <string name="addressess_delete_address_button">ลบที่อยู่</string>
   <!-- The title for the "Delete address" confirmation dialog -->
   <string name="addressess_confirm_dialog_message_2">ลบที่อยู่นี้หรือไม่?</string>
   <!-- The text for the positive button on "Delete address" dialog -->
@@ -3827,8 +3813,6 @@
     and there are no trackers blocked.
   -->
   <string name="protection_panel_banner_protected_no_blocked_trackers_description">คุณได้รับการปกป้องแล้ว</string>
-  <!-- Description text for the protection panel banner when tracking protection is enabled. -->
-  <string name="protection_panel_banner_protected_description">คุณได้รับการปกป้อง หากเราพบสิ่งใดเราจะแจ้งให้คุณทราบ</string>
   <!-- Label text for the Enhanced Tracking Protection toggle. -->
   <string name="protection_panel_etp_toggle_label">การป้องกันการติดตามแบบพิเศษ</string>
   <!-- Toggle if Enhanced Tracking Protection is turned on -->
@@ -3844,25 +3828,12 @@
     %d is a placeholder for the number of trackers blocked.
   -->
   <string name="protection_panel_num_trackers_blocked">ตัวติดตามที่ปิดกั้น: %d</string>
-  <!-- Text for when no trackers have been blocked. -->
-  <string name="protection_panel_no_trackers_blocked">ไม่พบตัวติดตาม</string>
   <!-- Text for when tracking protection is disabled and no trackers are blocked. -->
   <string name="protection_panel_etp_disabled_no_trackers_blocked">ตัวติดตามไม่ถูกปิดกั้น</string>
   <!-- Link text to navigate to privacy and security settings from the protection panel. -->
   <string name="protection_panel_privacy_and_security_settings_2">การตั้งค่าความเป็นส่วนตัว</string>
   <!-- Title text for the protection panel permissions section. -->
   <string name="protection_panel_permissions_title">การกำหนดสิทธิ์</string>
-  <!--
-    Text for displaying the total number of trackers blocked in the trackers blocked panel.
-    %d is a placeholder for the number of trackers blocked.
-  -->
-  <string name="trackers_blocked_panel_total_num_trackers_blocked">ตัวติดตามที่ปิดกั้น: %d</string>
-  <!--
-    Text for displaying the number of trackers blocked for a specific tracker category in the trackers blocked panel.
-    %s is a placeholder for the name of the tracker category.
-    %d is a placeholder for the number of trackers blocked.
-  -->
-  <string name="trackers_blocked_panel_categorical_num_trackers_blocked">%s: %d</string>
   <!--
     Description text for a dialog confirming whether the user wants to delete all data for current site.
     %s is a placeholder for the base domain of website.

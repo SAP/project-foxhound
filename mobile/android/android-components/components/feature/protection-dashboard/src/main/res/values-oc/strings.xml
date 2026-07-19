@@ -7,14 +7,6 @@
 -->
 
 <resources>
-  <plurals name="mozac_protections_dashboard_trackers_blocked_this_week">
-    <!--
-      Label shown below the tracker count in the dashboard. The count is displayed separately
-      above this string and is used to select the correct plural form. Do not include the number in
-      the translation.
-    -->
-    <item quantity="other">Traçadors blocats aquesta setmana</item>
-  </plurals>
   <!-- Title shown in the protection dashboard header next to the shield icon -->
   <string name="mozac_protections_dashboard_trackers_blocked_this_week_title">Traçadors blocats aquesta setmana</string>
   <plurals name="mozac_protections_dashboard_total_blocked_since_2">

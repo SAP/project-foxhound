@@ -7,36 +7,6 @@
 -->
 
 <resources>
-  <!-- Title shown in the protection dashboard indicating the user is protected -->
-  <string name="mozac_protections_dashboard_youre_protected">Sće škitany</string>
-  <plurals name="mozac_protections_dashboard_trackers_blocked_this_week">
-    <!--
-      Label shown below the tracker count in the dashboard. The count is displayed separately
-      above this string and is used to select the correct plural form. Do not include the number in
-      the translation.
-    -->
-    <item quantity="one">Přesćěhowak, kotryž je so tutón tydźeń zablokował</item>
-    <item quantity="two">Přesćěhowakaj, kotrejž stej so tutón tydźeń zablokowałoj</item>
-    <item quantity="few">Přesćěhowaki, kotrež su so tutón tydźeń zablokowali</item>
-    <item quantity="other">Přesćěhowaki, kotrež su so tutón tydźeń zablokowali</item>
-  </plurals>
-  <plurals name="mozac_protections_dashboard_data_saved">
-    <!-- Label showing data saved in megabytes. %1$d is the number of MB saved -->
-    <item quantity="one">%1$d MB zalutowany</item>
-    <item quantity="two">%1$d MB zalutowanej</item>
-    <item quantity="few">%1$d MB zalutowane</item>
-    <item quantity="other">%1$d MB zalutowanych</item>
-  </plurals>
-  <!-- Section header for tracker category breakdown -->
-  <string name="protections_dashboard_where_they_came_from">Zwotkelž su přišli</string>
-  <!-- Tracker category: Advertising trackers -->
-  <string name="protections_dashboard_category_ads">Wabjenje</string>
-  <!-- Tracker category: Analytics trackers -->
-  <string name="protections_dashboard_category_analytics">Analytika</string>
-  <!-- Tracker category: Social media trackers -->
-  <string name="protections_dashboard_category_social">Socialne syće</string>
-  <!-- Tracker category: Other trackers -->
-  <string name="protections_dashboard_category_others">Druhe</string>
   <!-- Title shown in the protection dashboard header next to the shield icon -->
   <string name="mozac_protections_dashboard_trackers_blocked_this_week_title">Přesćěhowaki, kotrež su so tutón tydźeń zablokowali</string>
   <!--

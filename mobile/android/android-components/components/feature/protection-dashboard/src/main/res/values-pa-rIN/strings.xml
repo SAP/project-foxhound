@@ -7,32 +7,6 @@
 -->
 
 <resources>
-  <!-- Title shown in the protection dashboard indicating the user is protected -->
-  <string name="mozac_protections_dashboard_youre_protected">ਤੁਸੀਂ ਸੁਰੱਖਿਅਤ ਹੋ</string>
-  <plurals name="mozac_protections_dashboard_trackers_blocked_this_week">
-    <!--
-      Label shown below the tracker count in the dashboard. The count is displayed separately
-      above this string and is used to select the correct plural form. Do not include the number in
-      the translation.
-    -->
-    <item quantity="one">ਇਸ ਹਫ਼ਤੇ ਪਾਬੰਦੀ ਲਾਏ ਟਰੈਕਰ</item>
-    <item quantity="other">ਇਸ ਹਫ਼ਤੇ ਪਾਬੰਦੀ ਲਾਏ ਟਰੈਕਰ</item>
-  </plurals>
-  <plurals name="mozac_protections_dashboard_data_saved">
-    <!-- Label showing data saved in megabytes. %1$d is the number of MB saved -->
-    <item quantity="one">%1$d MB ਬਚਾਇਆ</item>
-    <item quantity="other">%1$d MB ਬਚਾਏ</item>
-  </plurals>
-  <!-- Section header for tracker category breakdown -->
-  <string name="protections_dashboard_where_they_came_from">ਇਹ ਕਿੱਥੋਂ ਆਏ ਹਨ</string>
-  <!-- Tracker category: Advertising trackers -->
-  <string name="protections_dashboard_category_ads">ਇਸ਼ਤਿਹਾਰ</string>
-  <!-- Tracker category: Analytics trackers -->
-  <string name="protections_dashboard_category_analytics">ਵਿਸ਼ਲੇਸ਼ਣ</string>
-  <!-- Tracker category: Social media trackers -->
-  <string name="protections_dashboard_category_social">ਸਮਾਜਿਕ</string>
-  <!-- Tracker category: Other trackers -->
-  <string name="protections_dashboard_category_others">ਹੋਰ</string>
   <!-- Title shown in the protection dashboard header next to the shield icon -->
   <string name="mozac_protections_dashboard_trackers_blocked_this_week_title">ਇਸ ਹਫ਼ਤੇ ਪਾਬੰਦੀ ਲਾਏ ਟਰੈਕਰ</string>
   <!--

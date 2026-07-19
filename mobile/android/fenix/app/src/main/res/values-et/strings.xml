@@ -851,8 +851,6 @@
   <string name="webcompat_reporter_label_whats_broken_2">Mis on katki?</string>
   <!-- The error message of the dropdown, prompting the user to select a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_choose_reason_error">Palun vali põhjus</string>
-  <!-- The label/title of an optional field in the Web Compat Reporter feature for adding additional information. -->
-  <string name="webcompat_reporter_label_description">Kirjelda probleemi (valikuline)</string>
   <!-- The button text for the cancel button to leave the Web Compat Reporter feature. -->
   <string name="webcompat_reporter_cancel">Loobu</string>
   <!-- The button text for the send button to submit the provided form data. -->
@@ -1272,15 +1270,6 @@
     <item quantity="one">%d jälitajat blokeeriti</item>
     <item quantity="other">%d jälitajat blokeeriti</item>
   </plurals>
-  <plurals name="trackers_blocked_count">
-    <!--
-      Trackers blocked card on homepage
-
-      Text shown on the trackers blocked card. %d is the number of trackers blocked.
-    -->
-    <item quantity="one">%d jälitajat blokeeriti</item>
-    <item quantity="other">%d jälitajat blokeeriti</item>
-  </plurals>
   <!-- Preference for enhanced tracking protection for the standard protection settings -->
   <string name="preference_enhanced_tracking_protection_standard_default_1">Tavaline (vaikimisi)</string>
   <!-- Preference description for enhanced tracking protection for the standard protection settings -->
@@ -1644,8 +1633,6 @@
   <string name="addresses_save_button">Salvesta</string>
   <!-- The text for the "Cancel" button for cancelling adding, updating or deleting an address -->
   <string name="addresses_cancel_button">Loobu</string>
-  <!-- The text for the "Delete address" button for deleting an address -->
-  <string name="addressess_delete_address_button">Kustuta aadress</string>
   <!-- The title for the "Delete address" confirmation dialog -->
   <string name="addressess_confirm_dialog_message_2">Kas kustutada see aadress?</string>
   <!-- The text for the positive button on "Delete address" dialog -->

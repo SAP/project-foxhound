@@ -7,30 +7,6 @@
 -->
 
 <resources>
-  <!-- Title shown in the protection dashboard indicating the user is protected -->
-  <string name="mozac_protections_dashboard_youre_protected">คุณได้รับการปกป้อง</string>
-  <plurals name="mozac_protections_dashboard_trackers_blocked_this_week">
-    <!--
-      Label shown below the tracker count in the dashboard. The count is displayed separately
-      above this string and is used to select the correct plural form. Do not include the number in
-      the translation.
-    -->
-    <item quantity="other">ตัวติดตามที่ถูกปิดกั้นสัปดาห์นี้</item>
-  </plurals>
-  <plurals name="mozac_protections_dashboard_data_saved">
-    <!-- Label showing data saved in megabytes. %1$d is the number of MB saved -->
-    <item quantity="other">ประหยัดไป %1$d MB</item>
-  </plurals>
-  <!-- Section header for tracker category breakdown -->
-  <string name="protections_dashboard_where_they_came_from">แหล่งที่มาของพวกมัน</string>
-  <!-- Tracker category: Advertising trackers -->
-  <string name="protections_dashboard_category_ads">โฆษณา</string>
-  <!-- Tracker category: Analytics trackers -->
-  <string name="protections_dashboard_category_analytics">การวิเคราะห์</string>
-  <!-- Tracker category: Social media trackers -->
-  <string name="protections_dashboard_category_social">โซเชียล</string>
-  <!-- Tracker category: Other trackers -->
-  <string name="protections_dashboard_category_others">อื่น ๆ</string>
   <!-- Title shown in the protection dashboard header next to the shield icon -->
   <string name="mozac_protections_dashboard_trackers_blocked_this_week_title">ตัวติดตามที่ถูกปิดกั้นสัปดาห์นี้</string>
   <!--

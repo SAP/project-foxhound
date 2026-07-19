@@ -7,32 +7,6 @@
 -->
 
 <resources>
-  <!-- Title shown in the protection dashboard indicating the user is protected -->
-  <string name="mozac_protections_dashboard_youre_protected">Olet suojattu</string>
-  <plurals name="mozac_protections_dashboard_trackers_blocked_this_week">
-    <!--
-      Label shown below the tracker count in the dashboard. The count is displayed separately
-      above this string and is used to select the correct plural form. Do not include the number in
-      the translation.
-    -->
-    <item quantity="one">Seurain estetty tällä viikolla</item>
-    <item quantity="other">Seurainta estetty tällä viikolla</item>
-  </plurals>
-  <plurals name="mozac_protections_dashboard_data_saved">
-    <!-- Label showing data saved in megabytes. %1$d is the number of MB saved -->
-    <item quantity="one">%1$d Mt säästetty</item>
-    <item quantity="other">%1$d Mt säästetty</item>
-  </plurals>
-  <!-- Section header for tracker category breakdown -->
-  <string name="protections_dashboard_where_they_came_from">Mistä ne tulivat</string>
-  <!-- Tracker category: Advertising trackers -->
-  <string name="protections_dashboard_category_ads">Mainokset</string>
-  <!-- Tracker category: Analytics trackers -->
-  <string name="protections_dashboard_category_analytics">Analytiikka</string>
-  <!-- Tracker category: Social media trackers -->
-  <string name="protections_dashboard_category_social">Sosiaalinen</string>
-  <!-- Tracker category: Other trackers -->
-  <string name="protections_dashboard_category_others">Muut</string>
   <!-- Title shown in the protection dashboard header next to the shield icon -->
   <string name="mozac_protections_dashboard_trackers_blocked_this_week_title">seurainta estetty tällä viikolla</string>
   <!--

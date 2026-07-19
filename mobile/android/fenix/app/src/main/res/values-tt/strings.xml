@@ -1856,8 +1856,6 @@
   <string name="addresses_save_button">Саклау</string>
   <!-- The text for the "Cancel" button for cancelling adding, updating or deleting an address -->
   <string name="addresses_cancel_button">Баш тарту</string>
-  <!-- The text for the "Delete address" button for deleting an address -->
-  <string name="addressess_delete_address_button">Адресны бетерү</string>
   <!-- The title for the "Delete address" confirmation dialog -->
   <string name="addressess_confirm_dialog_message_2">Бу адрес бетерелсенме?</string>
   <!-- The text for the positive button on "Delete address" dialog -->
@@ -2256,12 +2254,6 @@
   <string name="protection_panel_etp_toggle_enabled_description_2">Бу сайтта нәрсәдер бозылган булып күренсә, аны сүндерергә тырышыгыз.</string>
   <!-- Title text for the protection panel permissions section. -->
   <string name="protection_panel_permissions_title">Рөхсәтләр</string>
-  <!--
-    Text for displaying the number of trackers blocked for a specific tracker category in the trackers blocked panel.
-    %s is a placeholder for the name of the tracker category.
-    %d is a placeholder for the number of trackers blocked.
-  -->
-  <string name="trackers_blocked_panel_categorical_num_trackers_blocked">%s: %d</string>
   <!-- Button text on the clear site data dialog to allow users to confirm they wish to clear the site data. -->
   <string name="clear_site_data_dialog_positive_button_text">Чистарту</string>
   <!-- Button text on the clear site data dialog to allow users to cancel the action and not clear the site data. -->

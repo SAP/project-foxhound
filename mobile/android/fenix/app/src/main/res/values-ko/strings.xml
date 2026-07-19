@@ -31,6 +31,8 @@
   <string name="history_search_hint">기록 검색</string>
   <!-- Placeholder text shown in search bar when using bookmarks search -->
   <string name="bookmark_search_hint">북마크 검색</string>
+  <!-- Content description for the toolbar back button while searching bookmarks -->
+  <string name="bookmark_close_search_description">뒤로 가기 및 검색 닫기</string>
   <!-- Placeholder text shown in search bar when using tabs search -->
   <string name="tab_search_hint">탭 검색</string>
   <!-- Placeholder text shown in the search bar when using application search engines -->
@@ -82,7 +84,7 @@
 
     Title for info card on private homescreen in True Private Browsing Mode.
   -->
-  <string name="felt_privacy_desc_card_title">이 기기에 흔적을 남기지 마세요</string>
+  <string name="felt_privacy_desc_card_title">흔적 남기지 않기</string>
   <!--
     Description of private browsing mode displayed to users on the homepage when they enable private mode.
     %1$s is the name of the app (for example "Firefox").
@@ -1061,9 +1063,9 @@
   <!-- Text for artist series wallpapers title. "Artist series" represents a collection of artist collaborated wallpapers. -->
   <string name="wallpaper_artist_series_title">아티스트 시리즈</string>
   <!-- Description text for the artist series wallpapers with learn more link. %s is a learn more link using wallpaper_learn_more as text. "Independent voices" is the name of the wallpaper collection -->
-  <string name="wallpaper_artist_series_description_with_learn_more">독립적인 목소리 모음. %s</string>
+  <string name="wallpaper_artist_series_description_with_learn_more">Independent Voices 컬렉션. %s</string>
   <!-- Description text for the artist series wallpapers. "Independent voices" is the name of the wallpaper collection -->
-  <string name="wallpaper_artist_series_description">독립적인 목소리 모음.</string>
+  <string name="wallpaper_artist_series_description">Independent Voices 컬렉션.</string>
   <!-- Wallpaper onboarding dialog header text. -->
   <string name="wallpapers_onboarding_dialog_title_text">다채로운 색상 체험</string>
   <!-- Wallpaper onboarding dialog body text. -->
@@ -1113,7 +1115,7 @@
   <!-- Title for the "Pride" themed alternative app icon variant in the icon picker screen. The app icon incorporates a rainbow color scheme in support of the LGBTQ+ community. -->
   <string name="alternative_app_icon_option_pride">자부심</string>
   <!-- Title for the "Momo" themed alternative app icon variant in the icon picker screen. The app icon was created by artist @heyheymomodraws and features a unique hand-drawn style with a friendly fox. -->
-  <string name="alternative_app_icon_option_momo">모모</string>
+  <string name="alternative_app_icon_option_momo">Momo</string>
   <!-- Subtitle for the "Momo" themed alternative app icon variant in the icon picker screen. The app icon was created by artist @heyheymomodraws and features a unique hand-drawn style with a friendly fox. -->
   <string name="alternative_app_icon_option_momo_subtitle">\u0040heyheymomodraws 제작</string>
   <!-- Title for the "Cuddling" themed alternative app icon variant in the icon picker screen. The app icon features a playful design with an adorable aesthetic. -->
@@ -1539,6 +1541,8 @@
   <string name="add_tab">탭 추가</string>
   <!-- Content description (not visible, for screen readers etc.): Add tab button. Adds a news tab when pressed -->
   <string name="add_private_tab">사생활 보호 탭 추가</string>
+  <!-- Content description (not visible, for screen readers etc.): Create tab group button. Opens the create tab group sheet when pressed -->
+  <string name="create_tab_group_content_description">탭 그룹 만들기</string>
   <!-- Text for the tab search bar placeholder -->
   <string name="tab_manager_search_bar_placeholder">탭 검색</string>
   <!-- Text shown in the menu to view recently closed tabs -->
@@ -1706,8 +1710,6 @@
   <string name="tab_group_color_pink">분홍색</string>
   <!-- Tab group color: Purple -->
   <string name="tab_group_color_purple">보라색</string>
-  <!-- Tab group color: Violet -->
-  <string name="tab_group_color_violet">남보라색</string>
   <!-- Tab group color: Blue -->
   <string name="tab_group_color_blue">파란색</string>
   <!-- Tab group color: Cyan -->
@@ -1976,8 +1978,6 @@
   <string name="webcompat_reporter_choose_reason_error">이유를 선택하세요</string>
   <!-- The label/title of an optional field in the Web Compat Reporter feature for adding additional information. -->
   <string name="webcompat_reporter_label_description_2">조사에 도움이 되도록 문제를 자세히 설명해 주세요 (선택 사항)</string>
-  <!-- The label/title of an optional field in the Web Compat Reporter feature for adding additional information. -->
-  <string name="webcompat_reporter_label_description">문제 설명 (선택 사항)</string>
   <!-- The button text for navigating away from the feature to provide more information on the broken site's bug report. -->
   <string name="webcompat_reporter_add_more_info">추가 정보 추가</string>
   <!-- The button text for the cancel button to leave the Web Compat Reporter feature. -->
@@ -1990,14 +1990,8 @@
   <string name="webcompat_reporter_success_snackbar_text_2">신고가 전송됨</string>
   <!-- Placeholder text for the description field to prompt the user on what they should type. -->
   <string name="webcompat_reporter_problem_description_placeholder_text_2">무슨 일이 일어났나요? 어떤 일이 일어날 것으로 예상하셨나요? 문제를 재현하기 위한 단계를 제공해 주세요.</string>
-  <!-- Placeholder text for the description field to prompt the user on what they should type. -->
-  <string name="webcompat_reporter_problem_description_placeholder_text">무슨 일이 있었나요? 무슨 일이 일어났어야 했나요?</string>
   <!-- Label of the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. -->
   <string name="webcompat_reporter_etp_checkbox_text_2">추적 방지 기능에 의해 차단된 항목 목록 보내기</string>
-  <!-- Label of the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. -->
-  <string name="webcompat_reporter_etp_checkbox_text">추적 방지 기능에 의해 차단된 URL 보내기</string>
-  <!-- Description text for the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. It informs the user when checked, the report will include the list of URLs that were blocked by Enhanced Tracking Protection on the current page. -->
-  <string name="webcompat_reporter_etp_checkbox_description">향상된 추적 방지 기능은 일부 웹 사이트가 제대로 작동하는 데 필요한 추적기와 스크립트를 차단할 수 있습니다.</string>
   <!-- The button text for the preview report button to view a preview of the report. -->
   <string name="webcompat_reporter_preview_report">보고서 미리보기</string>
   <!-- The title shown at the top of the WebCompat Report preview panel. This appears after the user taps the “Preview” button before sending a report. -->
@@ -2195,6 +2189,10 @@
   <string name="bookmark_select_folder_new_folder_button_title">새 폴더</string>
   <!-- Bookmark snackbar message for moving a single item. %1$s is the title of the item being moved and %2$s is the new parent folder of the bookmark -->
   <string name="bookmark_moved_single_item">%1$s 항목이 %2$s 폴더로 이동됨</string>
+  <!-- Text for bookmark search page when there are no results. -->
+  <string name="bookmark_no_search_results">일치하는 항목이 없습니다.</string>
+  <!-- Additional text for bookmark search page when there are no results. -->
+  <string name="bookmark_no_search_results_additional_text">다른 검색어를 사용해 보세요!</string>
   <!--
     Site Permissions
 
@@ -2615,14 +2613,6 @@
   <!-- Text displayed that links to website about enhanced tracking protection -->
   <string name="preference_enhanced_tracking_protection_explanation_learn_more">더 알아보기</string>
   <plurals name="trackers_blocked_count_2">
-    <!--
-      Trackers blocked card on homepage
-
-      Text shown on the trackers blocked card. %d is the number of trackers blocked.
-    -->
-    <item quantity="other">추적기 %d개 차단됨</item>
-  </plurals>
-  <plurals name="trackers_blocked_count">
     <!--
       Trackers blocked card on homepage
 
@@ -3132,6 +3122,30 @@
   <string name="ip_protection_data_limit_reached_snackbar">%1$d GB의 VPN 데이터가 사용되었습니다. 다음 달에 초기화됩니다.</string>
   <!-- Snackbar (in-app pop-up notification) action button text that takes the user to the VPN settings screen. -->
   <string name="ip_protection_data_limit_reached_snackbar_action">설정</string>
+  <!-- Description shown on the browser VPN settings screen prompting the user to turn the VPN on. -->
+  <string name="ip_protection_settings_description" tools:ignore="UnusedResources">탐색을 더 안전하고 추적하기 어렵게 만들려면 VPN을 켜세요.</string>
+  <!-- Title shown on the browser VPN settings screen for location selection section. -->
+  <string name="ip_protection_location_title" tools:ignore="UnusedResources">위치</string>
+  <!-- Label for the Recommended server location option which is automatically selected by the browser. -->
+  <string name="ip_protection_recommended_location" tools:ignore="UnusedResources">추천</string>
+  <!-- Headline for the card that promotes the standalone Mozilla VPN product. -->
+  <string name="ip_protection_mozilla_vpn_upsell_headline" tools:ignore="UnusedResources,BrandUsage">Mozilla VPN으로 더 많은 것을 보호하세요</string>
+  <!-- Body for the card that promotes the standalone Mozilla VPN product. -->
+  <string name="ip_protection_mozilla_vpn_upsell_body" tools:ignore="UnusedResources">300개 이상의 위치에서 선택하고 최대 5대의 기기에서 모든 앱을 보호하세요.</string>
+  <!-- Label for the button that takes the user to get the standalone Mozilla VPN product. -->
+  <string name="ip_protection_mozilla_vpn_upsell_button" tools:ignore="UnusedResources,BrandUsage">Mozilla VPN 받기</string>
+  <!-- Title for the browser VPN location picker screen. -->
+  <string name="ip_protection_location_picker_title" tools:ignore="UnusedResources">VPN 위치 선택</string>
+  <!-- Description for what it means to use the Recommended setting and let the app automatically pick the best server location. -->
+  <string name="ip_protection_location_fastest_description" tools:ignore="UnusedResources, BrandUsage">Firefox가 가장 빠른 위치를 찾습니다</string>
+  <!-- Error message shown when the selected browser VPN location is unavailable. -->
+  <string name="ip_protection_location_unavailable" tools:ignore="UnusedResources">위치를 사용할 수 없습니다. 다른 위치를 선택해 주세요.</string>
+  <!-- Snackbar (in-app pop-up notification) text shown when the previously selected browser VPN location is unavailable and the recommended location was used instead. -->
+  <string name="ip_protection_location_unavailable_recommended_snackbar" tools:ignore="UnusedResources">선택한 VPN 위치를 사용할 수 없어, 추천 위치로 연결되었습니다.</string>
+  <!-- Title for the card shown to the user when we are unable to fetch server locations -->
+  <string name="ip_protection_location_unavailable_title" tools:ignore="UnusedResources">이전 위치를 사용할 수 없음</string>
+  <!-- Description for the card shown to the user when we are unable to fetch server locations -->
+  <string name="ip_protection_location_unavailable_recommended_description" tools:ignore="UnusedResources">추천 위치로 연결되었습니다.</string>
   <!--
     Autofill
 
@@ -3284,8 +3298,6 @@
   <string name="addresses_save_button">저장</string>
   <!-- The text for the "Cancel" button for cancelling adding, updating or deleting an address -->
   <string name="addresses_cancel_button">취소</string>
-  <!-- The text for the "Delete address" button for deleting an address -->
-  <string name="addressess_delete_address_button">주소 삭제</string>
   <!-- The title for the "Delete address" confirmation dialog -->
   <string name="addressess_confirm_dialog_message_2">이 주소를 삭제하시겠습니까?</string>
   <!-- The text for the positive button on "Delete address" dialog -->
@@ -3529,7 +3541,7 @@
   <!-- Content description radio buttons with a link to more information -->
   <string name="radio_preference_info_content_description">상세 정보</string>
   <!-- Content description for the action bar "up" button -->
-  <string name="action_bar_up_description">위로</string>
+  <string name="action_bar_up_description">상위로</string>
   <!--
     Pocket recommended stories
 
@@ -3839,8 +3851,6 @@
     and there are no trackers blocked.
   -->
   <string name="protection_panel_banner_protected_no_blocked_trackers_description">보호 중입니다.</string>
-  <!-- Description text for the protection panel banner when tracking protection is enabled. -->
-  <string name="protection_panel_banner_protected_description">보호 중입니다. 문제가 발견되면 알려드리겠습니다.</string>
   <!-- Label text for the Enhanced Tracking Protection toggle. -->
   <string name="protection_panel_etp_toggle_label">향상된 추적 방지 기능</string>
   <!-- Toggle if Enhanced Tracking Protection is turned on -->
@@ -3856,8 +3866,6 @@
     %d is a placeholder for the number of trackers blocked.
   -->
   <string name="protection_panel_num_trackers_blocked">차단된 추적기: %d개</string>
-  <!-- Text for when no trackers have been blocked. -->
-  <string name="protection_panel_no_trackers_blocked">추적기 없음</string>
   <!-- Text for when tracking protection is disabled and no trackers are blocked. -->
   <string name="protection_panel_etp_disabled_no_trackers_blocked">추적기가 차단되지 않음</string>
   <!-- Link text to navigate to privacy and security settings from the protection panel. -->
@@ -3913,17 +3921,6 @@
     -->
     <item quantity="other">이번 주에 추적기 %1$d개 차단됨</item>
   </plurals>
-  <!--
-    Text for displaying the total number of trackers blocked in the trackers blocked panel.
-    %d is a placeholder for the number of trackers blocked.
-  -->
-  <string name="trackers_blocked_panel_total_num_trackers_blocked">차단된 추적기: %d개</string>
-  <!--
-    Text for displaying the number of trackers blocked for a specific tracker category in the trackers blocked panel.
-    %s is a placeholder for the name of the tracker category.
-    %d is a placeholder for the number of trackers blocked.
-  -->
-  <string name="trackers_blocked_panel_categorical_num_trackers_blocked">%s: %d개</string>
   <!--
     Description text for a dialog confirming whether the user wants to delete all data for current site.
     %s is a placeholder for the base domain of website.

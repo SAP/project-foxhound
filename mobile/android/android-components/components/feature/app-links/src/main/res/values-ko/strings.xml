@@ -19,11 +19,6 @@
   -->
   <string name="mozac_feature_applinks_normal_confirm_dialog_title_with_app_name_2">%s 앱에서 이 링크를 여시겠습니까?</string>
   <!--
-    The title of the prompt that warns users their normal browsing session is trying to open another app
-    %s is a placeholder that will be replaced by an app name
-  -->
-  <string name="mozac_feature_applinks_normal_confirm_dialog_title_with_app_name">%s에서 열기</string>
-  <!--
     The message of the prompt to confirm with users that they want to open the link in another app
     %s is a placeholder that will be replaced by the app name
   -->

@@ -1329,8 +1329,6 @@
   <string name="webcompat_reporter_label_whats_broken_2">چه مشکلی پیش آمده است؟</string>
   <!-- The error message of the dropdown, prompting the user to select a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_choose_reason_error">لطفا یک دلیل انتخاب کنید</string>
-  <!-- The label/title of an optional field in the Web Compat Reporter feature for adding additional information. -->
-  <string name="webcompat_reporter_label_description">مشکل را شرح دهید (اختیاری)</string>
   <!-- The button text for the cancel button to leave the Web Compat Reporter feature. -->
   <string name="webcompat_reporter_cancel">انصراف</string>
   <!-- The button text for the send button to submit the provided form data. -->
@@ -2305,8 +2303,6 @@
   <string name="addresses_save_button">ذخیره‌</string>
   <!-- The text for the "Cancel" button for cancelling adding, updating or deleting an address -->
   <string name="addresses_cancel_button">لغو</string>
-  <!-- The text for the "Delete address" button for deleting an address -->
-  <string name="addressess_delete_address_button">حذف نشانی</string>
   <!-- The title for the "Delete address" confirmation dialog -->
   <string name="addressess_confirm_dialog_message_2">این نشانی حذف شود؟</string>
   <!-- The text for the positive button on "Delete address" dialog -->
@@ -2794,8 +2790,6 @@
     %s is the name of the app (for example "Firefox").
   -->
   <string name="protection_panel_banner_protected_title">%s در حال محافظت است</string>
-  <!-- Description text for the protection panel banner when tracking protection is enabled. -->
-  <string name="protection_panel_banner_protected_description">شما محافظت شده‌اید. اگر چیزی را ببینیم، به شما اطلاع خواهیم داد.</string>
   <!-- Label text for the Enhanced Tracking Protection toggle. -->
   <string name="protection_panel_etp_toggle_label">محافظت پیشرفته در برابر ردیابی</string>
   <!--
@@ -2803,21 +2797,8 @@
     %d is a placeholder for the number of trackers blocked.
   -->
   <string name="protection_panel_num_trackers_blocked">ردیاب‌ها مسدود شدند: %d</string>
-  <!-- Text for when no trackers have been blocked. -->
-  <string name="protection_panel_no_trackers_blocked">ردیابی یافت نشد</string>
   <!-- Title text for the protection panel permissions section. -->
   <string name="protection_panel_permissions_title">مجوزها</string>
-  <!--
-    Text for displaying the total number of trackers blocked in the trackers blocked panel.
-    %d is a placeholder for the number of trackers blocked.
-  -->
-  <string name="trackers_blocked_panel_total_num_trackers_blocked">ردیاب‌ها مسدود شدند: %d</string>
-  <!--
-    Text for displaying the number of trackers blocked for a specific tracker category in the trackers blocked panel.
-    %s is a placeholder for the name of the tracker category.
-    %d is a placeholder for the number of trackers blocked.
-  -->
-  <string name="trackers_blocked_panel_categorical_num_trackers_blocked">%s: %d</string>
   <!--
     Description text for a dialog confirming whether the user wants to delete all data for current site.
     %s is a placeholder for the base domain of website.

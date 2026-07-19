@@ -1672,8 +1672,6 @@
   <string name="credit_cards_warning_dialog_message_3">កំណត់លំនាំចាក់សោឧបករណ៍ PIN ឬពាក្យសម្ងាត់ ដើម្បីការពារវិធីបង់ប្រាក់ ដែលអ្នកបានរក្សាទុកពីការចូលប្រើ ប្រសិនបើមាននរណាម្នាក់ មានឧបករណ៍របស់អ្នកក្នុងដៃ។</string>
   <!-- The text for the "Cancel" button for cancelling adding, updating or deleting an address -->
   <string name="addresses_cancel_button">បោះបង់</string>
-  <!-- The text for the "Delete address" button for deleting an address -->
-  <string name="addressess_delete_address_button">លុបអាសយដ្ឋាន</string>
   <!-- The title for the "Delete address" confirmation dialog -->
   <string name="addressess_confirm_dialog_message_2">លុបអាសយដ្ឋាននេះ?</string>
   <!-- The text for the positive button on "Delete address" dialog -->

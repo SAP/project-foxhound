@@ -31,6 +31,8 @@
   <string name="history_search_hint">پیتینیڌن ویرگار</string>
   <!-- Placeholder text shown in search bar when using bookmarks search -->
   <string name="bookmark_search_hint">پیتینیڌن نشووکا</string>
+  <!-- Content description for the toolbar back button while searching bookmarks -->
+  <string name="bookmark_close_search_description">وورگشتن وو بستن پیتینیڌن</string>
   <!-- Placeholder text shown in search bar when using tabs search -->
   <string name="tab_search_hint">پیتینیڌن بلگه یل</string>
   <!-- Placeholder text shown in the search bar when using application search engines -->
@@ -1714,8 +1716,6 @@
   <string name="tab_group_color_pink">آل</string>
   <!-- Tab group color: Purple -->
   <string name="tab_group_color_purple">بناوش</string>
-  <!-- Tab group color: Violet -->
-  <string name="tab_group_color_violet">بناوش</string>
   <!-- Tab group color: Blue -->
   <string name="tab_group_color_blue">کوۊ</string>
   <!-- Tab group color: Cyan -->
@@ -1985,8 +1985,6 @@
   <string name="webcompat_reporter_choose_reason_error">ی دلیل ن پسند کۊنین</string>
   <!-- The label/title of an optional field in the Web Compat Reporter feature for adding additional information. -->
   <string name="webcompat_reporter_label_description_2">موشکل ن وا جۊزعیات بۊگۊین تا و ایما من واجۊری وو هل کردنس هیاری بڌه (اختیاری)</string>
-  <!-- The label/title of an optional field in the Web Compat Reporter feature for adding additional information. -->
-  <string name="webcompat_reporter_label_description">موشکلتووه بۊگۊین (اختیاری)</string>
   <!-- The button text for navigating away from the feature to provide more information on the broken site's bug report. -->
   <string name="webcompat_reporter_add_more_info">ٱووردن دووسمندیا قلوه</string>
   <!-- The button text for the cancel button to leave the Web Compat Reporter feature. -->
@@ -1999,14 +1997,8 @@
   <string name="webcompat_reporter_success_snackbar_text_2">گوزارش فشناڌه وابی</string>
   <!-- Placeholder text for the description field to prompt the user on what they should type. -->
   <string name="webcompat_reporter_problem_description_placeholder_text_2">چ تفاقی وسته؟ دلتووݩ خاست چ تفاقی اۊفته؟ مراهل ن سی هل کردن موشکل بۊگۊین.</string>
-  <!-- Placeholder text for the description field to prompt the user on what they should type. -->
-  <string name="webcompat_reporter_problem_description_placeholder_text">چ وابی؟ چ واست بۊوه؟</string>
   <!-- Label of the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. -->
   <string name="webcompat_reporter_etp_checkbox_text_2">فشناڌن نومگه مووردا مسدۊد وابیڌه و دست زفت وابیڌن رڌجۊری</string>
-  <!-- Label of the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. -->
-  <string name="webcompat_reporter_etp_checkbox_text">فشناڌن لینگا مسدۊد وابیڌه و دست زفت وابیڌن جلاو رڌجۊری</string>
-  <!-- Description text for the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. It informs the user when checked, the report will include the list of URLs that were blocked by Enhanced Tracking Protection on the current page. -->
-  <string name="webcompat_reporter_etp_checkbox_description">زفت وابیڌن پؽش رئڌه جلاو رڌجۊری گاشڌ رڌجۊرا وو اسکریپتایی ن ک ی قرد ز سایتا سی خۊو کار کردن لنگسووݩ هڌن، مسدۊد کونه.\u0020</string>
   <!-- The button text for the preview report button to view a preview of the report. -->
   <string name="webcompat_reporter_preview_report">پؽش نشووݩ گوزارش</string>
   <!-- The title shown at the top of the WebCompat Report preview panel. This appears after the user taps the “Preview” button before sending a report. -->
@@ -2204,6 +2196,10 @@
   <string name="bookmark_select_folder_new_folder_button_title">دوبلگه نۊ</string>
   <!-- Bookmark snackbar message for moving a single item. %1$s is the title of the item being moved and %2$s is the new parent folder of the bookmark -->
   <string name="bookmark_moved_single_item">جاگورویی %1$s و %2$s</string>
+  <!-- Text for bookmark search page when there are no results. -->
+  <string name="bookmark_no_search_results">هیچ ی جۊر بیڌنی نجۊرست.</string>
+  <!-- Additional text for bookmark search page when there are no results. -->
+  <string name="bookmark_no_search_results_additional_text">ی پیتینیڌن دیری ن امتهووݩ کۊنین!</string>
   <!--
     Site Permissions
 
@@ -2632,15 +2628,6 @@
     <item quantity="one">%d رڌجۊر مسدۊد وابی</item>
     <item quantity="other">%d رڌجۊر مسدۊد وابی</item>
   </plurals>
-  <plurals name="trackers_blocked_count">
-    <!--
-      Trackers blocked card on homepage
-
-      Text shown on the trackers blocked card. %d is the number of trackers blocked.
-    -->
-    <item quantity="one">%d رڌجۊر مسدۊد وابی</item>
-    <item quantity="other">%d رڌجۊر مسدۊد وابی</item>
-  </plurals>
   <!-- Text shown on the trackers blocked card when no trackers have been blocked yet -->
   <string name="trackers_blocked_empty">ایسا زفت وابیڌینه</string>
   <!-- Text shown below the trackers blocked card with typing animation -->
@@ -3014,9 +3001,9 @@
   <!-- Title of PIN verification dialog to direct users to re-enter their device credentials to access their logins -->
   <string name="logins_biometric_prompt_message_pin">گۊشیڌن رزم دسگا</string>
   <!-- Title for Accessibility Force Enable Zoom Preference -->
-  <string name="preference_accessibility_force_enable_zoom">گپ نمایی من پوی وبگه یل</string>
+  <string name="preference_accessibility_force_enable_zoom">زۊم کردن من پوی وبگه یل</string>
   <!-- Summary for Accessibility Force Enable Zoom Preference -->
-  <string name="preference_accessibility_force_enable_zoom_summary">هتا من وبگه یلی ک ز ای هرکت جلاوگری اکونن، ترین خرج کردن وو گپ نمایی ن فعال کۊنین.</string>
+  <string name="preference_accessibility_force_enable_zoom_summary">هتا من وبگه یلی ک ز ای هرکت جلاوگری اکونن، ترین خرج کردن وو زۊم کردن ن فعال کۊنین.</string>
   <!-- Saved logins sorting strategy menu item -by name- (if selected, it will sort saved logins alphabetically) -->
   <string name="saved_logins_sort_strategy_alphabetically">نوم (A-Z)</string>
   <!-- Saved logins sorting strategy menu item -by last used- (if selected, it will sort saved logins by last used) -->
@@ -3143,6 +3130,30 @@
   <string name="ip_protection_data_limit_reached_snackbar">%1$d گیگابایت داده VPN و کار گرؽڌه وابی. دسرسی ما پؽش ری وورنشۊوی ابۊ.</string>
   <!-- Snackbar (in-app pop-up notification) action button text that takes the user to the VPN settings screen. -->
   <string name="ip_protection_data_limit_reached_snackbar_action">سامووا</string>
+  <!-- Description shown on the browser VPN settings screen prompting the user to turn the VPN on. -->
+  <string name="ip_protection_settings_description" tools:ignore="UnusedResources">VPN ن رۊشن کۊنین تا گشتن ایسا سیخومی تر وو رڌجۊری هو سخت تر ابۊ.</string>
+  <!-- Title shown on the browser VPN settings screen for location selection section. -->
+  <string name="ip_protection_location_title" tools:ignore="UnusedResources">جاگه</string>
+  <!-- Label for the Recommended server location option which is automatically selected by the browser. -->
+  <string name="ip_protection_recommended_location" tools:ignore="UnusedResources">پؽشنهاڌ وابیڌه</string>
+  <!-- Headline for the card that promotes the standalone Mozilla VPN product. -->
+  <string name="ip_protection_mozilla_vpn_upsell_headline" tools:ignore="UnusedResources,BrandUsage">زفت وابیڌن قلوه وا Mozilla VPN</string>
+  <!-- Body for the card that promotes the standalone Mozilla VPN product. -->
+  <string name="ip_protection_mozilla_vpn_upsell_body" tools:ignore="UnusedResources">ز منجا بیشتر ز 300 جاگه پسند کۊنین وو ز پوی برنومه یل خوتووݩ من هدکسر 5 دسگا خوتووݩ ن زفت کۊنین.</string>
+  <!-- Label for the button that takes the user to get the standalone Mozilla VPN product. -->
+  <string name="ip_protection_mozilla_vpn_upsell_button" tools:ignore="UnusedResources,BrandUsage">گرؽڌن Mozilla VPN</string>
+  <!-- Title for the browser VPN location picker screen. -->
+  <string name="ip_protection_location_picker_title" tools:ignore="UnusedResources">پسند جاگه VPN</string>
+  <!-- Description for what it means to use the Recommended setting and let the app automatically pick the best server location. -->
+  <string name="ip_protection_location_fastest_description" tools:ignore="UnusedResources, BrandUsage">Firefox زل ترین جاگه ن اجۊره</string>
+  <!-- Error message shown when the selected browser VPN location is unavailable. -->
+  <string name="ip_protection_location_unavailable" tools:ignore="UnusedResources">جاگه من دسرس نؽ. جاگه دیری ن پسند کۊنین.</string>
+  <!-- Snackbar (in-app pop-up notification) text shown when the previously selected browser VPN location is unavailable and the recommended location was used instead. -->
+  <string name="ip_protection_location_unavailable_recommended_snackbar" tools:ignore="UnusedResources">VPN پسند وابیڌه من دسرس نؽ. و جاگه پؽشنهاڌی منپیز وابیم.</string>
+  <!-- Title for the card shown to the user when we are unable to fetch server locations -->
+  <string name="ip_protection_location_unavailable_title" tools:ignore="UnusedResources">جاگه پؽشی من دسرس نؽ</string>
+  <!-- Description for the card shown to the user when we are unable to fetch server locations -->
+  <string name="ip_protection_location_unavailable_recommended_description" tools:ignore="UnusedResources">و جاگه پؽشنهاڌ وابیڌه منپیز وابی.</string>
   <!--
     Autofill
 
@@ -3295,8 +3306,6 @@
   <string name="addresses_save_button">زفت</string>
   <!-- The text for the "Cancel" button for cancelling adding, updating or deleting an address -->
   <string name="addresses_cancel_button">لقو</string>
-  <!-- The text for the "Delete address" button for deleting an address -->
-  <string name="addressess_delete_address_button">پاک کردن نشۊوی</string>
   <!-- The title for the "Delete address" confirmation dialog -->
   <string name="addressess_confirm_dialog_message_2">ای نشۊوی پاک بۊ؟</string>
   <!-- The text for the positive button on "Delete address" dialog -->
@@ -3851,8 +3860,6 @@
     and there are no trackers blocked.
   -->
   <string name="protection_panel_banner_protected_no_blocked_trackers_description">ایسا زفت وابیڌینه.</string>
-  <!-- Description text for the protection panel banner when tracking protection is enabled. -->
-  <string name="protection_panel_banner_protected_description">ایسا زفت ابۊین. ٱر چیه ن بوینیم، و ایسا وارسۊوی اکۊنیم.</string>
   <!-- Label text for the Enhanced Tracking Protection toggle. -->
   <string name="protection_panel_etp_toggle_label">زفت وابیڌن پؽش رئڌه جلاو رڌجۊری</string>
   <!-- Toggle if Enhanced Tracking Protection is turned on -->
@@ -3868,8 +3875,6 @@
     %d is a placeholder for the number of trackers blocked.
   -->
   <string name="protection_panel_num_trackers_blocked">رڌجۊرا مسدۊد وابین: %d</string>
-  <!-- Text for when no trackers have been blocked. -->
-  <string name="protection_panel_no_trackers_blocked">رڌجۊری نجوست</string>
   <!-- Text for when tracking protection is disabled and no trackers are blocked. -->
   <string name="protection_panel_etp_disabled_no_trackers_blocked">رڌجۊرا مسدۊد نوابینه</string>
   <!-- Link text to navigate to privacy and security settings from the protection panel. -->
@@ -3932,17 +3937,6 @@
     <item quantity="one">%1$d رڌجۊر مسدۊد وابیڌه ای هفته</item>
     <item quantity="other">%1$d رڌجۊر مسدۊد وابیڌه ای هفته</item>
   </plurals>
-  <!--
-    Text for displaying the total number of trackers blocked in the trackers blocked panel.
-    %d is a placeholder for the number of trackers blocked.
-  -->
-  <string name="trackers_blocked_panel_total_num_trackers_blocked">رڌجۊرا مسدۊد وابین: %d</string>
-  <!--
-    Text for displaying the number of trackers blocked for a specific tracker category in the trackers blocked panel.
-    %s is a placeholder for the name of the tracker category.
-    %d is a placeholder for the number of trackers blocked.
-  -->
-  <string name="trackers_blocked_panel_categorical_num_trackers_blocked">%s: %d</string>
   <!--
     Description text for a dialog confirming whether the user wants to delete all data for current site.
     %s is a placeholder for the base domain of website.
@@ -4275,7 +4269,7 @@
   -->
   <string name="setup_checklist_subtitle_3_steps_initial_state">سی سامووݩ %1$s سی بؽڌرین تجروبه گشتن، ای 3 مرهله ن کامل کۊنین.</string>
   <!-- Subtitle for a setup checklist with 3 steps when the first task is completed. -->
-  <string name="setup_checklist_subtitle_3_steps_first_step">ی ر اۊفتاڌن خۊو! ایسا یکی ز س مرهله ن ٱنجوم داڌین.</string>
+  <string name="setup_checklist_subtitle_3_steps_first_step">ی ره اۊفتاڌن خۊو! ایسا یکی ز س مرهله ن ٱنجوم داڌین.</string>
   <!-- Subtitle for a setup checklist with 3 steps when two of the tasks are completed. -->
   <string name="setup_checklist_subtitle_3_steps_second_step">تقریبن رسیڌیم! دو مرهله تموم وابیڌه وو ی مرهله دی باقی منده.</string>
   <!-- Subtitle for a setup checklist with 3 steps completed state. %1$s is the name of the app (for example "Firefox"). -->
@@ -4287,7 +4281,7 @@
   -->
   <string name="setup_checklist_subtitle_6_steps_initial_state">سی بؽڌر وابیڌن تجروبه گشتن، هر شیش مرهله ن سی سامووݩ %1$s کامل کۊنین.</string>
   <!-- Subtitle for a setup checklist with 6 steps when the first task is completed. -->
-  <string name="setup_checklist_subtitle_6_steps_first_step">ی ر اۊفتاڌن خۊو! ایسا 1 مرهله ز 6 مرهله ن ٱنجوم داڌین.</string>
+  <string name="setup_checklist_subtitle_6_steps_first_step">ی ره اۊفتاڌن خۊو! ایسا 1 مرهله ز 6 مرهله ن ٱنجوم داڌین.</string>
   <!-- Subtitle for the setup checklist when the second task is completed. -->
   <string name="setup_checklist_subtitle_6_steps_second_step">ایسا 2 مرهله ز 6 مرهله ن ٱنجوم داڌین. پؽش رئڌن تووݩ هرف نڌاره!</string>
   <!-- Subtitle for a setup checklist with 6 steps when three of the tasks are completed. -->
@@ -4305,7 +4299,7 @@
   -->
   <string name="setup_checklist_subtitle_5_steps_initial_state">سی بؽڌر وابیڌن تجروبه گشتن، هر 5 مرهله ن سی سامووݩ %1$s کامل کۊنین.</string>
   <!-- Subtitle for a setup checklist with 5 steps when the first task is completed. -->
-  <string name="setup_checklist_subtitle_5_steps_first_step">ی ر اۊفتاڌن خۊو! ایسا یکی ز پنج مرهله ن ٱنجوم داڌین.</string>
+  <string name="setup_checklist_subtitle_5_steps_first_step">ی ره اۊفتاڌن خۊو! ایسا یکی ز پنج مرهله ن ٱنجوم داڌین.</string>
   <!-- Subtitle for the setup checklist when the second task is completed. -->
   <string name="setup_checklist_subtitle_5_steps_second_step">ایسا 2 مرهله ز 5 مرهله ن ٱنجوم داڌین. پؽش رئڌن تووݩ هرف نڌاره!</string>
   <!-- Subtitle for a setup checklist with 5 steps when three of the tasks are completed. -->

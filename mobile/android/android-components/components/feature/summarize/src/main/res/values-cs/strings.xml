@@ -75,6 +75,10 @@
   <string name="mozac_summarize_settings_shake_to_summarize">Vytvořit souhrn zatřesením</string>
   <!-- Description for the shake to summarize toggle in settings -->
   <string name="mozac_summarize_settings_shake_to_summarize_description">Pro zobrazení souhrnu stránky zatřeste zařízením ze strany na stranu.</string>
+  <!-- Label for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity">Citlivost na otřesy</string>
+  <!-- Description for the shake sensitivity slider in settings -->
+  <string name="mozac_summarize_settings_shake_sensitivity_description">Nastavte, jak silně je třeba zatřást, aby se spustilo shrnutí.</string>
   <!-- Low option label for the shake sensitivity slider in settings -->
   <string name="mozac_summarize_settings_shake_sensitivity_low">Nízká</string>
   <!-- Medium option label for the shake sensitivity slider in settings -->

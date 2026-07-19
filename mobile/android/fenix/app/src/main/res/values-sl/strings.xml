@@ -1722,8 +1722,6 @@
   <string name="tab_group_color_pink">Rožnata</string>
   <!-- Tab group color: Purple -->
   <string name="tab_group_color_purple">Lila</string>
-  <!-- Tab group color: Violet -->
-  <string name="tab_group_color_violet">Vijolična</string>
   <!-- Tab group color: Blue -->
   <string name="tab_group_color_blue">Modra</string>
   <!-- Tab group color: Cyan -->
@@ -1995,8 +1993,6 @@
   <string name="webcompat_reporter_choose_reason_error">Izberite razlog</string>
   <!-- The label/title of an optional field in the Web Compat Reporter feature for adding additional information. -->
   <string name="webcompat_reporter_label_description_2">Podrobneje opišite težavo, da nam jo pomagate raziskati (neobvezno)</string>
-  <!-- The label/title of an optional field in the Web Compat Reporter feature for adding additional information. -->
-  <string name="webcompat_reporter_label_description">Opišite težavo (neobvezno)</string>
   <!-- The button text for navigating away from the feature to provide more information on the broken site's bug report. -->
   <string name="webcompat_reporter_add_more_info">Dodaj več informacij</string>
   <!-- The button text for the cancel button to leave the Web Compat Reporter feature. -->
@@ -2009,14 +2005,8 @@
   <string name="webcompat_reporter_success_snackbar_text_2">Poročilo poslano</string>
   <!-- Placeholder text for the description field to prompt the user on what they should type. -->
   <string name="webcompat_reporter_problem_description_placeholder_text_2">Kaj se je zgodilo? Kaj bi se moralo zgoditi? Navedite korake, ki privedejo do pojava težave.</string>
-  <!-- Placeholder text for the description field to prompt the user on what they should type. -->
-  <string name="webcompat_reporter_problem_description_placeholder_text">Kaj se je zgodilo? Kaj bi se moralo zgoditi?</string>
   <!-- Label of the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. -->
   <string name="webcompat_reporter_etp_checkbox_text_2">Pošlji seznam elementov, ki jih je zaščita pred sledenjem blokirala</string>
-  <!-- Label of the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. -->
-  <string name="webcompat_reporter_etp_checkbox_text">Pošlji URL-je, ki jih je zaščita pred sledenjem blokirala</string>
-  <!-- Description text for the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. It informs the user when checked, the report will include the list of URLs that were blocked by Enhanced Tracking Protection on the current page. -->
-  <string name="webcompat_reporter_etp_checkbox_description">Izboljšana zaščita pred sledenjem lahko ponekod blokira sledilce in skripte, ki jih spletna mesta potrebujejo za pravilno delovanje.</string>
   <!-- The button text for the preview report button to view a preview of the report. -->
   <string name="webcompat_reporter_preview_report">Predogled prijave</string>
   <!-- The title shown at the top of the WebCompat Report preview panel. This appears after the user taps the “Preview” button before sending a report. -->
@@ -2640,17 +2630,6 @@
     <item quantity="few">%d blokirani sledilci</item>
     <item quantity="other">%d blokiranih sledilcev</item>
   </plurals>
-  <plurals name="trackers_blocked_count">
-    <!--
-      Trackers blocked card on homepage
-
-      Text shown on the trackers blocked card. %d is the number of trackers blocked.
-    -->
-    <item quantity="one">%d zavrnjen sledilec</item>
-    <item quantity="two">%d zavrnjena sledilca</item>
-    <item quantity="few">%d zavrnjeni sledilci</item>
-    <item quantity="other">%d zavrnjenih sledilcev</item>
-  </plurals>
   <!-- Text shown on the trackers blocked card when no trackers have been blocked yet -->
   <string name="trackers_blocked_empty">Zaščiteni ste</string>
   <!-- Preference for enhanced tracking protection for the standard protection settings -->
@@ -3259,8 +3238,6 @@
   <string name="addresses_save_button">Shrani</string>
   <!-- The text for the "Cancel" button for cancelling adding, updating or deleting an address -->
   <string name="addresses_cancel_button">Prekliči</string>
-  <!-- The text for the "Delete address" button for deleting an address -->
-  <string name="addressess_delete_address_button">Izbriši naslov</string>
   <!-- The title for the "Delete address" confirmation dialog -->
   <string name="addressess_confirm_dialog_message_2">Izbrišem ta naslov?</string>
   <!-- The text for the positive button on "Delete address" dialog -->
@@ -3817,8 +3794,6 @@
     and there are no trackers blocked.
   -->
   <string name="protection_panel_banner_protected_no_blocked_trackers_description">Zaščiteni ste.</string>
-  <!-- Description text for the protection panel banner when tracking protection is enabled. -->
-  <string name="protection_panel_banner_protected_description">Zaščiteni ste. Če kaj opazimo, vas obvestimo.</string>
   <!-- Label text for the Enhanced Tracking Protection toggle. -->
   <string name="protection_panel_etp_toggle_label">Izboljšana zaščita pred sledenjem</string>
   <!-- Toggle if Enhanced Tracking Protection is turned on -->
@@ -3834,8 +3809,6 @@
     %d is a placeholder for the number of trackers blocked.
   -->
   <string name="protection_panel_num_trackers_blocked">Zavrnjeni sledilci: %d</string>
-  <!-- Text for when no trackers have been blocked. -->
-  <string name="protection_panel_no_trackers_blocked">Ni najdenih sledilcev</string>
   <!-- Text for when tracking protection is disabled and no trackers are blocked. -->
   <string name="protection_panel_etp_disabled_no_trackers_blocked">Sledilci niso blokirani</string>
   <!-- Link text to navigate to privacy and security settings from the protection panel. -->
@@ -3912,17 +3885,6 @@
     <item quantity="few">%1$d blokirani sledilci ta teden</item>
     <item quantity="other">%1$d blokiranih sledilcev ta teden</item>
   </plurals>
-  <!--
-    Text for displaying the total number of trackers blocked in the trackers blocked panel.
-    %d is a placeholder for the number of trackers blocked.
-  -->
-  <string name="trackers_blocked_panel_total_num_trackers_blocked">Zavrnjeni sledilci: %d</string>
-  <!--
-    Text for displaying the number of trackers blocked for a specific tracker category in the trackers blocked panel.
-    %s is a placeholder for the name of the tracker category.
-    %d is a placeholder for the number of trackers blocked.
-  -->
-  <string name="trackers_blocked_panel_categorical_num_trackers_blocked">%s: %d</string>
   <!--
     Description text for a dialog confirming whether the user wants to delete all data for current site.
     %s is a placeholder for the base domain of website.

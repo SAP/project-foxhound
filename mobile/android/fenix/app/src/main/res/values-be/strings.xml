@@ -1363,8 +1363,6 @@
   <string name="tab_group_color_pink">Ружовы</string>
   <!-- Tab group color: Purple -->
   <string name="tab_group_color_purple">Фіялетавы</string>
-  <!-- Tab group color: Violet -->
-  <string name="tab_group_color_violet">Фіялетавы</string>
   <!-- Tab group color: Blue -->
   <string name="tab_group_color_blue">Блакітны</string>
   <!-- Tab group color: Green -->
@@ -1550,18 +1548,12 @@
   <string name="webcompat_reporter_choose_reason_2">Выберыце прычыну</string>
   <!-- The error message of the dropdown, prompting the user to select a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_choose_reason_error">Калі ласка, выберыце прычыну</string>
-  <!-- The label/title of an optional field in the Web Compat Reporter feature for adding additional information. -->
-  <string name="webcompat_reporter_label_description">Апішыце праблему (неабавязкова)</string>
   <!-- The button text for the cancel button to leave the Web Compat Reporter feature. -->
   <string name="webcompat_reporter_cancel">Скасаваць</string>
   <!-- The button text for the send button to submit the provided form data. -->
   <string name="webcompat_reporter_send">Даслаць</string>
   <!-- Text for a snackbar to confirm the successful submission of a WebCompat report. -->
   <string name="webcompat_reporter_success_snackbar_text_2">Справаздача адпраўлена</string>
-  <!-- Label of the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. -->
-  <string name="webcompat_reporter_etp_checkbox_text">Адпраўляць URL-адрасы, заблакаваныя аховай ад сачэння</string>
-  <!-- Description text for the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. It informs the user when checked, the report will include the list of URLs that were blocked by Enhanced Tracking Protection on the current page. -->
-  <string name="webcompat_reporter_etp_checkbox_description">Узмоцненая ахова ад сачэння можа блакаваць трэкеры і\u00a0скрыпты, неабходныя для правільнай працы некаторых сайтаў.</string>
   <!-- The button text for the preview report button to view a preview of the report. -->
   <string name="webcompat_reporter_preview_report">Перадпаказ справаздачы</string>
   <!-- The title shown at the top of the WebCompat Report preview panel. This appears after the user taps the “Preview” button before sending a report. -->
@@ -2105,16 +2097,6 @@
     <item quantity="few">%d трэкеры заблакавана</item>
     <item quantity="other">%d трэкераў заблакавана</item>
   </plurals>
-  <plurals name="trackers_blocked_count">
-    <!--
-      Trackers blocked card on homepage
-
-      Text shown on the trackers blocked card. %d is the number of trackers blocked.
-    -->
-    <item quantity="one">%d трэкер заблакаваны</item>
-    <item quantity="few">%d трэкеры заблакавана</item>
-    <item quantity="other">%d трэкераў заблакавана</item>
-  </plurals>
   <!-- Text shown on the trackers blocked card when no trackers have been blocked yet -->
   <string name="trackers_blocked_empty">Вы абаронены</string>
   <!-- Preference for enhanced tracking protection for the standard protection settings -->
@@ -2606,8 +2588,6 @@
   <string name="addresses_save_button">Захаваць</string>
   <!-- The text for the "Cancel" button for cancelling adding, updating or deleting an address -->
   <string name="addresses_cancel_button">Скасаваць</string>
-  <!-- The text for the "Delete address" button for deleting an address -->
-  <string name="addressess_delete_address_button">Выдаліць адрас</string>
   <!-- The title for the "Delete address" confirmation dialog -->
   <string name="addressess_confirm_dialog_message_2">Выдаліць гэты адрас?</string>
   <!-- The text for the positive button on "Delete address" dialog -->

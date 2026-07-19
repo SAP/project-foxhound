@@ -7,34 +7,6 @@
 -->
 
 <resources>
-  <!-- Title shown in the protection dashboard indicating the user is protected -->
-  <string name="mozac_protections_dashboard_youre_protected">Ochrona jest włączona</string>
-  <plurals name="mozac_protections_dashboard_trackers_blocked_this_week">
-    <!--
-      Label shown below the tracker count in the dashboard. The count is displayed separately
-      above this string and is used to select the correct plural form. Do not include the number in
-      the translation.
-    -->
-    <item quantity="one">Zablokowany element śledzący w\u00a0tym tygodniu</item>
-    <item quantity="few">Zablokowane elementy śledzące w\u00a0tym tygodniu</item>
-    <item quantity="other">Zablokowanych elementów śledzących w\u00a0tym tygodniu</item>
-  </plurals>
-  <plurals name="mozac_protections_dashboard_data_saved">
-    <!-- Label showing data saved in megabytes. %1$d is the number of MB saved -->
-    <item quantity="one">Zaoszczędzono %1$d\u00a0MB</item>
-    <item quantity="few">Zaoszczędzono %1$d\u00a0MB</item>
-    <item quantity="other">Zaoszczędzono %1$d\u00a0MB</item>
-  </plurals>
-  <!-- Section header for tracker category breakdown -->
-  <string name="protections_dashboard_where_they_came_from">Skąd się wzięły</string>
-  <!-- Tracker category: Advertising trackers -->
-  <string name="protections_dashboard_category_ads">Reklamy</string>
-  <!-- Tracker category: Analytics trackers -->
-  <string name="protections_dashboard_category_analytics">Analityka</string>
-  <!-- Tracker category: Social media trackers -->
-  <string name="protections_dashboard_category_social">Społecznościowe</string>
-  <!-- Tracker category: Other trackers -->
-  <string name="protections_dashboard_category_others">Inne</string>
   <!-- Title shown in the protection dashboard header next to the shield icon -->
   <string name="mozac_protections_dashboard_trackers_blocked_this_week_title">Zablokowane elementy śledzące w\u00a0tym tygodniu</string>
   <!--

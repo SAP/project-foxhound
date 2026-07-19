@@ -351,6 +351,8 @@
   <string name="mozac_feature_addons_not_yet_supported_caption2">ᱟᱞᱮ ᱫᱚ ᱱᱤᱛᱚᱜ ᱮᱛᱦᱚᱵ ᱫᱚᱭᱚᱱ ᱠᱚ ᱨᱮᱭᱟᱜ ᱢᱮᱚᱠ ᱯᱟᱥᱱᱟᱣ ᱠᱚ ᱞᱟᱹᱜᱤᱫ ᱥᱟᱹᱯᱯᱚᱴ ᱞᱮ ᱛᱚᱭᱟᱨ ᱮᱜᱼᱟ ᱾</string>
   <!-- This is the caption for the extension installation progress overlay -->
   <string name="mozac_extension_install_progress_caption">ᱮᱠᱥᱴᱮᱱᱥᱚᱱ ᱰᱟᱣᱱᱞᱚᱰ ᱟᱨ ᱧᱮᱞ ᱢᱮᱲᱟᱣ ᱦᱩᱭᱩᱜ ᱠᱟᱱᱟ …</string>
+  <!-- Error shown when extensions could not be loaded -->
+  <string name="mozac_feature_addons_failed_to_load_extensions">ᱮᱠᱥᱴᱮᱱᱥᱚᱱ ᱵᱟᱝ ᱞᱳᱰ ᱫᱟᱲᱮᱭᱟᱜ ᱠᱟᱱᱟ ᱾ ᱛᱟᱭᱚᱢ ᱛᱮ ᱫᱚᱦᱲᱟ ᱪᱮᱥᱴᱟᱭ ᱢᱮ᱾</string>
   <!-- Error shown when unable to find a translation for an add-on field. %1$s is the locale of the user and %2$s is the default language of the add-on -->
   <string name="mozac_feature_addons_failed_to_translate">%1$s ᱞᱟᱹᱜᱤᱫ ᱛᱚᱨᱡᱚᱢᱟ ᱥᱟᱶ ᱢᱩᱞ ᱯᱟᱹᱨᱥᱤ %2$s ᱵᱟᱭ ᱧᱟᱢ ᱞᱟᱱᱟ</string>
   <!-- Text shown after successfully installed an add-on. %1$s is the add-on name. -->

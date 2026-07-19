@@ -1543,6 +1543,8 @@
   <string name="add_tab">Otwórz nową kartę</string>
   <!-- Content description (not visible, for screen readers etc.): Add tab button. Adds a news tab when pressed -->
   <string name="add_private_tab">Otwórz prywatną kartę</string>
+  <!-- Content description (not visible, for screen readers etc.): Create tab group button. Opens the create tab group sheet when pressed -->
+  <string name="create_tab_group_content_description">Utwórz grupę kart</string>
   <!-- Text for the tab search bar placeholder -->
   <string name="tab_manager_search_bar_placeholder">Szukaj w\u00a0kartach</string>
   <!-- Text shown in the menu to view recently closed tabs -->
@@ -1718,8 +1720,6 @@
   <string name="tab_group_color_pink">Różowy</string>
   <!-- Tab group color: Purple -->
   <string name="tab_group_color_purple">Purpurowy</string>
-  <!-- Tab group color: Violet -->
-  <string name="tab_group_color_violet">Fioletowy</string>
   <!-- Tab group color: Blue -->
   <string name="tab_group_color_blue">Niebieski</string>
   <!-- Tab group color: Cyan -->
@@ -1990,8 +1990,6 @@
   <string name="webcompat_reporter_choose_reason_error">Proszę wybrać powód</string>
   <!-- The label/title of an optional field in the Web Compat Reporter feature for adding additional information. -->
   <string name="webcompat_reporter_label_description_2">Szczegółowo opisz problem, aby pomóc nam go zbadać (opcjonalne)</string>
-  <!-- The label/title of an optional field in the Web Compat Reporter feature for adding additional information. -->
-  <string name="webcompat_reporter_label_description">Opisz problem (opcjonalne)</string>
   <!-- The button text for navigating away from the feature to provide more information on the broken site's bug report. -->
   <string name="webcompat_reporter_add_more_info">Dodaj więcej informacji</string>
   <!-- The button text for the cancel button to leave the Web Compat Reporter feature. -->
@@ -2004,14 +2002,8 @@
   <string name="webcompat_reporter_success_snackbar_text_2">Wysłano zgłoszenie</string>
   <!-- Placeholder text for the description field to prompt the user on what they should type. -->
   <string name="webcompat_reporter_problem_description_placeholder_text_2">Co się stało? Co powinno się było stać? Powiedz nam, jak możemy powtórzyć problem.</string>
-  <!-- Placeholder text for the description field to prompt the user on what they should type. -->
-  <string name="webcompat_reporter_problem_description_placeholder_text">Co się stało? Co powinno się było stać?</string>
   <!-- Label of the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. -->
   <string name="webcompat_reporter_etp_checkbox_text_2">Wyślij listę elementów zablokowanych przez ochronę przed śledzeniem</string>
-  <!-- Label of the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. -->
-  <string name="webcompat_reporter_etp_checkbox_text">Wyślij adresy zablokowane przez ochronę przed śledzeniem</string>
-  <!-- Description text for the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. It informs the user when checked, the report will include the list of URLs that were blocked by Enhanced Tracking Protection on the current page. -->
-  <string name="webcompat_reporter_etp_checkbox_description">Wzmocniona ochrona przed śledzeniem może blokować elementy śledzące i\u00a0skrypty, których niektóre strony potrzebują do poprawnego działania.</string>
   <!-- The button text for the preview report button to view a preview of the report. -->
   <string name="webcompat_reporter_preview_report">Podgląd zgłoszenia</string>
   <!-- The title shown at the top of the WebCompat Report preview panel. This appears after the user taps the “Preview” button before sending a report. -->
@@ -2629,16 +2621,6 @@
   <!-- Text displayed that links to website about enhanced tracking protection -->
   <string name="preference_enhanced_tracking_protection_explanation_learn_more">Więcej informacji</string>
   <plurals name="trackers_blocked_count_2">
-    <!--
-      Trackers blocked card on homepage
-
-      Text shown on the trackers blocked card. %d is the number of trackers blocked.
-    -->
-    <item quantity="one">Zablokowano %d element śledzący</item>
-    <item quantity="few">Zablokowano %d elementy śledzące</item>
-    <item quantity="other">Zablokowano %d elementów śledzących</item>
-  </plurals>
-  <plurals name="trackers_blocked_count">
     <!--
       Trackers blocked card on homepage
 
@@ -3302,8 +3284,6 @@
   <string name="addresses_save_button">Zachowaj</string>
   <!-- The text for the "Cancel" button for cancelling adding, updating or deleting an address -->
   <string name="addresses_cancel_button">Anuluj</string>
-  <!-- The text for the "Delete address" button for deleting an address -->
-  <string name="addressess_delete_address_button">Usuń adres</string>
   <!-- The title for the "Delete address" confirmation dialog -->
   <string name="addressess_confirm_dialog_message_2">Czy usunąć ten adres?</string>
   <!-- The text for the positive button on "Delete address" dialog -->
@@ -3859,8 +3839,6 @@
     and there are no trackers blocked.
   -->
   <string name="protection_panel_banner_protected_no_blocked_trackers_description">Ochrona jest włączona.</string>
-  <!-- Description text for the protection panel banner when tracking protection is enabled. -->
-  <string name="protection_panel_banner_protected_description">Ochrona jest włączona. Jeśli coś zauważymy, damy Ci znać.</string>
   <!-- Label text for the Enhanced Tracking Protection toggle. -->
   <string name="protection_panel_etp_toggle_label">Wzmocniona ochrona przed śledzeniem</string>
   <!-- Toggle if Enhanced Tracking Protection is turned on -->
@@ -3876,8 +3854,6 @@
     %d is a placeholder for the number of trackers blocked.
   -->
   <string name="protection_panel_num_trackers_blocked">Zablokowane elementy śledzące: %d</string>
-  <!-- Text for when no trackers have been blocked. -->
-  <string name="protection_panel_no_trackers_blocked">Nie odnaleziono żadnych elementów śledzących</string>
   <!-- Text for when tracking protection is disabled and no trackers are blocked. -->
   <string name="protection_panel_etp_disabled_no_trackers_blocked">Elementy śledzące nie są blokowane</string>
   <!-- Link text to navigate to privacy and security settings from the protection panel. -->
@@ -3947,17 +3923,6 @@
     <item quantity="few">W tym tygodniu zablokowano %1$d elementy śledzące</item>
     <item quantity="other">W tym tygodniu zablokowano %1$d elementów śledzących</item>
   </plurals>
-  <!--
-    Text for displaying the total number of trackers blocked in the trackers blocked panel.
-    %d is a placeholder for the number of trackers blocked.
-  -->
-  <string name="trackers_blocked_panel_total_num_trackers_blocked">Zablokowane elementy śledzące: %d</string>
-  <!--
-    Text for displaying the number of trackers blocked for a specific tracker category in the trackers blocked panel.
-    %s is a placeholder for the name of the tracker category.
-    %d is a placeholder for the number of trackers blocked.
-  -->
-  <string name="trackers_blocked_panel_categorical_num_trackers_blocked">%s: %d</string>
   <!--
     Description text for a dialog confirming whether the user wants to delete all data for current site.
     %s is a placeholder for the base domain of website.
