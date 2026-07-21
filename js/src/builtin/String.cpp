@@ -152,7 +152,16 @@ js::str_tainted(JSContext* cx, unsigned argc, Value* vp)
   }
   // We store the string as argument for a manual taint operation. This way it's easy to see what
   // the original value of a manually tainted string was for debugging/testing.
-  TaintOperation op = TaintOperation(source.c_str(), TaintLocationFromContext(cx), { taintarg(cx, str) });
+  // Every parameter passed after the source name is additionally stored as a string in the
+  // arguments vector, allowing arbitrary custom source attributes to be attached to the operation.
+  std::vector<std::u16string> arguments;
+  arguments.push_back(taintarg(cx, str));
+  for (unsigned i = 2; i < args.length(); i++) {
+    RootedValue arg(cx, args[i]);
+    arguments.push_back(taintarg(cx, arg));
+  }
+
+  TaintOperation op = TaintOperation(source.c_str(), TaintLocationFromContext(cx), std::move(arguments));
   op.setSource();
 
   JSString* tainted_str = NewDependentString(cx, str, 0, str->length());
