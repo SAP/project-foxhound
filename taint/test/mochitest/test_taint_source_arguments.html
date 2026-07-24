@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>
+      Check that String.tainted() stores an arbitrary number of extra
+      parameters as strings in the taint operation arguments vector
+    </title>
+    <script src="/tests/SimpleTest/SimpleTest.js"></script>
+    <link rel="stylesheet" href="/tests/SimpleTest/test.css" />
+
+    <script type="text/javascript">
+      // Returns the taint source operation of a freshly tainted string.
+      // For a value produced by String.tainted() the flow consists of a
+      // single node, the manual taint source itself.
+      function sourceOp(value) {
+        check_tainted(value);
+        const op = value.taint[0].flow.find((o) => o.source);
+        SimpleTest.ok(op, "Tainted value must have a source operation");
+        return op;
+      }
+
+      function checkArguments(op, expected) {
+        // .arguments is exposed as a dense JS array by str_taint_getter.
+        SimpleTest.is(
+          op.arguments.length,
+          expected.length,
+          `Unexpected number of arguments: [${op.arguments}]`
+        );
+        for (let i = 0; i < expected.length; i++) {
+          SimpleTest.is(
+            op.arguments[i],
+            expected[i],
+            `Unexpected value for argument ${i}`
+          );
+        }
+      }
+
+      // Without a source name the operation keeps its default name and the
+      // arguments vector holds only the original string value.
+      add_task(async function test_no_extra_args() {
+        const op = sourceOp(String.tainted("hello"));
+        SimpleTest.is(op.operation, "manual taint source");
+        checkArguments(op, ["hello"]);
+      });
+
+      // A custom source name is stored as the operation name, not as an
+      // argument, so the arguments vector is unchanged.
+      add_task(async function test_source_name_only() {
+        const op = sourceOp(String.tainted("hello", "mysource"));
+        SimpleTest.is(op.operation, "mysource");
+        checkArguments(op, ["hello"]);
+      });
+
+      // Every parameter after the source name is appended to the arguments
+      // vector as a string.
+      add_task(async function test_single_extra_arg() {
+        const op = sourceOp(String.tainted("hello", "mysource", "attr1"));
+        SimpleTest.is(op.operation, "mysource");
+        checkArguments(op, ["hello", "attr1"]);
+      });
+
+      add_task(async function test_multiple_extra_args() {
+        const op = sourceOp(
+          String.tainted("hello", "mysource", "a", "b", "c")
+        );
+        SimpleTest.is(op.operation, "mysource");
+        checkArguments(op, ["hello", "a", "b", "c"]);
+      });
+
+      // Non-string parameters are coerced to strings before being stored.
+      add_task(async function test_non_string_extra_args() {
+        const op = sourceOp(
+          String.tainted("hello", "mysource", 42, true, null)
+        );
+        SimpleTest.is(op.operation, "mysource");
+        checkArguments(op, ["hello", "42", "true", "null"]);
+      });
+
+      // The default source name is used when the source name is undefined,
+      // while later parameters are still recorded as arguments.
+      add_task(async function test_default_name_with_extra_args() {
+        const op = sourceOp(
+          String.tainted("hello", undefined, "attr1", "attr2")
+        );
+        SimpleTest.is(op.operation, "manual taint source");
+        checkArguments(op, ["hello", "attr1", "attr2"]);
+      });
+
+      // very long arg
+      add_task(async function test_default_name_with_extra_args() {
+        let arg = "hello" + " hello".repeat(128);
+        const op = sourceOp(
+          String.tainted("hello", "foo", arg)
+        );
+        SimpleTest.is(op.operation, "foo");
+        checkArguments(op, ["hello", arg]);
+      });
+    </script>
+  </head>
+
+  <body></body>
+</html>
