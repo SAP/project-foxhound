@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>
+      Check that taint flows through Trusted Types and that the taint of the
+      wrapped string is exposed via the `taint` property on TrustedHTML,
+      TrustedScript and TrustedScriptURL.
+    </title>
+    <script src="/tests/SimpleTest/SimpleTest.js"></script>
+    <link rel="stylesheet" href="/tests/SimpleTest/test.css" />
+
+    <script type="text/javascript">
+      // `trustedTypes` is only exposed on a global that was created while
+      // `dom.security.trusted_types.enabled` was true. Flip the pref first, then
+      // run everything inside a freshly created (same-origin) iframe whose global
+      // therefore exposes the Trusted Types API.
+      let ttWin;
+      let ttDoc;
+      let policy;
+
+      // Every trusted type only wraps a string. The `taint` property must
+      // expose the very same shape as the `.taint` getter on a primitive
+      // string: an array of ranges, each with a `flow` of operation nodes.
+      function findOp(tainted, name) {
+        return tainted.taint[0].flow.find((o) => o.operation === name);
+      }
+
+      function findSource(tainted) {
+        return tainted.taint[0].flow.find((o) => o.source);
+      }
+
+      // Shared assertions for a trusted type minted from a tainted input.
+      // `opName` is the propagation node added by Foxhound when the value
+      // passes through the trusted type.
+      function checkTaintedTrustedType(trusted, opName) {
+        // Part 2: the taint property is exposed on the trusted type itself.
+        SimpleTest.ok(
+          trusted.taint !== undefined,
+          `${opName}.taint must be exposed`
+        );
+        SimpleTest.ok(
+          trusted.taint.length > 0,
+          `${opName}.taint must be non-empty for a tainted input`
+        );
+
+        // Part 1: taint flowed through the trusted type, keeping the original
+        // source and recording a propagation node for the trusted type.
+        const source = findSource(trusted);
+        SimpleTest.ok(source, `${opName} taint must retain its source`);
+        SimpleTest.is(
+          source.operation,
+          "TestSource",
+          `${opName} source operation must be preserved`
+        );
+        SimpleTest.ok(
+          findOp(trusted, opName),
+          `${opName} taint flow must contain a '${opName}' node`
+        );
+
+        // Stringifying the trusted type must keep the taint as well.
+        check_tainted(String(trusted));
+      }
+
+      add_task(async function setup() {
+        await SpecialPowers.pushPrefEnv({
+          set: [["dom.security.trusted_types.enabled", true]],
+        });
+
+        const iframe = document.createElement("iframe");
+        const loaded = new Promise((resolve) =>
+          iframe.addEventListener("load", resolve, { once: true })
+        );
+        iframe.srcdoc = "<!DOCTYPE html><title>tt</title>";
+        document.body.appendChild(iframe);
+        await loaded;
+
+        ttWin = iframe.contentWindow;
+        ttDoc = iframe.contentDocument;
+        SimpleTest.ok(
+          ttWin.trustedTypes,
+          "trustedTypes must be exposed in the iframe"
+        );
+
+        // A single policy providing identity callbacks for all three kinds of
+        // trusted type, so createXXX(input) simply wraps `input`. A policy name
+        // may only be created once, so it is shared across the tasks below.
+        policy = ttWin.trustedTypes.createPolicy("test-taint-policy", {
+          createHTML: (s) => s,
+          createScript: (s) => s,
+          createScriptURL: (s) => s,
+        });
+      });
+
+      add_task(async function test_createHTML() {
+        const input = String.tainted("<b>hello</b>", "TestSource");
+        const trusted = policy.createHTML(input);
+        checkTaintedTrustedType(trusted, "TrustedHTML");
+      });
+
+      add_task(async function test_createScript() {
+        const input = String.tainted("alert(1)", "TestSource");
+        const trusted = policy.createScript(input);
+        checkTaintedTrustedType(trusted, "TrustedScript");
+      });
+
+      add_task(async function test_createScriptURL() {
+        const input = String.tainted("https://example.com/x.js", "TestSource");
+        const trusted = policy.createScriptURL(input);
+        checkTaintedTrustedType(trusted, "TrustedScriptURL");
+      });
+
+      // Run `assign` (which feeds a trusted type into a Trusted Types sink) and
+      // resolve with the detail of the `__taintreport` CustomEvent that the
+      // sink fires. The report is dispatched synchronously from the sink; a
+      // srcdoc iframe reports on `parent.window` (its location is about:srcdoc),
+      // so we listen on both windows to be robust.
+      function captureSinkReport(assign) {
+        return new Promise((resolve, reject) => {
+          let done = false;
+          const onReport = (e) => {
+            if (done) {
+              return;
+            }
+            done = true;
+            window.removeEventListener("__taintreport", onReport, true);
+            ttWin.removeEventListener("__taintreport", onReport, true);
+            resolve(e.detail);
+          };
+          window.addEventListener("__taintreport", onReport, true);
+          ttWin.addEventListener("__taintreport", onReport, true);
+          try {
+            assign();
+          } catch (ex) {
+            reject(ex);
+          }
+        });
+      }
+
+      // A tainted value flowing through a trusted type into a Trusted Types sink
+      // must produce a report whose taint flow is the FULL chain: the original
+      // source, the trusted-type propagation node, and the sink itself.
+      async function checkSinkFullFlow({ input, mkTrusted, ttNode, sink, doSink }) {
+        const tainted = String.tainted(input, "TestSource");
+        const trusted = mkTrusted(tainted);
+        const detail = await captureSinkReport(() => doSink(trusted));
+
+        SimpleTest.is(detail.sink, sink, `Report sink must be '${sink}'`);
+        check_tainted(detail.str);
+
+        const ops = detail.str.taint[0].flow.map((o) => o.operation);
+        SimpleTest.ok(
+          detail.str.taint[0].flow.some((o) => o.source && o.operation === "TestSource"),
+          `[${sink}] flow must contain the source 'TestSource' (flow: ${ops})`
+        );
+        SimpleTest.ok(
+          ops.includes(ttNode),
+          `[${sink}] flow must contain the '${ttNode}' propagation node (flow: ${ops})`
+        );
+        SimpleTest.ok(
+          ops.includes(sink),
+          `[${sink}] flow must contain the sink node (flow: ${ops})`
+        );
+
+        // The chain must be ordered source -> trusted type -> sink.
+        const iSource = ops.lastIndexOf("TestSource");
+        const iTT = ops.indexOf(ttNode);
+        const iSink = ops.indexOf(sink);
+        SimpleTest.ok(
+          iSink < iTT && iTT < iSource,
+          `[${sink}] flow order must be sink..trusted-type..source (flow: ${ops})`
+        );
+      }
+
+      add_task(async function test_innerHTML_sink_full_flow() {
+        const target = ttDoc.createElement("div");
+        ttDoc.body.appendChild(target);
+        await checkSinkFullFlow({
+          input: "<b>xss</b>",
+          mkTrusted: (t) => policy.createHTML(t),
+          ttNode: "TrustedHTML",
+          sink: "innerHTML",
+          doSink: (trusted) => {
+            target.innerHTML = trusted;
+          },
+        });
+      });
+
+      add_task(async function test_outerHTML_sink_full_flow() {
+        const target = ttDoc.createElement("div");
+        ttDoc.body.appendChild(target);
+        await checkSinkFullFlow({
+          input: "<span>xss</span>",
+          mkTrusted: (t) => policy.createHTML(t),
+          ttNode: "TrustedHTML",
+          sink: "outerHTML",
+          doSink: (trusted) => {
+            target.outerHTML = trusted;
+          },
+        });
+      });
+
+      add_task(async function test_insertAdjacentHTML_sink_full_flow() {
+        const target = ttDoc.createElement("div");
+        ttDoc.body.appendChild(target);
+        await checkSinkFullFlow({
+          input: "<i>xss</i>",
+          mkTrusted: (t) => policy.createHTML(t),
+          ttNode: "TrustedHTML",
+          sink: "insertAdjacentHTML",
+          doSink: (trusted) => {
+            target.insertAdjacentHTML("beforeend", trusted);
+          },
+        });
+      });
+
+      // An untainted input must stay untainted: passing through a trusted type
+      // is a taint propagation, never a taint source.
+      add_task(async function test_untainted_input_stays_untainted() {
+        const html = policy.createHTML("<i>clean</i>");
+        const script = policy.createScript("noop()");
+        const url = policy.createScriptURL("https://example.com/clean.js");
+        SimpleTest.is(html.taint.length, 0, "TrustedHTML must be untainted");
+        SimpleTest.is(script.taint.length, 0, "TrustedScript must be untainted");
+        SimpleTest.is(url.taint.length, 0, "TrustedScriptURL must be untainted");
+        check_untainted(String(html));
+      });
+    </script>
+  </head>
+
+  <body></body>
+</html>

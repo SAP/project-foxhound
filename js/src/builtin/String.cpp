@@ -28,6 +28,7 @@
 #include <string.h>
 #include <type_traits>
 
+#include "jsapi.h"
 #include "jsnum.h"
 #include "jstypes.h"
 
@@ -179,18 +180,13 @@ js::str_tainted(JSContext* cx, unsigned argc, Value* vp)
  *
  * This builds a JS representation of the taint information associated with a string.
  */
-static bool
-str_taint_getter(JSContext* cx, unsigned argc, Value* vp)
+JS_PUBLIC_API bool
+JS_GetTaintAsObject(JSContext* cx, const StringTaint& taint,
+                    JS::MutableHandleValue out)
 {
-  CallArgs args = CallArgsFromVp(argc, vp);
-
-  RootedString str(cx, ToString<CanGC>(cx, args.thisv()));
-  if (!str)
-    return false;
-
   // Wrap all taint ranges of the string.
   RootedValueVector ranges(cx);
-  for (const TaintRange& taint_range : str->taint()) {
+  for (const TaintRange& taint_range : taint) {
     RootedObject range(cx, JS_NewObject(cx, nullptr));
     if(!range)
       return false;
@@ -280,8 +276,20 @@ str_taint_getter(JSContext* cx, unsigned argc, Value* vp)
   if (!array)
     return false;
 
-  args.rval().setObject(*array);
+  out.setObject(*array);
   return true;
+}
+
+static bool
+str_taint_getter(JSContext* cx, unsigned argc, Value* vp)
+{
+  CallArgs args = CallArgsFromVp(argc, vp);
+
+  RootedString str(cx, ToString<CanGC>(cx, args.thisv()));
+  if (!str)
+    return false;
+
+  return JS_GetTaintAsObject(cx, str->taint(), args.rval());
 }
 
 static bool

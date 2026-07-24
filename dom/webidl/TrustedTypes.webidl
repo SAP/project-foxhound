@@ -12,18 +12,24 @@
 interface TrustedHTML {
   stringifier;
   DOMString toJSON();
+  // Foxhound: taint of the wrapped string.
+  [Throws] readonly attribute any taint;
 };
 
 [Exposed=(Window,Worker), Pref="dom.security.trusted_types.enabled"]
 interface TrustedScript {
   stringifier;
   DOMString toJSON();
+  // Foxhound: taint of the wrapped string.
+  [Throws] readonly attribute any taint;
 };
 
 [Exposed=(Window,Worker), Pref="dom.security.trusted_types.enabled"]
 interface TrustedScriptURL {
   stringifier;
   USVString toJSON();
+  // Foxhound: taint of the wrapped string.
+  [Throws] readonly attribute any taint;
 };
 
 [Exposed=(Window,Worker), Pref="dom.security.trusted_types.enabled"]
