@@ -887,6 +887,10 @@ int32_t nsStandardURL::ReplaceSegment(uint32_t pos, uint32_t len,
   if (val && valLen) {
     if (len == 0) {
       mSpec.Insert(val, pos, valLen);
+      // Foxhound: Insert() only shifts/clears the existing taint for the
+      // inserted range, it cannot carry taint from the raw `val` buffer.
+      // Overlay the segment's taint explicitly so it is not lost.
+      mSpec.Taint().insert(pos, taint);
     } else {
       mSpec.Replace(pos, len, nsDependentCString(val, valLen));
       mSpec.Taint().replace(pos, pos + len, valLen, taint);
@@ -2940,8 +2944,16 @@ nsresult nsStandardURL::SetQueryWithEncoding(const nsACString& input,
   nsAutoCString buf;
   bool encoded;
   nsSegmentEncoder encoder(encoding);
-  encoder.EncodeSegmentCount(query, flat.Taint(), URLSegment(0, queryLen), esc_Query, buf,
-                             encoded);
+  // Foxhound: `query` points into `filteredURI` (possibly past a leading '?'),
+  // so encode from that offset and remap taint against `filteredURI`.
+  uint32_t queryPos = query - filteredURI.get();
+  encoder.EncodeSegmentCount(filteredURI.get(), filteredURI.Taint(),
+                             URLSegment(queryPos, queryLen), esc_Query, buf, encoded);
+  // Foxhound: when nothing needs escaping `buf` is left empty and carries no
+  // taint, so fall back to the taint of the unescaped query.
+  SafeStringTaint queryTaint =
+      encoded ? SafeStringTaint(buf.Taint())
+              : filteredURI.Taint().safeSubTaint(queryPos, queryPos + queryLen);
   if (encoded) {
     query = buf.get();
     queryLen = buf.Length();
@@ -2953,7 +2965,7 @@ nsresult nsStandardURL::SetQueryWithEncoding(const nsACString& input,
     return NS_ERROR_MALFORMED_URI;
   }
 
-  int32_t shift = ReplaceSegment(mQuery.mPos, mQuery.mLen, query, queryLen, buf.Taint());
+  int32_t shift = ReplaceSegment(mQuery.mPos, mQuery.mLen, query, queryLen, queryTaint);
 
   if (shift) {
     mQuery.mLen = queryLen;
@@ -3017,7 +3029,16 @@ nsresult nsStandardURL::SetRef(const nsACString& input) {
   // encode ref if necessary
   bool encoded;
   nsSegmentEncoder encoder;
-  encoder.EncodeSegmentCount(ref, flat.Taint(), URLSegment(0, refLen), esc_Ref, buf, encoded);
+  // Foxhound: `ref` points into `filteredURI` (possibly past a leading '#'),
+  // so encode from that offset and remap taint against `filteredURI`.
+  uint32_t refPos = ref - filteredURI.get();
+  encoder.EncodeSegmentCount(filteredURI.get(), filteredURI.Taint(),
+                             URLSegment(refPos, refLen), esc_Ref, buf, encoded);
+  // Foxhound: when nothing needs escaping `buf` is left empty and carries no
+  // taint, so fall back to the taint of the unescaped ref.
+  SafeStringTaint refTaint =
+      encoded ? SafeStringTaint(buf.Taint())
+              : filteredURI.Taint().safeSubTaint(refPos, refPos + refLen);
   if (encoded) {
     ref = buf.get();
     refLen = buf.Length();
@@ -3029,7 +3050,7 @@ nsresult nsStandardURL::SetRef(const nsACString& input) {
     return NS_ERROR_MALFORMED_URI;
   }
 
-  int32_t shift = ReplaceSegment(mRef.mPos, mRef.mLen, ref, refLen, buf.Taint());
+  int32_t shift = ReplaceSegment(mRef.mPos, mRef.mLen, ref, refLen, refTaint);
   mPath.mLen += shift;
   mRef.mLen = refLen;
   return NS_OK;
